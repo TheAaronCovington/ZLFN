@@ -79,6 +79,27 @@ describe('ast to ZLFN graph', () => {
     const cp = g.edges.find(e => e.rule?.includes('Contraposition'))
     expect(cp).toBeTruthy()
   })
+
+  it('detects Double Negation', () => {
+    const ast = parseExpressionToAst('¬¬A') as AstNodeRec
+    const g = astToZlfnGraph(ast)
+    const dn = g.edges.find(e => e.rule?.includes('Double Negation'))
+    expect(dn).toBeTruthy()
+  })
+
+  it('detects De Morgan on disjunction', () => {
+    const ast = parseExpressionToAst('¬(A ∨ B)') as AstNodeRec
+    const g = astToZlfnGraph(ast)
+    const dm = g.edges.find(e => e.rule?.includes("De Morgan"))
+    expect(dm).toBeTruthy()
+  })
+
+  it('handles nested quantifiers and predicates', () => {
+    const ast = parseExpressionToAst('∀x, y. ∃z. P(x, y, z) -> Q(x)') as AstNodeRec
+    expect(ast).toBeTruthy()
+    const g = astToZlfnGraph(ast!)
+    expect(g.nodes.length).toBeGreaterThan(0)
+  })
 })
 
 import { describe, it, expect } from 'vitest'

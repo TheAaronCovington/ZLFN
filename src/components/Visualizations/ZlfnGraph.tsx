@@ -49,9 +49,10 @@ export interface ZlfnGraphProps {
 	centerOnSelectionTrigger?: number
 	centerOnNodeId?: string
     centerOnNodeTrigger?: number
+	onEdgeSelect?: (edge: ZlfnEdge | null) => void
 }
 
-export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, storageKey, onInfo, centerOnSelectionTrigger, centerOnNodeId, centerOnNodeTrigger }) => {
+export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, storageKey, onInfo, centerOnSelectionTrigger, centerOnNodeId, centerOnNodeTrigger, onEdgeSelect }) => {
 	const { elementRef, size } = useResizeObserver<HTMLDivElement>()
 	const svgRef = useRef<SVGSVGElement | null>(null)
 	const gRef = useRef<SVGGElement | null>(null)
@@ -116,11 +117,11 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			if (e.key.toLowerCase() === 'x') { e.preventDefault(); toggleFreeze() }
 			if (e.key.toLowerCase() === 'h') { e.preventDefault(); setPathHighlight(s=>!s) }
 			if (e.key === '/') { e.preventDefault(); ruleFilterRef.current?.focus() }
-			if (e.key.toLowerCase() === 'e') { setSelectedEdgeIndex(null); onInfo?.('Cleared edge selection') }
+			if (e.key.toLowerCase() === 'e') { setSelectedEdgeIndex(null); onInfo?.('Cleared edge selection'); onEdgeSelect?.(null) }
 		}
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
-	}, [simulationMode, setSimulationMode, resetStates, onInfo, frozen, showEdgeLabels])
+	}, [simulationMode, setSimulationMode, resetStates, onInfo, frozen, showEdgeLabels, onEdgeSelect])
 
 	// init persisted filter/toggles per expression
 	useEffect(() => {
@@ -200,6 +201,12 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					const k = transform.k || 1
 					return len * k < 80 ? 0 : 1
 				})
+				// at extreme zoom-out, do not render labels at all for performance/clarity
+				const show = transform.k >= 0.4
+				g.selectAll<any, any>('g.link-label').attr('display', show ? null : 'none')
+				g.selectAll<any, any>('g.link-paths text.curved-label').attr('display', show ? null : 'none')
+				// soften badge stroke when zoomed out
+				g.selectAll<any, any>('g.link-label rect.link-badge').attr('stroke-opacity', Math.min(0.9, Math.max(0.3, 1 / (transform.k + 0.2))))
 			})
 		zoomRef.current = zoom
 		svg.call(zoom as any)
@@ -308,7 +315,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			...e,
 			source: (e.source ?? e.from) as string,
 			target: (e.target ?? e.to) as string
-		}))
+		})) as Array<{ source: string; target: string } & ZlfnEdge>
 
 		const linkColor = (d: ZlfnEdge) => d.color || (d.type === 'counterexample' ? '#ff6b6b' : d.type === 'bidirectional' ? '#b388ff' : d.type === 'implication' ? '#66c' : '#7aa')
 		const nodeColor = (d: ZlfnNode) => d.color || '#5ad'
@@ -372,6 +379,8 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				const idx = Array.prototype.indexOf.call(nodes, this)
 				setSelectedEdgeIndex(idx)
 				onInfo?.('Edge selected')
+				const edge = linkData[idx]
+				if (edge) onEdgeSelect?.(edge)
 			})
 
 		// paths for curved labels
@@ -436,6 +445,8 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				const idx = Array.prototype.indexOf.call(nodes, this)
 				setSelectedEdgeIndex(idx)
 				onInfo?.('Edge selected')
+				const edge = linkData[idx]
+				if (edge) onEdgeSelect?.(edge)
 			})
 
 		// gradient for badge background
@@ -619,14 +630,16 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				return Math.hypot(tx - sx, ty - sy) <= longThreshold && showEdgeLabels ? null : 'none'
 			})
 
+			// collision-aware placement for short labels
+			const placedCenters: Array<{ x: number; y: number }> = []
 			linkLabelG
 				.attr('transform', (d: any) => {
 					const s = d.source as any, t = d.target as any
 					const sx = s.x, sy = s.y, tx = t.x, ty = t.y
-					const cx = (sx + tx) / 2
-					const cy = (sy + ty) / 2 - 4
+					const cx0 = (sx + tx) / 2
+					const cy0 = (sy + ty) / 2 - 4
 					const angle = (Math.atan2(ty - sy, tx - sx) * 180) / Math.PI
-					// simple collision-aware offset: if label midpoint is near either node, nudge perpendicular
+					// normal
 					const dx = tx - sx, dy = ty - sy
 					const len = Math.hypot(dx, dy) || 1
 					const nx = -dy / len, ny = dx / len
@@ -637,13 +650,33 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 						const h = (nd.size?.height ?? 30) / 2
 						return Math.hypot(w, h)
 					}
-					const nearS = distTo(cx, cy, sx, sy) < radFor(s) + 12
-					const nearT = distTo(cx, cy, tx, ty) < radFor(t) + 12
-					const off = (nearS || nearT) ? 12 : 0
-					const ox = cx + nx * off
-					const oy = cy + ny * off
-					return `translate(${ox},${oy}) rotate(${angle})`
+					const nearS = distTo(cx0, cy0, sx, sy) < radFor(s) + 12
+					const nearT = distTo(cx0, cy0, tx, ty) < radFor(t) + 12
+					let off = (nearS || nearT) ? 12 : 6
+					// iterative nudge to avoid other labels and nodes
+					const k = transformRef.current.k || 1
+					const labelLen = ((d.rule || d.label || '').toString().length || 6) * (6 / k)
+					const labelRadius = Math.max(10 / k, Math.min(80, labelLen / 2))
+					let tries = 0
+					let bestX = cx0 + nx * off
+					let bestY = cy0 + ny * off
+					while (tries < 5) {
+						// avoid nodes
+						const tooNearNode = (distTo(bestX, bestY, sx, sy) < radFor(s) + labelRadius) || (distTo(bestX, bestY, tx, ty) < radFor(t) + labelRadius)
+						// avoid prior labels
+						const tooNearLabel = placedCenters.some(c => distTo(bestX, bestY, c.x, c.y) < (labelRadius + 14 / k))
+						if (!tooNearNode && !tooNearLabel) break
+						off += 8
+						// alternate side a bit for variety
+						const side = (tries % 2 === 0) ? 1 : -1
+						bestX = cx0 + nx * off * side
+						bestY = cy0 + ny * off * side
+						tries++
+					}
+					placedCenters.push({ x: bestX, y: bestY })
+					return `translate(${bestX},${bestY}) rotate(${angle})`
 				})
+
 			linkLabelG.select('text').each(function () {
 				const textEl = this as unknown as SVGTextElement
 				const bbox = textEl.getBBox()
@@ -869,7 +902,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			simulation.stop()
 			simulationRef.current = null
 		}
-	}, [nodes, edges, zones, defaultZones, size, simulationMode, nodeIdToActive, selectedNodeId, setSelectedNodeId, storageKey, frozen, showEdgeLabels, pinnedIds, onInfo, ruleFilter, pathHighlight, selectedEdgeIndex])
+	}, [nodes, edges, zones, defaultZones, size, simulationMode, nodeIdToActive, selectedNodeId, setSelectedNodeId, storageKey, frozen, showEdgeLabels, pinnedIds, onInfo, ruleFilter, pathHighlight, selectedEdgeIndex, onEdgeSelect])
 
 	useEffect(() => {
 		if (!storageKey) return
@@ -1121,7 +1154,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					<MenuItem onClick={saveLayout} disabled={!storageKey}>Save Layout</MenuItem>
 					<MenuItem onClick={clearLayout} disabled={!storageKey}>Clear Layout</MenuItem>
 					<MenuItem onClick={exportSvg}>Export SVG</MenuItem>
-					<MenuItem onClick={() => { setSelectedEdgeIndex(null); onInfo?.('Cleared edge selection') }}>Clear Edge Selection</MenuItem>
+					<MenuItem onClick={() => { setSelectedEdgeIndex(null); onInfo?.('Cleared edge selection'); onEdgeSelect?.(null) }}>Clear Edge Selection</MenuItem>
 				</Menu>
 			</Stack>
 			{tooltip && (

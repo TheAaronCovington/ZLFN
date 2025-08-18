@@ -4,26 +4,34 @@ import { unified } from 'unified'
 import remarkParse from 'remark-parse'
 import remarkStringify from 'remark-stringify'
 
-function render(md: string): string {
-  const file = unified()
+async function render(md: string): Promise<string> {
+  const file = await unified()
     .use(remarkParse)
-    // @ts-ignore custom plugin without types
-    .use(logicRemarkPlugin)
+    // our plugin injects HTML nodes; then stringify will include them
+    .use(function () { return logicRemarkPlugin() as any })
     .use(remarkStringify)
-    .processSync(md)
+    .process(md)
   return String(file)
 }
 
 describe('logicRemarkPlugin', () => {
-  it('wraps symbols', () => {
-    const out = render('If A → B then ...')
-    expect(out).toContain('<span class="logic-symbol">→</span>')
+  it('highlights unicode logical symbols', async () => {
+    const out = await render('A ∧ B → C')
+    expect(out).toMatch(/logic-symbol/)
   })
-
-  it('does not alter code fences', () => {
-    const md = '```\nA → B\n```\n'
-    const out = render(md)
-    expect(out).toContain('```')
+  it('highlights ascii equivalents', async () => {
+    const out = await render('A & B -> C')
+    expect(out).toMatch(/logic-symbol/)
+  })
+  it('mixed ascii/unicode are both highlighted', async () => {
+    const out = await render('A & B → C <-> D')
+    // at least two symbol spans
+    const matches = out.match(/logic-symbol/g) || []
+    expect(matches.length).toBeGreaterThanOrEqual(2)
+  })
+  it('does not alter code blocks', async () => {
+    const out = await render('```\nA & B -> C\n```')
+    expect(out).not.toMatch(/logic-symbol/)
   })
 })
 

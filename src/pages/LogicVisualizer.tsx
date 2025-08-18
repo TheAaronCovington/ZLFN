@@ -72,8 +72,20 @@ const LogicVisualizer: React.FC = () => {
 	React.useEffect(() => {
 		// bump highlight when selection changes (doc auto-scroll to active expr)
 		bumpExpressionHighlight()
+		// persist selected node per expression
+		try { localStorage.setItem(`xv_sel_${currentExpression}`, selectedNodeId || '') } catch {}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [selectedNodeId])
+
+	React.useEffect(() => {
+		// restore selection when expression changes
+		try {
+			const saved = localStorage.getItem(`xv_sel_${currentExpression}`)
+			if (saved) setSelectedNodeId(saved)
+			else setSelectedNodeId(null)
+		} catch {}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [currentExpression])
 
 	const selectionItems = React.useMemo(() => {
 		if (!selectedNode) return []
@@ -160,6 +172,8 @@ const LogicVisualizer: React.FC = () => {
 
 	const nodeIdOptions = React.useMemo(() => nodes.map(n => n.id), [nodes])
 
+	const [selectedEdge, setSelectedEdge] = React.useState<ZlfnEdge | null>(null)
+
 	return (
 		<div style={{ maxWidth: 1400, margin: '0 auto', padding: '1rem' }}>
 			<Typography variant="h5" sx={{ mb: 2 }}>Logic Visualizer</Typography>
@@ -239,7 +253,7 @@ const LogicVisualizer: React.FC = () => {
 						</NeonCard>
 						{(viewMode === 'graph' || viewMode === 'both') && (
 							<NeonCard title="ZLFN Graph">
-								<ZlfnGraph nodes={nodes} edges={edges} storageKey={currentExpression} onInfo={msg => showInfo(msg, 'success')} centerOnNodeId={searchId || undefined} centerOnNodeTrigger={searchTrigger} />
+								<ZlfnGraph nodes={nodes} edges={edges} storageKey={currentExpression} onInfo={msg => showInfo(msg, 'success')} centerOnNodeId={searchId || undefined} centerOnNodeTrigger={searchTrigger} onEdgeSelect={setSelectedEdge} />
 							</NeonCard>
 						)}
 						{(viewMode === 'ast' || viewMode === 'both') && (
@@ -247,6 +261,23 @@ const LogicVisualizer: React.FC = () => {
 								{ast ? <ASTTree roots={[ast]} /> : <div>Invalid expression.</div>}
 							</NeonCard>
 						)}
+						<NeonCard title="Edge Details">
+							{selectedEdge ? (
+								<Box sx={{ fontSize: 13 }}>
+									<div><strong>Rule:</strong> {selectedEdge.rule || selectedEdge.label || '(none)'}</div>
+									<div><strong>From:</strong> {(selectedEdge.from ?? selectedEdge.source) as string}</div>
+									<div><strong>To:</strong> {(selectedEdge.to ?? selectedEdge.target) as string}</div>
+									{selectedEdge.type && <div><strong>Type:</strong> {selectedEdge.type}</div>}
+									{typeof selectedEdge.weight === 'number' && <div><strong>Weight:</strong> {selectedEdge.weight}%</div>}
+									<Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+										<Button size="small" variant="outlined" onClick={async ()=>{ try { await navigator.clipboard.writeText(`${selectedEdge.from ?? selectedEdge.source} --${selectedEdge.rule ?? selectedEdge.label ?? ''}--> ${selectedEdge.to ?? selectedEdge.target}`); showInfo('Copied edge', 'success') } catch {} }}>Copy</Button>
+										<Button size="small" variant="outlined" onClick={()=>setSelectedEdge(null)}>Clear</Button>
+									</Stack>
+								</Box>
+							) : (
+								<Box sx={{ color: 'text.secondary', fontSize: 13 }}>Click an edge to see details.</Box>
+							)}
+						</NeonCard>
 						<NeonCard title="Necessary & Sufficient">
 							<VennDiagram title="" data={vennData} type="necessary-sufficient" examples={examples} />
 						</NeonCard>
@@ -275,6 +306,7 @@ const LogicVisualizer: React.FC = () => {
 					<div><strong>x</strong>: Freeze/Unfreeze Layout</div>
 					<div><strong>l</strong>: Toggle Edge Labels</div>
 					<div><strong>k</strong>: Focus Node Search</div>
+					<div><strong>e</strong>: Clear Edge Selection</div>
 					<div><strong>/</strong>: Focus Rule Filter</div>
 					<div><strong>Esc</strong>: Close Shortcuts</div>
 					<div><strong>Ctrl + Click</strong> (node): Pin/Unpin</div>
