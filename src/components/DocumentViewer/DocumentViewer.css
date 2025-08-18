@@ -1,0 +1,222 @@
+.document-viewer {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.document-header {
+  margin-bottom: 2rem;
+  border-bottom: 1px solid rgba(64,196,255,0.25);
+  padding-bottom: 1rem;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ai-cyan, #40c4ff);
+  text-decoration: none;
+  font-weight: 500;
+  margin-bottom: 1rem;
+  transition: color 0.2s ease;
+}
+
+.back-link:hover { color: #8ad7ff; }
+
+.document-title {
+  font-size: 2.5rem;
+  color: var(--ai-text-primary, #e8f4ff);
+  margin: 0;
+  font-weight: bold;
+}
+
+.document-content { line-height: 1.85; }
+
+.loading {
+  text-align: center;
+  padding: 4rem;
+  font-size: 1.2rem;
+  color: rgba(255,255,255,0.7);
+}
+
+.error {
+  text-align: center;
+  padding: 4rem;
+  color: #ff8a80;
+}
+
+.error h2 {
+  margin-bottom: 1rem;
+}
+
+/* Markdown Styling */
+.markdown-content { color: var(--ai-text-primary, rgba(255,255,255,0.9)); }
+
+.markdown-h1 {
+  font-size: 2.2rem;
+  color: #a7d2ff;
+  margin: 2rem 0 1rem 0;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid rgba(64,196,255,0.35);
+  position: relative;
+}
+
+.markdown-h2 {
+  font-size: 1.8rem;
+  color: #9bc9ff;
+  margin: 1.8rem 0 1rem 0;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid rgba(64,196,255,0.25);
+  position: relative;
+}
+
+.markdown-h3 {
+  font-size: 1.5rem;
+  color: rgba(255,255,255,0.85);
+  margin: 1.5rem 0 0.8rem 0;
+  position: relative;
+}
+
+.markdown-h4 {
+  font-size: 1.3rem;
+  color: rgba(255,255,255,0.8);
+  margin: 1.3rem 0 0.6rem 0;
+  position: relative;
+}
+
+.anchor {
+  margin-right: 0.5rem;
+  color: rgba(138,215,255,0.7);
+  text-decoration: none;
+  visibility: hidden;
+}
+.markdown-h1:hover .anchor,
+.markdown-h2:hover .anchor,
+.markdown-h3:hover .anchor,
+.markdown-h4:hover .anchor { visibility: visible; }
+
+.markdown-p {
+  margin: 1rem 0;
+  text-align: justify;
+  hyphens: auto;
+  color: rgba(255,255,255,0.9);
+}
+
+.markdown-ul,
+.markdown-ol {
+  margin: 1rem 0;
+  padding-left: 2rem;
+}
+
+.markdown-li {
+  margin: 0.5rem 0;
+}
+
+.markdown-code-inline {
+  background-color: rgba(64,196,255,0.14);
+  padding: 0.2rem 0.45rem;
+  border-radius: 4px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.9rem;
+  color: #ff8ec0;
+  border: 1px solid rgba(64,196,255,0.3);
+}
+
+.markdown-pre {
+  background: radial-gradient(1200px 400px at 10% -10%, rgba(64,196,255,0.08), rgba(30,30,47,0.85));
+  border: 1px solid rgba(64,196,255,0.3);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  overflow-x: auto;
+  margin: 1.5rem 0;
+  box-shadow: 0 0 20px rgba(64,196,255,0.08);
+}
+
+.markdown-code-block {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.94rem;
+  color: #e6edf3;
+  line-height: 1.6;
+}
+
+/* Active expression highlight */
+.expr-active {
+  outline: 2px solid rgba(255, 64, 129, 0.6);
+  box-shadow: 0 0 18px rgba(255, 64, 129, 0.35);
+  border-radius: 6px;
+}
+
+.markdown-blockquote {
+  border-left: 4px solid rgba(64,196,255,0.5);
+  padding-left: 1rem;
+  margin: 1.5rem 0;
+  font-style: italic;
+  color: rgba(255,255,255,0.85);
+  background-color: rgba(30,30,47,0.6);
+  padding: 1rem;
+  border-radius: 0 8px 8px 0;
+}
+
+.markdown-link {
+  color: #8ad7ff;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.markdown-link:hover { color: #b3e5ff; border-bottom-color: #b3e5ff; }
+
+/* Tables */
+.markdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+}
+.markdown-th, .markdown-td {
+  border: 1px solid rgba(64,196,255,0.25);
+  padding: 0.5rem 0.75rem;
+}
+.markdown-th { background: rgba(64,196,255,0.08); color: #cfe9ff; text-align: left; }
+.markdown-tr:nth-child(even) .markdown-td { background: rgba(30,30,47,0.45); }
+
+.logic-term {
+  color: #40c4ff;
+  font-weight: 600;
+  padding: 0.08rem 0.25rem;
+  border-radius: 4px;
+  background: rgba(64, 196, 255, 0.08);
+  border: 1px solid rgba(64, 196, 255, 0.25);
+  text-shadow: 0 0 6px rgba(64,196,255,0.35);
+}
+
+.logic-symbol {
+  color: #00e676;
+  font-weight: 700;
+  padding: 0 0.15rem;
+  border-radius: 3px;
+  background: rgba(0, 230, 118, 0.08);
+  border: 1px solid rgba(0, 230, 118, 0.25);
+  text-shadow: 0 0 6px rgba(0,230,118,0.35);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .document-viewer {
+    padding: 1rem;
+  }
+  
+  .document-title {
+    font-size: 2rem;
+  }
+  
+  .markdown-h1 {
+    font-size: 1.8rem;
+  }
+  
+  .markdown-h2 {
+    font-size: 1.5rem;
+  }
+  
+  .markdown-h3 {
+    font-size: 1.3rem;
+  }
+}

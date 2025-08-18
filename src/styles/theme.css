@@ -1,0 +1,22 @@
+:root {
+	--ai-bg-primary: #121212;
+	--ai-bg-secondary: #1e1e2f;
+	--ai-bg-elevated: #252540;
+
+	--ai-cyan: #40c4ff;
+	--ai-green: #00e676;
+	--ai-pink: #ff4081;
+	--ai-purple: #b388ff;
+
+	--ai-text-primary: rgba(255, 255, 255, 0.9);
+	--ai-text-secondary: rgba(255, 255, 255, 0.7);
+}
+
+/* Optional: modern scrollbar to match theme */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: var(--ai-bg-secondary); border-radius: 6px; }
+::-webkit-scrollbar-thumb {
+	background: linear-gradient(45deg, var(--ai-cyan), var(--ai-green));
+	border-radius: 6px; border: 2px solid var(--ai-bg-secondary);
+}
+
