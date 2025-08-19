@@ -5,6 +5,7 @@ import { Button, Stack, IconButton, TextField, Chip, Menu, MenuItem, Divider } f
 import { useLogicShared } from '../../context/LogicSharedContext'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import { evaluateInference, evaluateStates } from '../../services/inference'
+import { downloadJson } from '../../services/io'
 import { parseVennRule, computeShading } from '../../services/venn'
 
 export type ZlfnNode = {
@@ -70,6 +71,8 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	const termsBaselineYRef = useRef<Record<string, number>>({})
 	// prevent re-loading saved layout on every rebuild for same storageKey
 	const layoutLoadedRef = useRef<string | null>(null)
+	// simulation stability (to reduce ticks once layout settles)
+	const stableTicksRef = useRef<number>(0)
 	const { simulationMode, setSimulationMode, nodeIdToActive, setNodeIdToActive, resetStates, selectedNodeId, setSelectedNodeId, modes } = useLogicShared()
 	const [tooltip, setTooltip] = useState<{ x: number; y: number; html: string } | null>(null)
   const simulationRef = useRef<d3.Simulation<any, any> | null>(null)
@@ -77,7 +80,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
   const mmBoundsRef = useRef<{ minX: number; minY: number; sx: number; sy: number } | null>(null)
 	const [frozen, setFrozen] = useState(false)
 	const [pathHighlight, setPathHighlight] = useState(false)
-	const [showEdgeLabels] = useState(true)
+	const [showEdgeLabels, setShowEdgeLabels] = useState<boolean>(() => { try { return localStorage.getItem('xv_edge_labels') !== '0' } catch { return true } })
 	const [pinnedIds, setPinnedIds] = useState<Set<string>>(() => {
 		if (!storageKey) return new Set()
 		try { const raw = localStorage.getItem(`xv_pins_layout_${storageKey}`); return new Set<string>(raw ? JSON.parse(raw) : []) } catch { return new Set() }
@@ -93,6 +96,11 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	useEffect(() => { showRiversRef.current = showRivers }, [showRivers])
 	const [statusText, setStatusText] = useState<string>('')
 	const [showLegend, setShowLegend] = useState<boolean>(() => localStorage.getItem('xv_legend') === '1')
+	const [dynamicFit, setDynamicFit] = useState<boolean>(() => localStorage.getItem('xv_dynamic_fit') === '1')
+	const [snapEnabled, setSnapEnabled] = useState<boolean>(() => localStorage.getItem('xv_snap') !== '0')
+	const [showMiniMap, setShowMiniMap] = useState<boolean>(() => localStorage.getItem('xv_minimap') !== '0')
+	const [showHelp, setShowHelp] = useState<boolean>(false)
+	const fileInputRef = useRef<HTMLInputElement | null>(null)
 
 	// copy selected node details to clipboard
 	const copySelectedDetails = async () => {
@@ -110,9 +118,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			}
 			await navigator.clipboard.writeText(JSON.stringify(payload, null, 2))
 			onInfo?.('Copied selected node details')
-		} catch (err) {
-			onInfo?.('Copy failed')
-		}
+		} catch { onInfo?.('Copy failed') }
 	}
 	// overflow menu for secondary controls
 	const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null)
@@ -159,12 +165,23 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			if (e.key.toLowerCase() === 'f') { e.preventDefault(); fitToContents() }
 			if (e.key.toLowerCase() === 'c') { e.preventDefault(); centerOnSelection() }
 			if (e.key.toLowerCase() === 'p') { e.preventDefault(); centerOnPath() }
-			if (e.key.toLowerCase() === 's') { e.preventDefault(); saveLayout(); onInfo?.('Layout saved') }
+			if (e.key.toLowerCase() === 'z') { e.preventDefault(); centerOnSelection() }
+			if (e.key.toLowerCase() === 's' && e.ctrlKey) { e.preventDefault(); saveLayout(); onInfo?.('Layout saved') }
 			if (e.key.toLowerCase() === 'm') { e.preventDefault(); const next = !simulationMode; setSimulationMode(next); if (!next) resetStates(); onInfo?.(next ? 'Simulation enabled' : 'Simulation disabled') }
 			if (e.key.toLowerCase() === 'r') { e.preventDefault(); resetStates(); onInfo?.('States reset') }
 			if (e.key.toLowerCase() === 'x') { e.preventDefault(); toggleFreeze() }
 			if (e.key.toLowerCase() === 'h') { e.preventDefault(); setPathHighlight(s=>!s) }
+			if (e.key.toLowerCase() === 'o') { e.preventDefault(); exportSvg() }
+			if (e.key.toLowerCase() === 't') { e.preventDefault(); const next = !showEdgeLabels; setShowEdgeLabels(next); try { localStorage.setItem('xv_edge_labels', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Labels on' : 'Labels off') }
+			if (e.key.toLowerCase() === 'l') { e.preventDefault(); const next = !showLegend; setShowLegend(next); try { localStorage.setItem('xv_legend', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Legend shown' : 'Legend hidden') }
+			if (e.key.toLowerCase() === 'd') { e.preventDefault(); const next = !dynamicFit; setDynamicFit(next); try { localStorage.setItem('xv_dynamic_fit', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Dynamic fit on' : 'Dynamic fit off') }
+			if (e.key.toLowerCase() === 'u') { e.preventDefault(); setShowClusters(v=>!v) }
+			if (e.key.toLowerCase() === 'g') { e.preventDefault(); setShowRivers(v=>!v) }
+			if (e.key.toLowerCase() === 'i') { e.preventDefault(); setHideNonPath(v=>!v); onInfo?.('Toggled isolate path') }
+			if (e.key.toLowerCase() === 'v') { e.preventDefault(); resetZoom() }
+			if (e.key.toLowerCase() === 'y') { e.preventDefault(); clearLayout() }
 			if (e.key === '/') { e.preventDefault(); ruleFilterRef.current?.focus() }
+			if (e.key === '?' || (e.shiftKey && e.key === '/')) { e.preventDefault(); setShowHelp(v=>!v); onInfo?.('Toggled shortcuts help') }
 			if (e.key.toLowerCase() === 'e') { setSelectedEdgeIndex(null); onInfo?.('Cleared edge selection'); onEdgeSelect?.(null) }
 			// cycle arguments with [ and ]
 			if (e.key === '[' || e.key === ']') {
@@ -180,7 +197,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		}
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
-	}, [simulationMode, setSimulationMode, resetStates, onInfo, frozen, showEdgeLabels, onEdgeSelect, selectedArgumentId, argumentIds, storageKey])
+	}, [simulationMode, setSimulationMode, resetStates, onInfo, frozen, showEdgeLabels, onEdgeSelect, selectedArgumentId, argumentIds, storageKey, showLegend, dynamicFit, setSelectedNodeId])
 
 	// init persisted filter/toggles per expression
 	useEffect(() => {
@@ -312,6 +329,9 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		const width = size.width || 800
 		const height = (size.height || 560) - 56 // reserve space for controls if any
 		svg.attr('width', width).attr('height', height + 56)
+
+		// dynamic canvas sizing option (fit to extents when enabled)
+		const fitDynamic = dynamicFit
 
 		// clear content
 		g.selectAll('*').remove()
@@ -771,7 +791,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 						if (!event.active) simulation.alphaTarget(0)
 						if (!frozen) { (d as any).fx = null; (d as any).fy = null }
 						// snap-to-grid (10px)
-						if (typeof (d as any).x === 'number' && typeof (d as any).y === 'number') {
+						if (snapEnabled && typeof (d as any).x === 'number' && typeof (d as any).y === 'number') {
 							(d as any).x = Math.round((d as any).x / 10) * 10;
 							(d as any).y = Math.round((d as any).y / 10) * 10;
 						}
@@ -854,44 +874,38 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			const onEsc = (ev: KeyboardEvent) => { if (ev.key === 'Escape') { overlay.remove(); window.removeEventListener('keydown', onEsc) } }
 			window.addEventListener('keydown', onEsc)
 			if (type === 'venn') {
-				// derive simple 2-term relation from node datum
 				const datum: any = (host.datum && host.datum()) || {}
 				const label: string = (datum.symbol || datum.label || datum.id || '').toString()
+				const termsAll = (label.match(/[A-Za-z]+/g) || ['A','B']).slice(0,5)
+				const terms = termsAll.length >= 2 ? termsAll : ['A','B']
 				const op = /∧|\^|\band\b|&/.test(label) ? 'and' : (/∨|\bor\b|\|/.test(label) ? 'or' : (/→|->/.test(label) ? 'imp' : 'unknown'))
-				const terms = (label.match(/[A-Za-z]+/g) || ['A','B']).slice(0,2)
-				const A = terms[0] || 'A', B = terms[1] || 'B'
-				// optional: parse a simple natural language rule from the node name/translation
 				const parsed = parseVennRule((datum.name || datum.translation || '') as string)
 				const shade = computeShading(parsed.kind)
 				const gx = overlay.append('g').attr('transform', 'translate(-20,-20)')
-				// base circles
-				gx.append('circle').attr('cx', -20).attr('cy', 20).attr('r', 28).attr('fill', 'rgba(64,196,255,0.15)').attr('stroke', '#40c4ff')
-				gx.append('circle').attr('cx', 20).attr('cy', 20).attr('r', 28).attr('fill', 'rgba(0,230,118,0.15)').attr('stroke', '#00e676')
-				// labels
-				gx.append('text').attr('x', -40).attr('y', 10).attr('fill', '#8ad7ff').attr('font-size', 11).text(A)
-				gx.append('text').attr('x', 34).attr('y', 10).attr('fill', '#8ad7ff').attr('font-size', 11).text(B)
-				// shading cue
+				const palette = ['#40c4ff','#00e676','#ffd740','#ff8a80','#b388ff']
+				const r = 28
+				const positions: Array<[number,number]> = terms.length <= 2 ? [[-20,20],[20,20]] : terms.length === 3 ? [[-24,20],[24,20],[0,-2]] : terms.length === 4 ? [[-24,20],[24,20],[-24,-2],[24,-2]] : [[-28,18],[0,32],[28,18],[-16,-2],[16,-2]]
+				terms.forEach((t, i) => {
+					gx.append('circle').attr('cx', positions[i][0]).attr('cy', positions[i][1]).attr('r', r).attr('fill', 'rgba(255,255,255,0.10)').attr('stroke', palette[i%palette.length])
+					gx.append('text').attr('x', positions[i][0] + (positions[i][0]<0?-r-8:r+8)).attr('y', positions[i][1]-10).attr('fill', '#cfe9ff').attr('font-size', 11).text(t)
+				})
 				if (op === 'and') {
 					gx.append('ellipse').attr('cx', 0).attr('cy', 20).attr('rx', 18).attr('ry', 12).attr('fill', 'rgba(0,230,118,0.35)')
-					overlay.append('text').attr('x', -80).attr('y', 36).attr('fill', '#a0ffcf').attr('font-size', 11).text('Highlight: A ∩ B')
+					overlay.append('text').attr('x', -80).attr('y', 36).attr('fill', '#a0ffcf').attr('font-size', 11).text('Highlight: ∩')
 				} else if (op === 'or') {
-					// union cue: subtle stroke emphasis around both
 					gx.append('circle').attr('cx', -20).attr('cy', 20).attr('r', 28).attr('fill', 'none').attr('stroke', '#40c4ff').attr('stroke-width', 2.5).attr('stroke-opacity', 0.6)
 					gx.append('circle').attr('cx', 20).attr('cy', 20).attr('r', 28).attr('fill', 'none').attr('stroke', '#00e676').attr('stroke-width', 2.5).attr('stroke-opacity', 0.6)
-					overlay.append('text').attr('x', -80).attr('y', 36).attr('fill', '#cfe9ff').attr('font-size', 11).text('Highlight: A ∪ B')
-				} else if (op === 'imp') {
-					// implication cue: A subset of B
+					overlay.append('text').attr('x', -80).attr('y', 36).attr('fill', '#cfe9ff').attr('font-size', 11).text('Highlight: ∪')
+				} else if (op === 'imp' && terms.length >= 2) {
 					gx.append('path').attr('d', 'M -32,8 L -6,8').attr('stroke', '#8ad7ff').attr('stroke-width', 2).attr('marker-end', 'url(#arrow)')
-					overlay.append('text').attr('x', -80).attr('y', 36).attr('fill', '#ffd54f').attr('font-size', 11).text(`${A} ⊆ ${B} (cue)`)
+					overlay.append('text').attr('x', -80).attr('y', 36).attr('fill', '#ffd54f').attr('font-size', 11).text(`${terms[0]} ⊆ ${terms[1]} (cue)`)
 				} else {
 					overlay.append('text').attr('x', -80).attr('y', 36).attr('fill', '#e0e6ff').attr('font-size', 11).text('Venn preview')
 				}
-				// apply parsed shading hints
 				if (shade.intersection) gx.append('ellipse').attr('cx', 0).attr('cy', 20).attr('rx', 14).attr('ry', 9).attr('fill', 'rgba(255,255,255,0.15)')
 				if (shade.disjoint) gx.append('line').attr('x1', -40).attr('y1', 20).attr('x2', 40).attr('y2', 20).attr('stroke', '#ff8080').attr('stroke-dasharray', '4,3')
-				// pass/fail badge
 				if (parsed.kind) {
-					const ok = parsed.kind !== 'no' // placeholder acceptance rule
+					const ok = parsed.kind !== 'no'
 					overlay.append('rect').attr('x', 54).attr('y', -68).attr('rx', 4).attr('width', 32).attr('height', 16).attr('fill', ok ? 'rgba(0,230,118,0.25)' : 'rgba(255,82,82,0.25)').attr('stroke', ok ? '#00e676' : '#ff5252')
 					overlay.append('text').attr('x', 70).attr('y', -56).attr('fill', ok ? '#a0ffcf' : '#ffb3b3').attr('font-size', 10).text(ok ? 'Pass' : 'Fail')
 				}
@@ -1076,6 +1090,15 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					}
 				}
 			}
+
+			// stop or cool simulation once stable to save CPU
+			if (simulation.alpha() < 0.03) { stableTicksRef.current += 1 } else { stableTicksRef.current = 0 }
+			if (stableTicksRef.current > 45) {
+				// cool down; will restart on user interaction
+				simulation.alphaTarget(0)
+				simulation.stop()
+				if (debug) console.log('[ZLFN] simulation cooled')
+			}
 			// slight jitter to break symmetry
 			nodesWithArgs.forEach((n: any, i: number) => { if (i % 7 === 0) { n.x += (Math.random()-0.5)*0.8; n.y += (Math.random()-0.5)*0.8 } })
 			// actively resolve node-on-node overlaps (rectangle-aware)
@@ -1138,7 +1161,10 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			// update curved paths and decide label mode
 			linkLabelG.attr('display', showEdgeLabels ? null : 'none')
 
-			// collision-aware placement for short labels
+			// throttle heavy placement work every 3rd tick
+			const tickCount = (tickRef.current = (tickRef.current + 1))
+			const doHeavy = tickCount % 3 === 0
+			if (doHeavy) {
 			const placedCenters: Array<{ x: number; y: number }> = []
 			linkLabelG
 				.attr('transform', (d: any) => {
@@ -1186,6 +1212,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					placedCenters.push({ x: bestX, y: bestY })
 					return `translate(${bestX},${bestY}) rotate(${angle})`
 				})
+			}
 
 			linkLabelG.select('text').each(function () {
 				const textEl = this as unknown as SVGTextElement
@@ -1204,8 +1231,8 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			// update pin markers
 			nodeEnter.selectAll('text.pin-marker').text((d: any) => pinnedIds.has(d.id) ? '📌' : '')
 
-			// update minimap
-			if (miniMapRef.current) {
+			// update minimap (throttled every 3rd tick)
+			if (miniMapRef.current && doHeavy) {
 				const mm = d3.select(miniMapRef.current)
 				const mmW = 160, mmH = 110
 				const positions: Array<{ x: number; y: number }> = []
@@ -1217,6 +1244,16 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					const ys = positions.map(p => p.y)
 					const minX = Math.min(...xs), maxX = Math.max(...xs)
 					const minY = Math.min(...ys), maxY = Math.max(...ys)
+					if (fitDynamic && svgRef.current && zoomRef.current) {
+						const padding = 80
+						const w = maxX - minX + padding
+						const h = maxY - minY + padding
+						const scale = Math.max(0.1, Math.min(2, Math.min((size.width||800) / w, ((size.height||560)-56) / h)))
+						const cx = (minX + maxX) / 2
+						const cy = (minY + maxY) / 2
+						const transform = d3.zoomIdentity.translate((size.width||800) / 2, ((size.height||560)-56) / 2).scale(scale).translate(-cx, -cy)
+						d3.select(svgRef.current).call(zoomRef.current.transform as any, transform)
+					}
 					const dx = maxX - minX || 1, dy = maxY - minY || 1
 					const sx = mmW / dx, sy = mmH / dy
 					mmBoundsRef.current = { minX, minY, sx, sy }
@@ -1774,6 +1811,91 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		d3.select(svgRef.current).transition().duration(250).call(zoomRef.current.transform as any, transform)
 		onInfo?.('Centered on path')
 	}
+
+	// export SVG utility
+	const exportSvg = () => {
+		if (!svgRef.current) return
+		const serializer = new XMLSerializer()
+		const svgString = serializer.serializeToString(svgRef.current)
+		const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+		const url = URL.createObjectURL(blob)
+		const a = document.createElement('a')
+		a.href = url
+		a.download = 'zlfn-export.svg'
+		a.click()
+		URL.revokeObjectURL(url)
+		onInfo?.('SVG exported')
+	}
+
+	// export PNG by rasterizing current SVG
+	const exportPng = async () => {
+		if (!svgRef.current) return
+		const serializer = new XMLSerializer()
+		const svgString = serializer.serializeToString(svgRef.current)
+		const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+		const url = URL.createObjectURL(svgBlob)
+		const img = new Image()
+		const width = (size.width || 1200)
+		const height = ((size.height || 720))
+		await new Promise<void>((resolve) => { img.onload = () => resolve(); img.src = url })
+		const canvas = document.createElement('canvas')
+		canvas.width = width
+		canvas.height = height
+		const ctx = canvas.getContext('2d')!
+		ctx.fillStyle = '#141826'
+		ctx.fillRect(0, 0, width, height)
+		ctx.drawImage(img, 0, 0, width, height)
+		canvas.toBlob((blob) => {
+			if (!blob) return
+			const a = document.createElement('a')
+			const pngUrl = URL.createObjectURL(blob)
+			a.href = pngUrl
+			a.download = 'zlfn-export.png'
+			a.click()
+			URL.revokeObjectURL(pngUrl)
+			URL.revokeObjectURL(url)
+			onInfo?.('PNG exported')
+		})
+	}
+
+	// clear saved layout and unpin
+	const clearLayout = () => {
+		if (!storageKey) return
+		try {
+			localStorage.removeItem(`xv_layout_${storageKey}`)
+			localStorage.removeItem(`xv_pins_layout_${storageKey}`)
+			setPinnedIds(new Set())
+			onInfo?.('Saved layout cleared')
+			if (simulationRef.current) simulationRef.current.alpha(0.7).restart()
+		} catch {}
+	}
+
+	// reset zoom transform
+	const resetZoom = () => {
+		if (!svgRef.current || !zoomRef.current) return
+		d3.select(svgRef.current).transition().duration(200).call(zoomRef.current.transform as any, d3.zoomIdentity)
+		onInfo?.('View reset')
+	}
+
+	// restart simulation softly
+	// const restartSimulation = () => {
+	// 	if (simulationRef.current) {
+	// 		simulationRef.current.alpha(0.9).restart()
+	// 	}
+	// }
+
+	// export only layout JSON
+	const exportLayoutJson = () => {
+		if (!gRef.current) return
+		const data: Record<string, { x: number; y: number }> = {}
+		d3.select(gRef.current)
+			.selectAll<any, any>('g.nodes g.node')
+			.each(function (d: any) {
+				if (typeof d.x === 'number' && typeof d.y === 'number' && d.id) data[d.id] = { x: d.x, y: d.y }
+			})
+		downloadJson({ expression: storageKey || 'layout', layout: data }, 'layout-export.json')
+		onInfo?.('Layout JSON exported')
+	}
 	const saveLayout = () => {
 		if (!storageKey || !gRef.current) return
 		const data: Record<string, { x: number; y: number }> = {}
@@ -1893,8 +2015,10 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				)}
 				<Button aria-label="Toggle informal" size="small" variant={showInformalZone ? 'contained' : 'outlined'} onClick={()=> setShowInformalZone(s=>!s)}>Informal</Button>
 				<Button aria-label="Toggle temporal" size="small" variant={showTemporalZone ? 'contained' : 'outlined'} onClick={()=> setShowTemporalZone(s=>!s)}>Temporal</Button>
-				{/* Floating legend chip */}
+				{/* Floating legend & dynamic fit chips */}
 				<Chip size="small" label={showLegend ? 'Legend: On' : 'Legend'} onClick={() => { const next = !showLegend; setShowLegend(next); try { localStorage.setItem('xv_legend', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Legend shown' : 'Legend hidden') }} />
+				<Chip size="small" label={dynamicFit ? 'Dynamic Fit: On' : 'Dynamic Fit'} onClick={() => { const next = !dynamicFit; setDynamicFit(next); try { localStorage.setItem('xv_dynamic_fit', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Dynamic fit on' : 'Dynamic fit off') }} />
+				<Chip size="small" label={snapEnabled ? 'Snap: On' : 'Snap'} onClick={() => { const next = !snapEnabled; setSnapEnabled(next); try { localStorage.setItem('xv_snap', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Snap on' : 'Snap off') }} />
 			</Stack>
 			{tooltip && (
 				<div
@@ -1933,10 +2057,44 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				<MenuItem onClick={() => { const next = !showTemporalZone; setShowTemporalZone(next); closeMenu() }}>{showTemporalZone ? 'Hide Temporal Zone' : 'Show Temporal Zone'}</MenuItem>
 				<Divider />
 				<MenuItem onClick={() => { saveLayout(); onInfo?.('Layout saved'); closeMenu() }}>Save Layout</MenuItem>
+				<MenuItem onClick={() => { const next = !dynamicFit; setDynamicFit(next); try { localStorage.setItem('xv_dynamic_fit', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Dynamic fit on' : 'Dynamic fit off'); closeMenu() }}>{dynamicFit ? 'Disable Dynamic Fit' : 'Enable Dynamic Fit'}</MenuItem>
+				<MenuItem onClick={() => { exportSvg(); closeMenu() }}>Export SVG</MenuItem>
+				<MenuItem onClick={() => { exportLayoutJson(); closeMenu() }}>Export Layout JSON</MenuItem>
+				<MenuItem onClick={() => { exportPng(); closeMenu() }}>Export PNG</MenuItem>
+				<MenuItem onClick={() => { clearLayout(); closeMenu() }}>Clear Saved Layout</MenuItem>
+				<MenuItem onClick={() => { resetZoom(); closeMenu() }}>Reset View</MenuItem>
 				<MenuItem onClick={() => { copySelectedDetails(); closeMenu() }} disabled={!selectedNodeId}>Copy Selected Details</MenuItem>
+				<MenuItem onClick={() => { const next = !showMiniMap; setShowMiniMap(next); try { localStorage.setItem('xv_minimap', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Minimap on' : 'Minimap off'); closeMenu() }}>{showMiniMap ? 'Hide Minimap' : 'Show Minimap'}</MenuItem>
+				<MenuItem onClick={() => { setShowHelp(v=>!v); closeMenu() }}>{showHelp ? 'Hide Shortcuts' : 'Show Shortcuts'}</MenuItem>
 				<MenuItem onClick={() => { const next = !showLegend; setShowLegend(next); try { localStorage.setItem('xv_legend', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Legend shown' : 'Legend hidden'); closeMenu() }}>{showLegend ? 'Hide Legend' : 'Show Legend'}</MenuItem>
 			</Menu>
-			<svg ref={miniMapRef} width={160} height={110} style={{ position: 'absolute', right: 8, bottom: 8, background: 'rgba(20,20,30,0.6)', border: '1px solid rgba(64,196,255,0.25)', borderRadius: 6 }} />
+			<input ref={fileInputRef} type="file" accept="application/json" style={{ display: 'none' }} onChange={async (e) => {
+				const f = e.target?.files?.[0]
+				if (!f) return
+				try {
+					const text = await f.text()
+					const data = JSON.parse(text)
+					if (data && data.layout && typeof data.layout === 'object') {
+						if (storageKey) localStorage.setItem(`xv_layout_${storageKey}`, JSON.stringify(data.layout))
+						onInfo?.('Layout imported')
+						if (simulationRef.current) simulationRef.current.alpha(0.8).restart()
+					}
+				} catch { onInfo?.('Import failed') }
+				(e.target as HTMLInputElement).value = ''
+			}} />
+			{showMiniMap && (
+				<svg ref={miniMapRef} width={160} height={110} style={{ position: 'absolute', right: 8, bottom: 8, background: 'rgba(20,20,30,0.6)', border: '1px solid rgba(64,196,255,0.25)', borderRadius: 6 }} />
+			)}
+			{showHelp && (
+				<div style={{ position: 'absolute', right: 8, top: 8, background: 'rgba(20,20,30,0.9)', border: '1px solid rgba(64,196,255,0.35)', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
+					<div><strong>Shortcuts</strong></div>
+					<div>f: Fit • c/z: Center • p: Center Path • s: Save layout</div>
+					<div>m: Simulation • r: Reset states • x: Freeze</div>
+					<div>t: Toggle labels • h: Path highlight • o: Export SVG</div>
+					<div>l: Legend • d: Dynamic fit • i: Isolate path</div>
+					<div>[ ]: Cycle arguments • Esc: Clear selection</div>
+				</div>
+			)}
 		</div>
 	)
 }

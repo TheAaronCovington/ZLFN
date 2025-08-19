@@ -22,8 +22,7 @@ export function evaluateInference(
 	modes: Partial<Record<LogicMode, boolean>> = { classical: true }
 ): Record<string, boolean> {
 	const next: Record<string, boolean> = { ...active }
-	const threshold = 70
-	const isClassical = !!modes.classical
+	const threshold = modes.fuzzy ? 0 : (modes.epistemic ? 65 : modes.temporal || modes.informal ? 60 : 70)
 	// adjacency for forward propagation (ignore counterexamples here; handled in evaluateStates)
 	const forward = new Map<string, InferenceEdge[]>()
 	for (const e of edges) {
@@ -46,7 +45,7 @@ export function evaluateInference(
 		for (const e of (forward.get(src) || [])) {
 			const tgt = (e.to ?? e.target) as string
 			const w = e.weight ?? 0
-			if (isClassical && w < threshold) continue
+			if (!modes.fuzzy && w < threshold) continue
 			if (!validateRule(e.rule, modes)) continue
 			if (!next[tgt]) {
 				next[tgt] = true
@@ -97,25 +96,40 @@ export function evaluateStates(
 ): { nodeStates: Record<string, NodeState>; conflicts: string[] } {
 	const trueSet = new Set<string>(Object.keys(active).filter(k => active[k]))
 	const falseSet = new Set<string>()
+	const score: Record<string, number> = {}
+	const threshold = modes.fuzzy ? 0 : (modes.epistemic ? 65 : modes.temporal || modes.informal ? 60 : 70)
 	for (const e of edges) {
 		const src = (e.from ?? e.source) as string | undefined
 		const tgt = (e.to ?? e.target) as string | undefined
 		if (!src || !tgt) continue
-		const w = e.weight ?? 0
-		if (!!modes.classical && w < 70) continue
 		if (!validateRule(e.rule, modes)) continue
-		if (e.type === 'counterexample' && trueSet.has(src)) {
-			falseSet.add(tgt)
+		const w = e.weight ?? 0
+		if (e.type === 'counterexample') {
+			if (trueSet.has(src)) falseSet.add(tgt)
+			continue
+		}
+		if (trueSet.has(src)) {
+			if (modes.fuzzy) {
+				const v = Math.max(0, Math.min(1, w / 100))
+				score[tgt] = Math.max(score[tgt] ?? 0, v)
+			} else if (w >= threshold) {
+				score[tgt] = 1
+			}
 		}
 	}
 	const out: Record<string, NodeState> = {}
 	const conflicts: string[] = []
-	const ids = new Set<string>([...trueSet, ...falseSet])
+	const ids = new Set<string>([...Object.keys(score), ...trueSet, ...falseSet])
 	for (const id of ids) {
-		const t = trueSet.has(id)
+		const t = score[id] ?? (trueSet.has(id) ? 1 : 0)
 		const f = falseSet.has(id)
-		if (t && f) { out[id] = { value: 'B' }; conflicts.push(id) }
-		else if (t) { out[id] = { value: 'T' } }
+		if (modes.fuzzy) {
+			if (f && t > 0 && !modes.paraconsistent) conflicts.push(id)
+			if (t > 0 || f) out[id] = { value: t, weight: Math.round(t * 100) }
+			continue
+		}
+		if (t > 0 && f) { out[id] = { value: 'B' }; if (!modes.paraconsistent) conflicts.push(id) }
+		else if (t > 0) { out[id] = { value: 'T' } }
 		else if (f) { out[id] = { value: 'F' } }
 	}
 	return { nodeStates: out, conflicts }
