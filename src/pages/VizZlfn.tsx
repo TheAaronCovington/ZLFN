@@ -12,10 +12,14 @@ const VizZlfn: React.FC = () => {
 		{ id: 'premise1', label: 'P1', color: '#20B2AA', type: 'premise', size: { width: 100, height: 30 } },
 		{ id: 'term1', label: 'T1', color: '#4169E1', type: 'term', size: { radius: 20 } },
 		{ id: 'conclusion', label: 'C', color: '#9370DB', type: 'conclusion', size: { width: 100, height: 30 } },
+		{ id: 'conclusion2', label: 'C2', color: '#8e7cc3', type: 'conclusion', size: { width: 100, height: 30 } },
+		{ id: 'fallacy1', label: 'F1', color: '#DC143C', type: 'fallacy', size: { width: 100, height: 30 } },
 	]
 	const edges: ZlfnEdge[] = [
 		{ from: 'premise1', to: 'term1', weight: 85, style: 'solid', rule: 'Modus Ponens' },
 		{ from: 'term1', to: 'conclusion', weight: 75, style: 'dashed', rule: 'Hypothetical Syllogism' },
+		{ from: 'term1', to: 'conclusion2', weight: 72, style: 'solid', rule: 'Inference' },
+		{ from: 'fallacy1', to: 'term1', weight: 50, style: 'dotted', rule: 'Fallacy Link', type: 'counterexample' },
 	]
 
 	return (

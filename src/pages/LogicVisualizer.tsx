@@ -1,5 +1,5 @@
 import React from 'react'
-import { Box, Typography, Stack, TextField, Button, ToggleButton, ToggleButtonGroup, Snackbar, Alert, Dialog, DialogTitle, DialogContent, Autocomplete } from '@mui/material'
+import { Box, Typography, Stack, TextField, Button, ToggleButton, ToggleButtonGroup, Snackbar, Alert, Dialog, DialogTitle, DialogContent, Autocomplete, Checkbox, FormControlLabel, FormGroup } from '@mui/material'
 import DocumentViewer from '../components/DocumentViewer/DocumentViewer'
 import ZlfnGraph from '../components/Visualizations/ZlfnGraph'
 import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph'
@@ -13,9 +13,10 @@ import type { AstNodeRec } from '../components/Visualizations/ASTTree'
 import { useLogicShared } from '../context/LogicSharedContext'
 import NeonAccordion from '../components/Accordion/NeonAccordion'
 import { downloadJson, readJsonFile, readSavedLayout } from '../services/io'
+import TruthTable from '../components/Visualizations/TruthTable'
 
 const LogicVisualizer: React.FC = () => {
-	const { selectedNodeId, setSelectedNodeId, currentExpression, setCurrentExpression, bumpExpressionHighlight } = useLogicShared()
+	const { selectedNodeId, setSelectedNodeId, currentExpression, setCurrentExpression, bumpExpressionHighlight, modes, setModes } = useLogicShared()
 	const [viewMode, setViewMode] = React.useState<'graph' | 'ast' | 'both'>(() => (localStorage.getItem('xv_view_mode') as 'graph'|'ast'|'both') || 'graph')
 	React.useEffect(() => { try { localStorage.setItem('xv_view_mode', viewMode) } catch {} }, [viewMode])
 	const [docId, setDocId] = React.useState<'TAG_Critique' | 'expressions_guide'>(() => (localStorage.getItem('xv_viz_doc') as any) || 'TAG_Critique')
@@ -25,15 +26,31 @@ const LogicVisualizer: React.FC = () => {
 	const toggleQS = () => { const next = !qsDismissed; setQsDismissed(next); try { localStorage.setItem('xv_qs_dismissed', next ? '1' : '0') } catch {} }
 	const ast = React.useMemo<AstNodeRec | null>(() => parseExpressionToAst(currentExpression), [currentExpression])
 	const graph = React.useMemo(() => (ast ? astToZlfnGraph(ast) : null), [ast])
-	const nodes: ZlfnNode[] = (graph?.nodes as ZlfnNode[]) || [
-		{ id: 'P1', label: 'P1', color: '#20B2AA', type: 'premise', size: { width: 100, height: 30 } },
-		{ id: 'T1', label: 'T1', color: '#4169E1', type: 'term', size: { radius: 20 } },
-		{ id: 'C', label: 'C', color: '#9370DB', type: 'conclusion', size: { width: 100, height: 30 } },
+	const [showDemoExtras, setShowDemoExtras] = React.useState<boolean>(() => localStorage.getItem('xv_demo_extras') === '1')
+	React.useEffect(() => { try { localStorage.setItem('xv_demo_extras', showDemoExtras ? '1' : '0') } catch {} }, [showDemoExtras])
+	let nodes: ZlfnNode[] = (graph?.nodes as ZlfnNode[]) || [
+		{ id: 'P1', label: 'P1', color: '#20B2AA', type: 'premise', size: { width: 100, height: 30 }, argumentId: 'Demo' },
+		{ id: 'T1', label: 'T1', color: '#4169E1', type: 'term', size: { radius: 20 }, argumentId: 'Demo' },
+		{ id: 'C', label: 'C', color: '#9370DB', type: 'conclusion', size: { width: 100, height: 30 }, argumentId: 'Demo' },
 	]
-	const edges: ZlfnEdge[] = (graph?.edges as ZlfnEdge[]) || [
+	let edges: ZlfnEdge[] = (graph?.edges as ZlfnEdge[]) || [
 		{ from: 'P1', to: 'T1', weight: 85, style: 'solid', rule: 'Modus Ponens' },
 		{ from: 'T1', to: 'C', weight: 75, style: 'dashed', rule: 'Hypothetical Syllogism' },
 	]
+	if (showDemoExtras && (!graph || (Array.isArray(graph.nodes) && graph.nodes.length <= 6))) {
+		// add extra conclusion and fallacy for boundary verification
+		if (!nodes.find(n => n.id === 'C2')) nodes = nodes.concat({ id: 'C2', label: 'C2', color: '#8e7cc3', type: 'conclusion', size: { width: 100, height: 30 }, argumentId: 'Demo' })
+		if (!nodes.find(n => n.id === 'F1')) nodes = nodes.concat({ id: 'F1', label: 'F1', color: '#DC143C', type: 'fallacy', size: { width: 100, height: 30 }, argumentId: 'Demo' })
+		// add demo informal and temporal nodes
+		if (!nodes.find(n => n.id === 'INF1')) nodes = nodes.concat({ id: 'INF1', label: 'Informal Note', color: '#ffb74d', type: 'informal', size: { width: 120, height: 26 }, argumentId: 'Demo' })
+		if (!nodes.find(n => n.id === 'TMP1')) nodes = nodes.concat({ id: 'TMP1', label: 't0..t3', color: '#64b5f6', type: 'temporal', size: { width: 90, height: 26 }, argumentId: 'Demo' })
+		edges = edges.concat(
+			{ from: nodes[1]?.id || 'T1', to: 'C2', weight: 72, style: 'solid', rule: 'Inference' },
+			{ from: 'F1', to: nodes[1]?.id || 'T1', weight: 50, style: 'dotted', rule: 'Fallacy Link', type: 'counterexample' },
+			{ from: 'INF1', to: 'T1', weight: 40, style: 'dotted', rule: 'Informal Context', type: 'semantic' },
+			{ from: 'TMP1', to: 'C', weight: 60, style: 'dashed', rule: 'Temporal Lead', type: 'semantic' },
+		)
+	}
 	const examples: NecessarySufficientExample[] = [
 		{ id: 'ex', title: 'If A then B', necessary: 'A', sufficient: 'B' },
 	]
@@ -52,6 +69,7 @@ const LogicVisualizer: React.FC = () => {
 	const [searchId, setSearchId] = React.useState<string>('')
 	const [searchTrigger, setSearchTrigger] = React.useState<number>(0)
     const [shortcutsOpen, setShortcutsOpen] = React.useState(false)
+    const [truthAst, setTruthAst] = React.useState<AstNodeRec | null>(null)
 	const searchInputRef = React.useRef<HTMLInputElement | null>(null)
 
 	React.useEffect(() => {
@@ -203,6 +221,13 @@ const LogicVisualizer: React.FC = () => {
 								</Button>
 							</Stack>
 						</NeonCard>
+						<NeonCard title="Modes">
+							<FormGroup row>
+								{(['classical','epistemic','deontic','temporal','informal','paraconsistent','fuzzy'] as const).map(m => (
+									<FormControlLabel key={m} control={<Checkbox checked={!!modes[m]} onChange={(_, checked)=> setModes((prev: any) => ({ ...prev, [m]: checked }))} />} label={m} />
+								))}
+							</FormGroup>
+						</NeonCard>
 						<NeonCard title="View">
 							<ToggleButtonGroup
 								color="primary"
@@ -217,7 +242,19 @@ const LogicVisualizer: React.FC = () => {
 							</ToggleButtonGroup>
 							<Button size="small" variant="outlined" sx={{ ml: 1 }} onClick={() => setShortcutsOpen(true)}>Shortcuts</Button>
 							<Button size="small" variant="outlined" sx={{ ml: 1 }} onClick={toggleQS}>{qsDismissed ? 'Show Quick Start' : 'Hide Quick Start'}</Button>
+							<Button size="small" variant={showDemoExtras ? 'contained' : 'outlined'} sx={{ ml: 1 }} onClick={() => setShowDemoExtras(v=>!v)}>Demo Extras</Button>
 						</NeonCard>
+						{(truthAst || ast) && (
+							<NeonCard title={truthAst ? 'Truth Table (node expression)' : 'Truth Table'}>
+								{truthAst && (
+									<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+										<Typography variant="body2" color="text.secondary">Viewing table for selected node expression</Typography>
+										<Button size="small" variant="outlined" onClick={()=> setTruthAst(null)}>Close</Button>
+									</Box>
+								)}
+								<TruthTable ast={truthAst || ast!} />
+							</NeonCard>
+						)}
 						<NeonCard title="Find Node">
 							<Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
 								<Autocomplete
@@ -253,7 +290,16 @@ const LogicVisualizer: React.FC = () => {
 						</NeonCard>
 						{(viewMode === 'graph' || viewMode === 'both') && (
 							<NeonCard title="ZLFN Graph">
-								<ZlfnGraph nodes={nodes} edges={edges} storageKey={currentExpression} onInfo={msg => showInfo(msg, 'success')} centerOnNodeId={searchId || undefined} centerOnNodeTrigger={searchTrigger} onEdgeSelect={setSelectedEdge} />
+								<ZlfnGraph
+									nodes={nodes}
+									edges={edges}
+									storageKey={currentExpression}
+									onInfo={msg => showInfo(msg, 'success')}
+									centerOnNodeId={searchId || undefined}
+									centerOnNodeTrigger={searchTrigger}
+									onEdgeSelect={setSelectedEdge}
+									onOpenTruthTable={(expr) => { const ta = parseExpressionToAst(expr); if (ta) { setTruthAst(ta); showInfo('Opened Truth Table for node expression') } }}
+								/>
 							</NeonCard>
 						)}
 						{(viewMode === 'ast' || viewMode === 'both') && (
