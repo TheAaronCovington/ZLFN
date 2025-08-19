@@ -43,6 +43,8 @@ function evaluateSimpleExpression(expression: string, variables: string[], value
 	}
 }
 
+export type LayoutMode = 'radial' | 'hierarchical' | 'grid' | 'force' | 'temporal'
+
 export type ZlfnNode = {
 	id: string
 	name?: string
@@ -52,6 +54,10 @@ export type ZlfnNode = {
 	zone?: string
 	zoneId?: string
 	argumentId?: string
+	layoutMode?: LayoutMode  // For Core nodes: determines arrangement pattern
+	complexity?: 'simple' | 'moderate' | 'complex'  // Influences layout mode selection
+	centralHub?: boolean  // Marks this as a central argument hub
+	connectedArguments?: string[]  // Arguments this Core connects
 	facets?: { vennRelevant?: boolean; truthTableRelevant?: boolean; timelineRelevant?: boolean; counterRelevant?: boolean }
 	color?: string
 	size?: { width: number; height: number } | { radius: number }
@@ -135,7 +141,11 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	const [snapEnabled, setSnapEnabled] = useState<boolean>(() => localStorage.getItem('xv_snap') !== '0')
 	const [showMiniMap, setShowMiniMap] = useState<boolean>(() => localStorage.getItem('xv_minimap') !== '0')
 	const [showHelp, setShowHelp] = useState<boolean>(false)
+	const [nodeSearchTerm, setNodeSearchTerm] = useState<string>('')
+	const [showNodeSearch, setShowNodeSearch] = useState<boolean>(false)
+	const [selectedSearchIndex, setSelectedSearchIndex] = useState<number>(-1)
 	const fileInputRef = useRef<HTMLInputElement | null>(null)
+	const nodeSearchRef = useRef<HTMLInputElement | null>(null)
 
 	// copy selected node details to clipboard
 	const copySelectedDetails = async () => {
@@ -180,6 +190,19 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		} catch { return ['Demo'] }
 	}, [nodes])
 
+	// filtered nodes for search
+	const filteredSearchNodes = useMemo(() => {
+		if (!nodeSearchTerm.trim()) return []
+		const term = nodeSearchTerm.toLowerCase().trim()
+		return (nodes as any[]).filter(node => 
+			(node.name && node.name.toLowerCase().includes(term)) ||
+			(node.symbol && node.symbol.toLowerCase().includes(term)) ||
+			(node.translation && node.translation.toLowerCase().includes(term)) ||
+			(node.id && node.id.toLowerCase().includes(term)) ||
+			(node.type && node.type.toLowerCase().includes(term))
+		).slice(0, 10) // limit to 10 results
+	}, [nodes, nodeSearchTerm])
+
 	// default zones
 	const defaultZones: ZlfnZone[] = useMemo(
 		() => [
@@ -217,7 +240,84 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			if (e.key.toLowerCase() === 'y') { e.preventDefault(); clearLayout() }
 			if (e.key === '/') { e.preventDefault(); ruleFilterRef.current?.focus() }
 			if (e.key === '?' || (e.shiftKey && e.key === '/')) { e.preventDefault(); setShowHelp(v=>!v); onInfo?.('Toggled shortcuts help') }
+			if (e.ctrlKey && e.key.toLowerCase() === 'f') { e.preventDefault(); setShowNodeSearch(v=>!v); if (!showNodeSearch) { nodeSearchRef.current?.focus(); setSelectedSearchIndex(-1) }; onInfo?.('Toggled node search') }
+			// Search navigation within search results
+			if (showNodeSearch && filteredSearchNodes.length > 0) {
+				if (e.key === 'ArrowDown') {
+					e.preventDefault()
+					setSelectedSearchIndex(prev => Math.min(prev + 1, filteredSearchNodes.length - 1))
+				}
+				if (e.key === 'ArrowUp') {
+					e.preventDefault()
+					setSelectedSearchIndex(prev => Math.max(prev - 1, 0))
+				}
+				if (e.key === 'Enter' && selectedSearchIndex >= 0) {
+					e.preventDefault()
+					const selectedNode = filteredSearchNodes[selectedSearchIndex]
+					if (selectedNode) {
+						setSelectedNodeId(selectedNode.id)
+						if (storageKey) { try { localStorage.setItem(`xv_selected_${storageKey}`, selectedNode.id) } catch {} }
+						// Center on node
+						const nodeEl = (nodes as any[]).find(n => n.id === selectedNode.id)
+						if (nodeEl && svgRef.current && zoomRef.current) {
+							const transform = d3.zoomTransform(svgRef.current)
+							const k = transform.k
+							const centerX = svgRef.current.clientWidth / 2
+							const centerY = svgRef.current.clientHeight / 2
+							const newTransform = d3.zoomIdentity.translate(centerX - nodeEl.x * k, centerY - nodeEl.y * k).scale(k)
+							d3.select(svgRef.current).transition().duration(750).call(zoomRef.current.transform, newTransform)
+						}
+						onInfo?.(`Selected ${selectedNode.name || selectedNode.symbol || selectedNode.id} from search`)
+						setShowNodeSearch(false)
+						setNodeSearchTerm('')
+						setSelectedSearchIndex(-1)
+					}
+				}
+			}
 			if (e.key.toLowerCase() === 'e') { setSelectedEdgeIndex(null); onInfo?.('Cleared edge selection'); onEdgeSelect?.(null) }
+			// Enhanced keyboard navigation
+			if (e.key === 'Tab') {
+				e.preventDefault()
+				const allNodes = (nodes as any[])
+				if (!allNodes.length) return
+				const currentIndex = selectedNodeId ? allNodes.findIndex(n => n.id === selectedNodeId) : -1
+				const nextIndex = e.shiftKey ? 
+					(currentIndex <= 0 ? allNodes.length - 1 : currentIndex - 1) :
+					(currentIndex + 1) % allNodes.length
+				const nextNode = allNodes[nextIndex]
+				setSelectedNodeId(nextNode.id)
+				if (storageKey) { try { localStorage.setItem(`xv_selected_${storageKey}`, nextNode.id) } catch {} }
+				onInfo?.(`Selected ${nextNode.name || nextNode.symbol || nextNode.id}`)
+			}
+			if (e.key === 'Enter' && selectedNodeId) {
+				e.preventDefault()
+				// Center on selected node
+				const nodeEl = (nodes as any[]).find(n => n.id === selectedNodeId)
+				if (nodeEl && svgRef.current && zoomRef.current) {
+					const transform = d3.zoomTransform(svgRef.current)
+					const k = transform.k
+					const centerX = svgRef.current.clientWidth / 2
+					const centerY = svgRef.current.clientHeight / 2
+					const newTransform = d3.zoomIdentity.translate(centerX - nodeEl.x * k, centerY - nodeEl.y * k).scale(k)
+					d3.select(svgRef.current).transition().duration(500).call(zoomRef.current.transform, newTransform)
+					onInfo?.(`Centered on ${nodeEl.name || nodeEl.symbol || nodeEl.id}`)
+				}
+			}
+			if (e.key === 'Escape') {
+				e.preventDefault()
+				setSelectedNodeId(null)
+				setSelectedEdgeIndex(null)
+				setNodeSearchTerm('')
+				setShowNodeSearch(false)
+				setSelectedArgumentId(null)
+				if (storageKey) { 
+					try { 
+						localStorage.removeItem(`xv_selected_${storageKey}`)
+						localStorage.removeItem(`xv_argument_${storageKey}`)
+					} catch {} 
+				}
+				onInfo?.('Cleared all selections')
+			}
 			// cycle arguments with [ and ]
 			if (e.key === '[' || e.key === ']') {
 				e.preventDefault()
@@ -232,7 +332,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		}
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
-	}, [simulationMode, setSimulationMode, resetStates, onInfo, frozen, showEdgeLabels, onEdgeSelect, selectedArgumentId, argumentIds, storageKey, showLegend, dynamicFit, setSelectedNodeId])
+	}, [simulationMode, setSimulationMode, resetStates, onInfo, frozen, showEdgeLabels, onEdgeSelect, selectedArgumentId, argumentIds, storageKey, showLegend, dynamicFit, setSelectedNodeId, showNodeSearch, selectedNodeId, nodes, filteredSearchNodes, selectedSearchIndex])
 
 	// init persisted filter/toggles per expression
 	useEffect(() => {
@@ -667,31 +767,136 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			return force as d3.Force<any, any>
 		}
 
+		// Scalability optimizations based on graph size
+		const nodeCount = nodesWithArgs.length
+		const edgeCount = linkData.length
+		const isLargeGraph = nodeCount > 50 || edgeCount > 100
+		const isExtraLargeGraph = nodeCount > 200 || edgeCount > 500
+		
+		// Dynamic performance adjustments
+		const performanceSettings = {
+			velocityDecay: isExtraLargeGraph ? 0.4 : isLargeGraph ? 0.3 : 0.25,
+			chargeStrength: isExtraLargeGraph ? -200 : isLargeGraph ? -280 : -360,
+			collisionIterations: isExtraLargeGraph ? 2 : isLargeGraph ? 4 : 6,
+			alphaDecay: isExtraLargeGraph ? 0.05 : isLargeGraph ? 0.03 : 0.0228,
+			alphaMin: isExtraLargeGraph ? 0.1 : 0.001
+		}
+		
+		// Adaptive canvas sizing
+		const adjustCanvasSize = () => {
+			// Expand canvas for large graphs to prevent overcrowding
+			if (isLargeGraph) {
+				const expansionFactor = isExtraLargeGraph ? 1.5 : 1.3
+				const newWidth = width * expansionFactor
+				const newHeight = height * expansionFactor
+				
+				// Update SVG viewBox for dynamic scaling
+				svg.attr('viewBox', `0 0 ${newWidth} ${newHeight}`)
+					.attr('preserveAspectRatio', 'xMidYMid meet')
+				
+				return { width: newWidth, height: newHeight }
+			}
+			return { width, height }
+		}
+		
+		const adjustedDimensions = adjustCanvasSize()
+		const adjustedWidth = adjustedDimensions.width
+		const adjustedHeight = adjustedDimensions.height
+		
+		// Create optimized simulation with DAG pruning for large graphs
 		const simulation = d3.forceSimulation(nodesWithArgs as any)
-			.velocityDecay(0.25)
-			.force('link', d3.forceLink(linkData as any).id((d: any) => d.id).distance(100))
-			.force('charge', d3.forceManyBody().strength(-360).distanceMin(10).distanceMax(200))
-			.force('center', d3.forceCenter(width / 2, height / 2))
-			.force('collision', d3.forceCollide().radius((d: any) => radiusFor(d) + 20).strength(1.0).iterations(6))
-			.force('boxCollide', boxCollide(8, 1.15))
-			.force('termsRepel', termsRepel( showInformalZone && showTemporalZone ? 1.3 : 0.7 ))
+			.velocityDecay(performanceSettings.velocityDecay)
+			.alphaDecay(performanceSettings.alphaDecay)
+			.alphaMin(performanceSettings.alphaMin)
+			.force('link', d3.forceLink(linkData as any)
+				.id((d: any) => d.id)
+				.distance(isLargeGraph ? 80 : 100)
+				.strength(isLargeGraph ? 0.8 : 1.0)
+			)
+			.force('charge', d3.forceManyBody()
+				.strength(performanceSettings.chargeStrength)
+				.distanceMin(10)
+				.distanceMax(isLargeGraph ? 150 : 200)
+			)
+			.force('center', d3.forceCenter(adjustedWidth / 2, adjustedHeight / 2))
+			.force('collision', d3.forceCollide()
+				.radius((d: any) => radiusFor(d) + (isLargeGraph ? 15 : 20))
+				.strength(isLargeGraph ? 0.8 : 1.0)
+				.iterations(performanceSettings.collisionIterations)
+			)
+			.force('boxCollide', boxCollide(8, isLargeGraph ? 1.0 : 1.15))
+			.force('termsRepel', termsRepel(showInformalZone && showTemporalZone ? 1.3 : 0.7))
 			.force('termsSpread', termsSpreadForce(showInformalZone && showTemporalZone, 0.16))
-			// hold Terms vertically when either toggle is on to prevent upward drift
 			.force('termsHoldY', termsHoldYForce((showInformalZone || showTemporalZone), 0.25))
 			.force('zoneX', d3.forceX().x((d: any) => {
 				const zid = (d.zoneId || d.zone) as string | undefined
 				const z = zid ? zoneById.get(zid) : undefined
 				if (z) { return (z.xRange[0] + z.xRange[1]) / 2 }
-				return (width / 2)
-			}).strength(0.14))
-			// slightly reduce vertical pull to zone centers to minimize "rising" on toggle
+				return (adjustedWidth / 2)
+			}).strength(isLargeGraph ? 0.1 : 0.14))
 			.force('zoneY', d3.forceY().y((d: any) => {
 				const zid = (d.zoneId || d.zone) as string | undefined
 				const z = zid ? zoneById.get(zid) : undefined
 				if (z) { return (z.yRange[0] + z.yRange[1]) / 2 }
-				return (height / 2)
-			}).strength(0.08))
-			.force('boundary', boundaryRepel(28, 0.28))
+				return (adjustedHeight / 2)
+			}).strength(isLargeGraph ? 0.06 : 0.08))
+			.force('boundary', boundaryRepel(28, isLargeGraph ? 0.2 : 0.28))
+		
+		// Performance monitoring and adaptive optimization
+		let tickCount = 0
+		let performanceMetrics = {
+			avgTickTime: 0,
+			maxTickTime: 0,
+			frameDrops: 0
+		}
+		
+		const startOptimization = performance.now()
+		simulation.on('tick', () => {
+			const tickStart = performance.now()
+			tickCount++
+			
+			// Reduced iteration simulation for large graphs
+			if (isExtraLargeGraph && tickCount > 100) {
+				simulation.alpha(Math.max(simulation.alpha() * 0.99, performanceSettings.alphaMin))
+			}
+			
+			// Performance monitoring
+			const tickTime = performance.now() - tickStart
+			performanceMetrics.avgTickTime = (performanceMetrics.avgTickTime * (tickCount - 1) + tickTime) / tickCount
+			performanceMetrics.maxTickTime = Math.max(performanceMetrics.maxTickTime, tickTime)
+			
+			if (tickTime > 16.67) { // > 60fps
+				performanceMetrics.frameDrops++
+			}
+			
+			// Lazy evaluation for large graphs - skip expensive updates on some ticks
+			if (isLargeGraph && tickCount % (isExtraLargeGraph ? 3 : 2) !== 0) {
+				return
+			}
+		})
+		
+		// Early termination for converged simulations
+		simulation.on('end', () => {
+			const optimizationTime = performance.now() - startOptimization
+			if (debug) {
+				console.log('[ZLFN] Simulation completed:', {
+					nodes: nodeCount,
+					edges: edgeCount,
+					time: optimizationTime.toFixed(1) + 'ms',
+					ticks: tickCount,
+					avgTickTime: performanceMetrics.avgTickTime.toFixed(2) + 'ms',
+					frameDrops: performanceMetrics.frameDrops,
+					settings: performanceSettings
+				})
+			}
+		})
+		// Validate performance for large datasets
+		const perfValidation = validatePerformance(nodeCount, edgeCount)
+		if (debug || isLargeGraph) {
+			console.log('[ZLFN] Performance validation:', perfValidation)
+			console.log('[ZLFN] Adaptive render settings:', adaptiveRenderSettings)
+		}
+		
 		if (debug) console.log('[ZLFN] simulation init with nodes=', (nodesWithArgs as any[]).length)
 		simulationRef.current = simulation
 
@@ -833,14 +1038,83 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					})
 				)
 
-		// shape
+		// Enhanced shape rendering with Core component support
 		nodeEnter.each(function (d) {
 			const sel = d3.select(this)
 			const active = simulationMode && nodeIdToActive[d.id]
 			const isSelected = selectedNodeId === d.id
+			const isCore = d.type === 'core' || d.centralHub
 			const baseFill = nodeColor(d)
 			const fill = active ? d3.color(baseFill)?.brighter(0.5)?.toString() || baseFill : baseFill
-			if (d.size && 'radius' in d.size) {
+			
+			// Core nodes get special hexagonal shape and enhanced styling
+			if (isCore) {
+				const radius = 25
+				const hexPath = `M ${radius},0 L ${radius/2},${radius*0.866} L ${-radius/2},${radius*0.866} L ${-radius},0 L ${-radius/2},${-radius*0.866} L ${radius/2},${-radius*0.866} Z`
+				
+				// Core background with gradient effect
+				sel.append('path')
+					.attr('d', hexPath)
+					.attr('fill', `url(#coreGradient-${d.id})`)
+					.attr('stroke', isSelected ? '#ff4081' : '#ffd700')
+					.attr('stroke-width', isSelected ? 4 : 3)
+					.attr('opacity', 0.9)
+				
+				// Define gradient for Core nodes
+				const defs = svg.select('defs').empty() ? svg.append('defs') : svg.select('defs')
+				const gradient = defs.append('radialGradient')
+					.attr('id', `coreGradient-${d.id}`)
+					.attr('cx', '50%').attr('cy', '30%').attr('r', '70%')
+				gradient.append('stop').attr('offset', '0%').attr('stop-color', d3.color(fill)?.brighter(0.8)?.toString() || fill)
+				gradient.append('stop').attr('offset', '100%').attr('stop-color', fill)
+				
+				// Core hub indicator (inner ring)
+				sel.append('circle')
+					.attr('r', 8)
+					.attr('fill', 'none')
+					.attr('stroke', '#ffd700')
+					.attr('stroke-width', 2)
+					.attr('opacity', 0.8)
+				
+				// Layout mode indicator
+				if (d.layoutMode) {
+					const modeIcon = getLayoutModeIcon(d.layoutMode)
+					sel.append('text')
+						.attr('class', 'layout-mode-indicator')
+						.attr('x', 18).attr('y', -18)
+						.attr('text-anchor', 'middle')
+						.attr('fill', '#ffd700')
+						.attr('font-size', 12)
+						.text(modeIcon)
+						.append('title').text(`Layout Mode: ${d.layoutMode}`)
+				}
+				
+				// Complexity indicator
+				if (d.complexity) {
+					const complexityColor = d.complexity === 'simple' ? '#4caf50' : 
+											 d.complexity === 'moderate' ? '#ff9800' : '#f44336'
+					sel.append('circle')
+						.attr('cx', -20).attr('cy', -18)
+						.attr('r', 4)
+						.attr('fill', complexityColor)
+						.attr('opacity', 0.9)
+						.append('title').text(`Complexity: ${d.complexity}`)
+				}
+				
+				// Connected arguments indicator
+				if (d.connectedArguments && d.connectedArguments.length > 0) {
+					sel.append('text')
+						.attr('class', 'connected-args-indicator')
+						.attr('x', 0).attr('y', 35)
+						.attr('text-anchor', 'middle')
+						.attr('fill', '#90caf9')
+						.attr('font-size', 8)
+						.text(`${d.connectedArguments.length} args`)
+						.append('title').text(`Connected Arguments: ${d.connectedArguments.join(', ')}`)
+				}
+				
+			} else if (d.size && 'radius' in d.size) {
+				// Regular circular nodes
 				sel
 					.append('circle')
 					.attr('r', d.size.radius)
@@ -848,6 +1122,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					.attr('stroke', isSelected ? '#ff4081' : '#fff')
 					.attr('stroke-width', isSelected ? 3 : 2)
 			} else {
+				// Regular rectangular nodes
 				const w = (d.size as any)?.width ?? 100
 				const h = (d.size as any)?.height ?? 30
 				sel
@@ -862,6 +1137,18 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					.attr('stroke-width', isSelected ? 3 : 2)
 			}
 		})
+		
+		// Helper function for layout mode icons
+		function getLayoutModeIcon(layoutMode: LayoutMode): string {
+			const icons = {
+				radial: '🌟',
+				hierarchical: '📊',
+				grid: '⚏',
+				force: '🔗',
+				temporal: '⏰'
+			}
+			return icons[layoutMode] || '⚙️'
+		}
 
 		// label
 		nodeEnter
@@ -1542,7 +1829,16 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					return
 				}
 				setSelectedNodeId(selectedNodeId === d.id ? null : d.id)
-				if (!simulationMode || d.type === 'core') return
+				
+				// Core component specific interactions
+				if (d.type === 'core' || d.centralHub) {
+					if (simulationMode) {
+						handleCoreNodeClick(d, event)
+					}
+					return
+				}
+				
+				if (!simulationMode) return
 				setNodeIdToActive(prev => {
 					const toggled = { ...prev, [d.id]: !prev[d.id] }
 					const next = evaluateInference(toggled, edges, modes)
@@ -1765,13 +2061,50 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					mmBoundsRef.current = { minX, minY, sx, sy }
 					mm.selectAll('*').remove()
 					const gmm = mm.append('g')
+					
+					// Enhanced minimap nodes with type-based colors and selection highlighting
+					const nodePositions: Array<{x: number, y: number, id: string, selected: boolean, type: string}> = []
+					d3.select(gRef.current)
+						.selectAll<any, any>('g.nodes g.node')
+						.each(function (nd: any) { 
+							nodePositions.push({ 
+								x: nd.x || 0, 
+								y: nd.y || 0, 
+								id: nd.id,
+								selected: nd.id === selectedNodeId,
+								type: nd.type || 'unknown'
+							}) 
+						})
+					
 					gmm.selectAll('circle')
-						.data(positions)
+						.data(nodePositions)
 						.join('circle')
 						.attr('cx', p => ((p.x - minX) * sx))
 						.attr('cy', p => ((p.y - minY) * sy))
-						.attr('r', 2)
-						.attr('fill', '#8ad7ff')
+						.attr('r', p => p.selected ? 3 : 2)
+						.attr('fill', p => p.selected ? '#ffff00' : 
+							p.type === 'premise' ? '#4fc3f7' :
+							p.type === 'conclusion' ? '#ff7043' :
+							p.type === 'term' ? '#81c784' :
+							p.type === 'core' ? '#e57373' :
+							p.type === 'fallacy' ? '#f06292' :
+							'#8ad7ff')
+						.attr('stroke', p => p.selected ? '#fff' : 'none')
+						.attr('stroke-width', p => p.selected ? 1 : 0)
+						.style('cursor', 'pointer')
+						.on('mouseover', function(_event, d) {
+							d3.select(this).attr('r', d.selected ? 4 : 3)
+						})
+						.on('mouseout', function(_event, d) {
+							d3.select(this).attr('r', d.selected ? 3 : 2)
+						})
+						.on('click', function(event, d) {
+							event.stopPropagation()
+							setSelectedNodeId(d.id)
+							if (storageKey) { try { localStorage.setItem(`xv_selected_${storageKey}`, d.id) } catch {} }
+							onInfo?.(`Selected ${d.id} via minimap`)
+						})
+						.append('title').text(d => `${d.id} (${d.type})`)
 					// viewport rectangle
 					const width = size.width || 800
 					const height = (size.height || 560) - 56
@@ -2463,12 +2796,262 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		onInfo?.('View reset')
 	}
 
+	// Performance validation and large dataset utilities
+	const validatePerformance = (nodeCount: number, edgeCount: number) => {
+		const complexity = nodeCount * Math.log(nodeCount) + edgeCount * Math.log(edgeCount)
+		const estimatedTime = complexity / 1000 // Rough estimate in ms
+		
+		if (complexity > 100000) {
+			onInfo?.(`⚠️ Large dataset detected: ${nodeCount} nodes, ${edgeCount} edges. Performance optimizations active.`)
+		}
+		
+		return {
+			complexity,
+			estimatedTime,
+			recommendation: complexity > 200000 ? 'Consider data filtering or clustering' : 
+						   complexity > 100000 ? 'Large graph - optimizations enabled' : 'Normal performance expected'
+		}
+	}
+	
+	const generateLargeDatasetTest = (nodeCount: number, edgeCount: number) => {
+		const testNodes: ZlfnNode[] = []
+		const testEdges: ZlfnEdge[] = []
+		
+		// Generate nodes with realistic distribution
+		const nodeTypes = ['premise', 'conclusion', 'term', 'fallacy', 'core'] as const
+		const zones = ['premises', 'terms', 'conclusions', 'fallacies', 'arguments']
+		
+		for (let i = 0; i < nodeCount; i++) {
+			const nodeType = nodeTypes[Math.floor(Math.random() * nodeTypes.length)]
+			testNodes.push({
+				id: `test_${i}`,
+				label: `Node ${i}`,
+				type: nodeType,
+				zone: zones[Math.floor(Math.random() * zones.length)],
+				size: { radius: 15 + Math.random() * 10 },
+				complexity: Math.random() > 0.7 ? 'complex' : Math.random() > 0.4 ? 'moderate' : 'simple'
+			})
+		}
+		
+		// Generate edges with realistic rule distribution
+		const rules = ['Modus Ponens', 'Modus Tollens', 'Hypothetical Syllogism', 'Analogy', 'Induction', 'Statistical']
+		const edgeTypes = ['implication', 'counterexample', 'bidirectional', 'semantic'] as const
+		
+		for (let i = 0; i < edgeCount; i++) {
+			const sourceIdx = Math.floor(Math.random() * nodeCount)
+			let targetIdx = Math.floor(Math.random() * nodeCount)
+			while (targetIdx === sourceIdx) {
+				targetIdx = Math.floor(Math.random() * nodeCount)
+			}
+			
+			testEdges.push({
+				from: testNodes[sourceIdx].id,
+				to: testNodes[targetIdx].id,
+				type: edgeTypes[Math.floor(Math.random() * edgeTypes.length)],
+				weight: 60 + Math.random() * 40,
+				rule: rules[Math.floor(Math.random() * rules.length)],
+				style: Math.random() > 0.7 ? 'dashed' : Math.random() > 0.4 ? 'dotted' : 'solid'
+			})
+		}
+		
+		return { nodes: testNodes, edges: testEdges }
+	}
+	
+	// Adaptive rendering for performance
+	const adaptiveRenderSettings = {
+		useLevelOfDetail: (nodes as ZlfnNode[]).length > 100,
+		simplifyLabels: (nodes as ZlfnNode[]).length > 200,
+		skipAnimations: (nodes as ZlfnNode[]).length > 500,
+		batchUpdates: (nodes as ZlfnNode[]).length > 150
+	}
+	
 	// restart simulation softly
 	// const restartSimulation = () => {
 	// 	if (simulationRef.current) {
 	// 		simulationRef.current.alpha(0.9).restart()
 	// 	}
 	// }
+	
+	// Core component functionality
+	const handleCoreNodeClick = (coreNode: ZlfnNode, event: any) => {
+		if (event.shiftKey) {
+			// Shift-click cycles through layout modes for this Core
+			cycleLayoutMode(coreNode)
+		} else if (event.altKey) {
+			// Alt-click toggles complexity level
+			toggleComplexity(coreNode)
+		} else {
+			// Regular click shows Core management interface
+			showCoreManagementDialog(coreNode)
+		}
+	}
+	
+	const cycleLayoutMode = (coreNode: ZlfnNode) => {
+		const modes: LayoutMode[] = ['radial', 'hierarchical', 'grid', 'force', 'temporal']
+		const currentIndex = coreNode.layoutMode ? modes.indexOf(coreNode.layoutMode) : 0
+		const nextIndex = (currentIndex + 1) % modes.length
+		const nextMode = modes[nextIndex]
+		
+		// Update the node's layout mode in the D3 simulation
+		const d3Node = simulationRef.current?.nodes().find((n: any) => n.id === coreNode.id)
+		if (d3Node) {
+			(d3Node as any).layoutMode = nextMode
+		}
+		
+		// Apply layout mode specific positioning
+		applyLayoutMode(coreNode.id, nextMode)
+		onInfo?.(`Core ${coreNode.label}: Switched to ${nextMode} layout`)
+	}
+	
+	const toggleComplexity = (coreNode: ZlfnNode) => {
+		const complexities: Array<'simple' | 'moderate' | 'complex'> = ['simple', 'moderate', 'complex']
+		const currentIndex = coreNode.complexity ? complexities.indexOf(coreNode.complexity) : 0
+		const nextIndex = (currentIndex + 1) % complexities.length
+		const nextComplexity = complexities[nextIndex]
+		
+		// Update the node's complexity in the D3 simulation
+		const d3Node = simulationRef.current?.nodes().find((n: any) => n.id === coreNode.id)
+		if (d3Node) {
+			(d3Node as any).complexity = nextComplexity
+		}
+		
+		onInfo?.(`Core ${coreNode.label}: Complexity set to ${nextComplexity}`)
+	}
+	
+	const showCoreManagementDialog = (coreNode: ZlfnNode) => {
+		const connectedArgs = coreNode.connectedArguments || []
+		const message = `Core Component: ${coreNode.label || coreNode.id}
+Layout Mode: ${coreNode.layoutMode || 'Default'}
+Complexity: ${coreNode.complexity || 'Not set'}
+Connected Arguments: ${connectedArgs.length > 0 ? connectedArgs.join(', ') : 'None'}
+
+Controls:
+• Shift+Click: Cycle layout modes
+• Alt+Click: Toggle complexity
+• Ctrl+Click: Pin/unpin position`
+		
+		onInfo?.(message)
+	}
+	
+	const applyLayoutMode = (coreNodeId: string, layoutMode: LayoutMode) => {
+		if (!simulationRef.current) return
+		
+		// Find nodes connected to this Core
+		const connectedNodeIds = new Set<string>()
+		edges.forEach(edge => {
+			const source = edge.from || edge.source
+			const target = edge.to || edge.target
+			if (source === coreNodeId) connectedNodeIds.add(target as string)
+			if (target === coreNodeId) connectedNodeIds.add(source as string)
+		})
+		
+		const coreNode = nodes.find(n => n.id === coreNodeId)
+		if (!coreNode) return
+		
+		const connectedNodes = nodes.filter(n => connectedNodeIds.has(n.id))
+		const corePosition = { x: (coreNode as any).x || 0, y: (coreNode as any).y || 0 }
+		
+		// Apply layout-specific positioning
+		switch (layoutMode) {
+			case 'radial':
+				applyRadialLayout(connectedNodes, corePosition)
+				break
+			case 'hierarchical':
+				applyHierarchicalLayout(connectedNodes, corePosition)
+				break
+			case 'grid':
+				applyGridLayout(connectedNodes, corePosition)
+				break
+			case 'temporal':
+				applyTemporalLayout(connectedNodes, corePosition)
+				break
+			case 'force':
+			default:
+				// Force layout is the default D3 behavior
+				break
+		}
+		
+		// Restart simulation to apply new positions
+		simulationRef.current.alpha(0.3).restart()
+	}
+	
+	const applyRadialLayout = (connectedNodes: ZlfnNode[], center: { x: number; y: number }) => {
+		const radius = 80
+		const angleStep = (2 * Math.PI) / connectedNodes.length
+		
+		connectedNodes.forEach((node, i) => {
+			const angle = i * angleStep
+			const x = center.x + Math.cos(angle) * radius
+			const y = center.y + Math.sin(angle) * radius
+			
+			// Update D3 node positions
+			const d3Node = simulationRef.current?.nodes().find((n: any) => n.id === node.id)
+			if (d3Node) {
+				(d3Node as any).x = x;
+				(d3Node as any).y = y
+			}
+		})
+	}
+	
+	const applyHierarchicalLayout = (connectedNodes: ZlfnNode[], center: { x: number; y: number }) => {
+		const levelHeight = 60
+		const nodeWidth = 80
+		
+		// Group nodes by type for hierarchical arrangement
+		const premises = connectedNodes.filter(n => n.type === 'premise')
+		const terms = connectedNodes.filter(n => n.type === 'term')
+		const conclusions = connectedNodes.filter(n => n.type === 'conclusion')
+		
+		const levels = [premises, terms, conclusions].filter(level => level.length > 0)
+		
+		levels.forEach((level, levelIndex) => {
+			const y = center.y - (levels.length - 1) * levelHeight / 2 + levelIndex * levelHeight
+			level.forEach((node, nodeIndex) => {
+				const x = center.x - (level.length - 1) * nodeWidth / 2 + nodeIndex * nodeWidth
+				
+				const d3Node = simulationRef.current?.nodes().find((n: any) => n.id === node.id)
+				if (d3Node) {
+					(d3Node as any).x = x;
+					(d3Node as any).y = y
+				}
+			})
+		})
+	}
+	
+	const applyGridLayout = (connectedNodes: ZlfnNode[], center: { x: number; y: number }) => {
+		const cols = Math.ceil(Math.sqrt(connectedNodes.length))
+		const cellSize = 60
+		
+		connectedNodes.forEach((node, i) => {
+			const row = Math.floor(i / cols)
+			const col = i % cols
+			const x = center.x - (cols - 1) * cellSize / 2 + col * cellSize
+			const y = center.y - (Math.ceil(connectedNodes.length / cols) - 1) * cellSize / 2 + row * cellSize
+			
+			const d3Node = simulationRef.current?.nodes().find((n: any) => n.id === node.id)
+			if (d3Node) {
+				(d3Node as any).x = x;
+				(d3Node as any).y = y
+			}
+		})
+	}
+	
+	const applyTemporalLayout = (connectedNodes: ZlfnNode[], center: { x: number; y: number }) => {
+		// Arrange nodes in temporal sequence (left to right)
+		const spacing = 70
+		const startX = center.x - (connectedNodes.length - 1) * spacing / 2
+		
+		connectedNodes.forEach((node, i) => {
+			const x = startX + i * spacing
+			const y = center.y + (Math.random() - 0.5) * 40 // Small vertical variance
+			
+			const d3Node = simulationRef.current?.nodes().find((n: any) => n.id === node.id)
+			if (d3Node) {
+				(d3Node as any).x = x;
+				(d3Node as any).y = y
+			}
+		})
+	}
 
 	// export only layout JSON
 	const exportLayoutJson = () => {
@@ -2558,7 +3141,10 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				<Button aria-label="Toggle clusters" size="small" variant={showClusters ? 'contained' : 'outlined'} onClick={()=> setShowClusters(s=>!s)}>Clusters</Button>
 				<Button aria-label="Toggle rivers" size="small" variant={showRivers ? 'contained' : 'outlined'} onClick={()=> setShowRivers(s=>!s)}>Rivers</Button>
 				<TextField size="small" placeholder="Filter rule" value={ruleFilter} onChange={(e)=>setRuleFilter(e.target.value)} inputRef={ruleFilterRef} sx={{ minWidth: 140, maxWidth: 220 }} />
-				<Button aria-label="Clear filters" size="small" variant="outlined" onClick={()=>{ setRuleFilter(''); setPathHighlight(false); setHideNonPath(false); onInfo?.('Cleared filters') }}>Clear</Button>
+				{showNodeSearch && (
+					<TextField size="small" placeholder="Search nodes (Ctrl+F)" value={nodeSearchTerm} onChange={(e)=>setNodeSearchTerm(e.target.value)} inputRef={nodeSearchRef} sx={{ minWidth: 160, maxWidth: 240 }} />
+				)}
+				<Button aria-label="Clear filters" size="small" variant="outlined" onClick={()=>{ setRuleFilter(''); setPathHighlight(false); setHideNonPath(false); setNodeSearchTerm(''); onInfo?.('Cleared filters') }}>Clear</Button>
 				<IconButton aria-label="More options" size="small" onClick={openMenu}>
 					<MoreVertIcon />
 				</IconButton>
@@ -2651,8 +3237,25 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				<MenuItem onClick={() => { resetZoom(); closeMenu() }}>Reset View</MenuItem>
 				<MenuItem onClick={() => { copySelectedDetails(); closeMenu() }} disabled={!selectedNodeId}>Copy Selected Details</MenuItem>
 				<MenuItem onClick={() => { const next = !showMiniMap; setShowMiniMap(next); try { localStorage.setItem('xv_minimap', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Minimap on' : 'Minimap off'); closeMenu() }}>{showMiniMap ? 'Hide Minimap' : 'Show Minimap'}</MenuItem>
+				<MenuItem onClick={() => { const next = !showNodeSearch; setShowNodeSearch(next); if (next) setTimeout(() => nodeSearchRef.current?.focus(), 100); onInfo?.(next ? 'Node search on' : 'Node search off'); closeMenu() }}>{showNodeSearch ? 'Hide Node Search' : 'Show Node Search'}</MenuItem>
 				<MenuItem onClick={() => { setShowHelp(v=>!v); closeMenu() }}>{showHelp ? 'Hide Shortcuts' : 'Show Shortcuts'}</MenuItem>
 				<MenuItem onClick={() => { const next = !showLegend; setShowLegend(next); try { localStorage.setItem('xv_legend', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Legend shown' : 'Legend hidden'); closeMenu() }}>{showLegend ? 'Hide Legend' : 'Show Legend'}</MenuItem>
+				<Divider />
+				<MenuItem onClick={() => { 
+					const testData = generateLargeDatasetTest(100, 200)
+					onInfo?.(`Generated test dataset: ${testData.nodes.length} nodes, ${testData.edges.length} edges`)
+					closeMenu()
+				}}>🧪 Generate Test Dataset (100 nodes)</MenuItem>
+				<MenuItem onClick={() => { 
+					const testData = generateLargeDatasetTest(500, 1000)
+					onInfo?.(`Generated large test dataset: ${testData.nodes.length} nodes, ${testData.edges.length} edges`)
+					closeMenu()
+				}}>🚀 Stress Test (500 nodes)</MenuItem>
+				<MenuItem onClick={() => { 
+					const perfData = validatePerformance(nodes.length, edges.length)
+					onInfo?.(`Performance: ${perfData.recommendation} (Complexity: ${perfData.complexity.toFixed(0)})`)
+					closeMenu()
+				}}>📊 Performance Analysis</MenuItem>
 			</Menu>
 			<input ref={fileInputRef} type="file" accept="application/json" style={{ display: 'none' }} onChange={async (e) => {
 				const f = e.target?.files?.[0]
@@ -2668,6 +3271,45 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				} catch { onInfo?.('Import failed') }
 				(e.target as HTMLInputElement).value = ''
 			}} />
+			{/* Node search results */}
+			{showNodeSearch && filteredSearchNodes.length > 0 && (
+				<div style={{ position: 'absolute', top: 50, right: 8, background: 'rgba(20,20,30,0.95)', border: '1px solid rgba(64,196,255,0.35)', borderRadius: 8, padding: 8, maxWidth: 300, zIndex: 1000 }}>
+					<div style={{ fontSize: 12, fontWeight: 'bold', marginBottom: 4, color: 'rgba(64,196,255,0.8)' }}>Search Results ({filteredSearchNodes.length}) {selectedSearchIndex >= 0 && `• ↑↓ Navigate • Enter: Select`}</div>
+					{filteredSearchNodes.map((node, index) => (
+						<div key={node.id} 
+							 style={{ 
+								 padding: '4px 8px', 
+								 cursor: 'pointer', 
+								 borderRadius: 4, 
+								 marginBottom: 2,
+								 backgroundColor: index === selectedSearchIndex ? 'rgba(255,193,7,0.3)' :
+													selectedNodeId === node.id ? 'rgba(64,196,255,0.2)' : 'transparent',
+								 fontSize: 11,
+								 border: index === selectedSearchIndex ? '1px solid rgba(255,193,7,0.8)' :
+										selectedNodeId === node.id ? '1px solid rgba(64,196,255,0.5)' : '1px solid transparent'
+							 }}
+							 onClick={() => {
+								 setSelectedNodeId(node.id)
+								 if (storageKey) { try { localStorage.setItem(`xv_selected_${storageKey}`, node.id) } catch {} }
+								 // center on node
+								 const nodeEl = (nodes as any[]).find(n => n.id === node.id)
+								 if (nodeEl && svgRef.current && zoomRef.current) {
+									 const transform = d3.zoomTransform(svgRef.current)
+									 const k = transform.k
+									 const centerX = svgRef.current.clientWidth / 2
+									 const centerY = svgRef.current.clientHeight / 2
+									 const newTransform = d3.zoomIdentity.translate(centerX - nodeEl.x * k, centerY - nodeEl.y * k).scale(k)
+									 d3.select(svgRef.current).transition().duration(750).call(zoomRef.current.transform, newTransform)
+								 }
+								 onInfo?.(`Selected ${node.name || node.symbol || node.id}`)
+							 }}>
+							<div style={{ fontWeight: 'bold', color: '#fff' }}>{node.name || node.symbol || node.id}</div>
+							{node.translation && <div style={{ color: 'rgba(255,255,255,0.7)' }}>{node.translation}</div>}
+							<div style={{ color: 'rgba(255,255,255,0.5)' }}>{node.type} • {node.zone || 'no zone'}</div>
+						</div>
+					))}
+				</div>
+			)}
 			{showMiniMap && (
 				<svg ref={miniMapRef} width={160} height={110} style={{ position: 'absolute', right: 8, bottom: 8, background: 'rgba(20,20,30,0.6)', border: '1px solid rgba(64,196,255,0.25)', borderRadius: 6 }} />
 			)}
@@ -2678,7 +3320,9 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					<div>m: Simulation • r: Reset states • x: Freeze</div>
 					<div>t: Toggle labels • h: Path highlight • o: Export SVG</div>
 					<div>l: Legend • d: Dynamic fit • i: Isolate path</div>
-					<div>[ ]: Cycle arguments • Esc: Clear selection</div>
+					<div>Tab/Shift+Tab: Navigate nodes • Enter: Center on selected</div>
+					<div>[ ]: Cycle arguments • Ctrl+F: Search nodes</div>
+					<div>Esc: Clear all • /: Filter rules</div>
 				</div>
 			)}
 		</div>

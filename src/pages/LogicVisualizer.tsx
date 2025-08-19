@@ -44,9 +44,26 @@ const LogicVisualizer: React.FC = () => {
 		// add demo informal and temporal nodes
 		if (!nodes.find(n => n.id === 'INF1')) nodes = nodes.concat({ id: 'INF1', label: 'Informal Note', color: '#ffb74d', type: 'informal', size: { width: 120, height: 26 }, argumentId: 'Demo' })
 		if (!nodes.find(n => n.id === 'TMP1')) nodes = nodes.concat({ id: 'TMP1', label: 't0..t3', color: '#64b5f6', type: 'temporal', size: { width: 90, height: 26 }, argumentId: 'Demo' })
+		// add Core component as central argument hub
+		if (!nodes.find(n => n.id === 'CORE1')) {
+			nodes = nodes.concat({ 
+				id: 'CORE1', 
+				label: 'Core Hub', 
+				color: '#ffd700', 
+				type: 'core', 
+				layoutMode: 'radial',
+				complexity: 'moderate',
+				centralHub: true,
+				connectedArguments: ['Demo', 'Secondary'],
+				size: { radius: 30 }, 
+				argumentId: 'Demo' 
+			})
+		}
 		edges = edges.concat(
 			{ from: nodes[1]?.id || 'T1', to: 'C2', weight: 72, style: 'solid', rule: 'Inference' },
 			{ from: 'F1', to: nodes[1]?.id || 'T1', weight: 50, style: 'dotted', rule: 'Fallacy Link', type: 'counterexample' },
+			{ from: 'CORE1', to: 'P1', weight: 90, style: 'solid', rule: 'Core Connection' },
+			{ from: 'CORE1', to: 'C', weight: 88, style: 'solid', rule: 'Core Connection' },
 			{ from: 'INF1', to: 'T1', weight: 40, style: 'dotted', rule: 'Informal Context', type: 'semantic' },
 			{ from: 'TMP1', to: 'C', weight: 60, style: 'dashed', rule: 'Temporal Lead', type: 'semantic' },
 		)

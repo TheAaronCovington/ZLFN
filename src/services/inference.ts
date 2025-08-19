@@ -64,7 +64,18 @@ const LOGICAL_RULES = {
 	'Equivocation': { modes: ['classical', 'epistemic', 'deontic', 'temporal', 'informal'], strength: -0.4 }
 } as const
 
-export function validateRule(rule?: string, modes?: Partial<Record<LogicMode, boolean>>): boolean {
+// Enhanced context-aware rule validation
+export function validateRule(
+	rule?: string, 
+	modes?: Partial<Record<LogicMode, boolean>>,
+	context?: {
+		sourceNode?: { type?: string; symbol?: string }
+		targetNode?: { type?: string; symbol?: string }
+		edgeType?: string
+		weight?: number
+		argumentComplexity?: 'simple' | 'moderate' | 'complex'
+	}
+): boolean {
 	if (!rule) return true // Unknown rules are allowed by default
 	
 	const ruleInfo = LOGICAL_RULES[rule as keyof typeof LOGICAL_RULES]
@@ -76,7 +87,74 @@ export function validateRule(rule?: string, modes?: Partial<Record<LogicMode, bo
 	const activeModes = Object.keys(modes).filter(m => modes[m as LogicMode])
 	if (activeModes.length === 0) return true // No active modes
 	
-	return ruleInfo.modes.some(validMode => activeModes.includes(validMode))
+	// Basic mode compatibility check
+	const basicValidation = ruleInfo.modes.some(validMode => activeModes.includes(validMode))
+	if (!basicValidation) return false
+	
+	// Enhanced context-specific validation
+	if (context) {
+		// Validate based on edge type and rule compatibility
+		if (context.edgeType === 'counterexample' && !rule.toLowerCase().includes('fallacy') && !rule.toLowerCase().includes('counter')) {
+			// Counterexample edges should generally use fallacy or counter rules
+			if (ruleInfo.strength > 0) return false
+		}
+		
+		// Validate based on node type compatibility
+		if (context.sourceNode?.type === 'premise' && context.targetNode?.type === 'conclusion') {
+			// Direct premise-to-conclusion should use strong inference rules
+			if (['Analogy', 'Authority', 'Testimony'].includes(rule)) {
+				return activeModes.includes('informal') // Only allow in informal mode
+			}
+		}
+		
+		// Validate based on weight and rule strength consistency
+		if (context.weight !== undefined) {
+			const expectedStrength = Math.abs(ruleInfo.strength)
+			const weightThreshold = context.weight / 100
+			
+			// Strong rules should have high weights, weak rules should have low weights
+			if (expectedStrength > 0.8 && weightThreshold < 0.6) return false
+			if (expectedStrength < 0.5 && weightThreshold > 0.8) return false
+		}
+		
+		// Validate based on argument complexity
+		if (context.argumentComplexity) {
+			switch (context.argumentComplexity) {
+				case 'simple':
+					// Simple arguments should avoid complex epistemic or deontic rules
+					if (['Knowledge Closure', 'Belief Revision', 'Deontic Closure'].includes(rule)) return false
+					break
+				case 'complex':
+					// Complex arguments can benefit from sophisticated reasoning rules
+					if (rule === 'Authority' && !activeModes.includes('informal')) return false
+					break
+			}
+		}
+		
+		// Temporal logic specific validations
+		if (activeModes.includes('temporal')) {
+			if (context.sourceNode?.type === 'temporal' || context.targetNode?.type === 'temporal') {
+				// Temporal nodes should primarily use temporal rules
+				const validTemporalRules = ['Temporal Succession', 'Causality', 'Before/After']
+				const hasTemporal = ruleInfo.modes.some(m => m === 'temporal')
+				if (!validTemporalRules.includes(rule) && !hasTemporal) {
+					return false
+				}
+			}
+		}
+		
+		// Paraconsistent logic validations
+		if (activeModes.includes('paraconsistent')) {
+			// In paraconsistent logic, classical contradictions are handled differently
+			if (rule === 'Explosion Prevention') return true // Always valid in paraconsistent
+			if (['Double Negation', 'Contraposition'].includes(rule)) {
+				// These may not hold in paraconsistent systems
+				return context.weight ? context.weight < 80 : false
+			}
+		}
+	}
+	
+	return true
 }
 
 export function getRuleStrength(rule?: string, modes?: Partial<Record<LogicMode, boolean>>): number {
@@ -250,6 +328,263 @@ export function propagateWithDependencies(
 	}
 	
 	return { result: current, dependencies, iterations: iteration }
+}
+
+// Dynamic representation with adaptive algorithms
+export function dynamicEvaluate(
+	nodes: Array<{ id: string; type?: string; symbol?: string; complexity?: string }>,
+	edges: InferenceEdge[],
+	active: Record<string, boolean>,
+	modes: Partial<Record<LogicMode, boolean>>,
+	options: {
+		adaptiveThreshold?: boolean
+		learningRate?: number
+		maxIterations?: number
+		confidenceTracking?: boolean
+	} = {}
+): {
+	result: Record<string, boolean>
+	confidence: Record<string, number>
+	adaptedThresholds: Record<string, number>
+	reasoning: Array<{ step: number; action: string; rule?: string; confidence: number }>
+} {
+	const {
+		adaptiveThreshold = true,
+		learningRate = 0.1,
+		maxIterations = 20,
+		confidenceTracking = true
+	} = options
+	
+	let current = { ...active }
+	const confidence: Record<string, number> = {}
+	const adaptedThresholds: Record<string, number> = {}
+	const reasoning: Array<{ step: number; action: string; rule?: string; confidence: number }> = []
+	
+	// Initialize confidence and thresholds
+	Object.keys(current).forEach(nodeId => {
+		confidence[nodeId] = current[nodeId] ? 1.0 : 0.0
+		adaptedThresholds[nodeId] = getAdaptiveThreshold(nodeId, modes, nodes.find(n => n.id === nodeId))
+	})
+	
+	for (let iteration = 0; iteration < maxIterations; iteration++) {
+		let changed = false
+		
+		for (const edge of edges) {
+			const src = (edge.from ?? edge.source) as string | undefined
+			const tgt = (edge.to ?? edge.target) as string | undefined
+			if (!src || !tgt) continue
+			
+			const sourceNode = nodes.find(n => n.id === src)
+			const targetNode = nodes.find(n => n.id === tgt)
+			
+			// Context-aware validation
+			const context = {
+				sourceNode,
+				targetNode,
+				edgeType: edge.type,
+				weight: edge.weight,
+				argumentComplexity: (sourceNode?.complexity as any) || 'moderate'
+			}
+			
+			if (!validateRule(edge.rule, modes, context)) {
+				reasoning.push({
+					step: iteration,
+					action: `Rejected rule ${edge.rule} for ${src} → ${tgt}`,
+					rule: edge.rule,
+					confidence: 0
+				})
+				continue
+			}
+			
+			const srcConfidence = confidence[src] || 0
+			const currentTargetConfidence = confidence[tgt] || 0
+			const ruleStrength = getRuleStrength(edge.rule, modes)
+			const weight = (edge.weight || 100) / 100
+			
+			// Dynamic confidence propagation
+			let newConfidence = srcConfidence * ruleStrength * weight
+			
+			// Apply mode-specific adjustments
+			if (modes.epistemic && confidenceTracking) {
+				// Epistemic reasoning with uncertainty
+				newConfidence *= 0.95 // Slight degradation for epistemic uncertainty
+			}
+			
+			if (modes.fuzzy) {
+				// Fuzzy logic composition
+				newConfidence = Math.min(srcConfidence, weight) * ruleStrength
+			}
+			
+			if (modes.paraconsistent && edge.type === 'counterexample') {
+				// Paraconsistent handling of contradictions
+				newConfidence = Math.max(0, currentTargetConfidence - newConfidence)
+			}
+			
+			// Adaptive threshold adjustment
+			if (adaptiveThreshold) {
+				const baseThreshold = adaptedThresholds[tgt]
+				const performance = calculatePerformance(tgt, current, edges, nodes)
+				adaptedThresholds[tgt] = adjustThreshold(baseThreshold, performance, learningRate)
+			}
+			
+			const threshold = adaptedThresholds[tgt] || 0.5
+			
+			if (newConfidence > currentTargetConfidence && newConfidence >= threshold) {
+				confidence[tgt] = newConfidence
+				const wasActive = current[tgt]
+				current[tgt] = true
+				
+				if (!wasActive) {
+					changed = true
+					reasoning.push({
+						step: iteration,
+						action: `Activated ${tgt} via ${edge.rule}`,
+						rule: edge.rule,
+						confidence: newConfidence
+					})
+				}
+			}
+		}
+		
+		if (!changed) break
+	}
+	
+	return { result: current, confidence, adaptedThresholds, reasoning }
+}
+
+function getAdaptiveThreshold(
+	_nodeId: string, 
+	modes: Partial<Record<LogicMode, boolean>>, 
+	node?: { type?: string; complexity?: string }
+): number {
+	let baseThreshold = 0.7 // Default
+	
+	// Mode-specific thresholds
+	if (modes.epistemic) baseThreshold = 0.65
+	if (modes.temporal || modes.informal) baseThreshold = 0.6
+	if (modes.fuzzy) baseThreshold = 0.1
+	if (modes.paraconsistent) baseThreshold = 0.5
+	
+	// Node-specific adjustments
+	if (node) {
+		if (node.type === 'premise') baseThreshold *= 0.9 // Lower threshold for premises
+		if (node.type === 'conclusion') baseThreshold *= 1.1 // Higher threshold for conclusions
+		if (node.type === 'fallacy') baseThreshold *= 1.3 // Much higher threshold for fallacies
+		
+		if (node.complexity === 'simple') baseThreshold *= 0.9
+		if (node.complexity === 'complex') baseThreshold *= 1.1
+	}
+	
+	return Math.min(0.95, Math.max(0.1, baseThreshold))
+}
+
+function calculatePerformance(
+	nodeId: string, 
+	current: Record<string, boolean>, 
+	edges: InferenceEdge[], 
+	_nodes: Array<{ id: string; type?: string }>
+): number {
+	// Simple performance metric based on consistency with neighbors
+	let score = 0
+	let connections = 0
+	
+	for (const edge of edges) {
+		const src = (edge.from ?? edge.source) as string | undefined
+		const tgt = (edge.to ?? edge.target) as string | undefined
+		
+		if (src === nodeId || tgt === nodeId) {
+			connections++
+			const otherId = src === nodeId ? tgt : src
+			if (otherId && edge.type !== 'counterexample') {
+				// Positive connection should have consistent activation
+				if (current[nodeId] === current[otherId]) score++
+			} else if (otherId && edge.type === 'counterexample') {
+				// Counterexample should have opposite activation
+				if (current[nodeId] !== current[otherId]) score++
+			}
+		}
+	}
+	
+	return connections > 0 ? score / connections : 0.5
+}
+
+function adjustThreshold(currentThreshold: number, performance: number, learningRate: number): number {
+	// Adaptive threshold adjustment based on performance
+	const target = 0.75 // Target performance
+	const error = target - performance
+	const adjustment = learningRate * error
+	
+	return Math.min(0.95, Math.max(0.1, currentThreshold - adjustment))
+}
+
+// Real-time state monitoring and updates
+export function createStateMonitor(
+	onStateChange: (state: Record<string, boolean>, metadata: { 
+		confidence: Record<string, number>
+		conflicts: string[]
+		reasoning: string 
+	}) => void
+) {
+	let lastState: Record<string, boolean> = {}
+	
+	return {
+		update: (
+			nodes: Array<{ id: string; type?: string; symbol?: string }>,
+			edges: InferenceEdge[],
+			active: Record<string, boolean>,
+			modes: Partial<Record<LogicMode, boolean>>
+		) => {
+			const result = dynamicEvaluate(nodes, edges, active, modes, {
+				adaptiveThreshold: true,
+				confidenceTracking: true,
+				learningRate: 0.05
+			})
+			
+			// Detect changes
+			const stateChanged = Object.keys(result.result).some(
+				key => result.result[key] !== lastState[key]
+			)
+			
+			if (stateChanged) {
+				const conflicts = detectConflicts(result.result, edges)
+				const reasoning = generateReasoningExplanation(result.reasoning)
+				
+				onStateChange(result.result, {
+					confidence: result.confidence,
+					conflicts,
+					reasoning
+				})
+				
+				lastState = result.result
+			}
+		}
+	}
+}
+
+function detectConflicts(state: Record<string, boolean>, edges: InferenceEdge[]): string[] {
+	const conflicts: string[] = []
+	
+	for (const edge of edges) {
+		if (edge.type === 'counterexample') {
+			const src = (edge.from ?? edge.source) as string | undefined
+			const tgt = (edge.to ?? edge.target) as string | undefined
+			
+			if (src && tgt && state[src] && state[tgt]) {
+				conflicts.push(tgt)
+			}
+		}
+	}
+	
+	return conflicts
+}
+
+function generateReasoningExplanation(reasoning: Array<{ step: number; action: string; rule?: string; confidence: number }>): string {
+	if (reasoning.length === 0) return "No inference steps taken."
+	
+	const steps = reasoning.slice(-3) // Last 3 steps
+	return steps.map(step => 
+		`Step ${step.step}: ${step.action} (confidence: ${(step.confidence * 100).toFixed(1)}%)`
+	).join(' • ')
 }
 
 export type NodeState = { value: 'T' | 'F' | 'B' | number; weight?: number }
