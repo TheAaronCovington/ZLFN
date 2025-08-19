@@ -4,9 +4,44 @@ import { useResizeObserver } from '../../hooks/useResizeObserver'
 import { Button, Stack, IconButton, TextField, Chip, Menu, MenuItem, Divider } from '@mui/material'
 import { useLogicShared } from '../../context/LogicSharedContext'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
-import { evaluateInference, evaluateStates } from '../../services/inference'
+import { evaluateInference, evaluateStates, getRuleStrength, isRuleFallacy, bayesianUpdate } from '../../services/inference'
 import { downloadJson } from '../../services/io'
 import { parseVennRule, computeShading } from '../../services/venn'
+
+// Helper function for evaluating simple logical expressions in truth tables
+function evaluateSimpleExpression(expression: string, variables: string[], values: boolean[]): boolean {
+	const varMap: Record<string, boolean> = {}
+	variables.forEach((v, i) => { varMap[v] = values[i] })
+	
+	// Simple evaluation for basic operators
+	let expr = expression
+	
+	// Replace variables with their truth values
+	variables.forEach(v => {
+		const regex = new RegExp(`\\b${v}\\b`, 'g')
+		expr = expr.replace(regex, varMap[v] ? 'true' : 'false')
+	})
+	
+	// Replace logical operators
+	expr = expr.replace(/∧|&|\band\b/g, '&&')
+	expr = expr.replace(/∨|\|\bor\b/g, '||')
+	expr = expr.replace(/¬|\bnot\b/g, '!')
+	expr = expr.replace(/→/g, '? true :') // P → Q becomes P ? true : Q (approximation)
+	expr = expr.replace(/↔/g, '===') // Biconditional
+	
+	try {
+		// Very basic evaluation - in a real implementation, use a proper parser
+		return eval(expr) || false
+	} catch {
+		// Fallback to simple AND/OR detection
+		if (expression.includes('∧') || expression.includes('&')) {
+			return values.every(v => v)
+		} else if (expression.includes('∨') || expression.includes('|')) {
+			return values.some(v => v)
+		}
+		return values[0] || false
+	}
+}
 
 export type ZlfnNode = {
 	id: string
@@ -881,105 +916,576 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				const op = /∧|\^|\band\b|&/.test(label) ? 'and' : (/∨|\bor\b|\|/.test(label) ? 'or' : (/→|->/.test(label) ? 'imp' : 'unknown'))
 				const parsed = parseVennRule((datum.name || datum.translation || '') as string)
 				const shade = computeShading(parsed.kind)
-				const gx = overlay.append('g').attr('transform', 'translate(-20,-20)')
-				const palette = ['#40c4ff','#00e676','#ffd740','#ff8a80','#b388ff']
-				const r = 28
-				const positions: Array<[number,number]> = terms.length <= 2 ? [[-20,20],[20,20]] : terms.length === 3 ? [[-24,20],[24,20],[0,-2]] : terms.length === 4 ? [[-24,20],[24,20],[-24,-2],[24,-2]] : [[-28,18],[0,32],[28,18],[-16,-2],[16,-2]]
-				terms.forEach((t, i) => {
-					gx.append('circle').attr('cx', positions[i][0]).attr('cy', positions[i][1]).attr('r', r).attr('fill', 'rgba(255,255,255,0.10)').attr('stroke', palette[i%palette.length])
-					gx.append('text').attr('x', positions[i][0] + (positions[i][0]<0?-r-8:r+8)).attr('y', positions[i][1]-10).attr('fill', '#cfe9ff').attr('font-size', 11).text(t)
+				
+				// Enhanced overlay with zoom controls and simulation mode support
+				const enhancedOverlay = overlay.append('g').attr('class', 'enhanced-venn')
+				let currentScale = 1.0
+				const minScale = 0.5
+				const maxScale = 3.0
+				
+				// Zoom controls
+				const zoomControls = enhancedOverlay.append('g').attr('class', 'zoom-controls').attr('transform', 'translate(60, -60)')
+				zoomControls.append('circle').attr('r', 8).attr('fill', '#2e7d32').attr('stroke', '#4caf50').style('cursor', 'pointer')
+					.on('click', () => { currentScale = Math.min(maxScale, currentScale * 1.2); updateVenn() })
+				zoomControls.append('text').attr('text-anchor', 'middle').attr('dy', 3).attr('fill', 'white').attr('font-size', 10).text('+').style('pointer-events', 'none')
+				
+				zoomControls.append('circle').attr('cx', 20).attr('r', 8).attr('fill', '#c62828').attr('stroke', '#f44336').style('cursor', 'pointer')
+					.on('click', () => { currentScale = Math.max(minScale, currentScale / 1.2); updateVenn() })
+				zoomControls.append('text').attr('x', 20).attr('text-anchor', 'middle').attr('dy', 3).attr('fill', 'white').attr('font-size', 10).text('−').style('pointer-events', 'none')
+				
+				// Simulation mode toggle
+				const simToggle = enhancedOverlay.append('g').attr('class', 'sim-toggle').attr('transform', 'translate(-80, -60)')
+				const simRect = simToggle.append('rect').attr('width', 50).attr('height', 16).attr('rx', 8)
+					.attr('fill', simulationMode ? '#4caf50' : '#757575').style('cursor', 'pointer')
+				simToggle.append('text').attr('x', 25).attr('y', 10).attr('text-anchor', 'middle').attr('fill', 'white').attr('font-size', 8).text('SIM').style('pointer-events', 'none')
+				simRect.on('click', () => {
+					setSimulationMode(!simulationMode)
+					updateVenn()
 				})
-				if (op === 'and') {
-					gx.append('ellipse').attr('cx', 0).attr('cy', 20).attr('rx', 18).attr('ry', 12).attr('fill', 'rgba(0,230,118,0.35)')
-					overlay.append('text').attr('x', -80).attr('y', 36).attr('fill', '#a0ffcf').attr('font-size', 11).text('Highlight: ∩')
-				} else if (op === 'or') {
-					gx.append('circle').attr('cx', -20).attr('cy', 20).attr('r', 28).attr('fill', 'none').attr('stroke', '#40c4ff').attr('stroke-width', 2.5).attr('stroke-opacity', 0.6)
-					gx.append('circle').attr('cx', 20).attr('cy', 20).attr('r', 28).attr('fill', 'none').attr('stroke', '#00e676').attr('stroke-width', 2.5).attr('stroke-opacity', 0.6)
-					overlay.append('text').attr('x', -80).attr('y', 36).attr('fill', '#cfe9ff').attr('font-size', 11).text('Highlight: ∪')
-				} else if (op === 'imp' && terms.length >= 2) {
-					gx.append('path').attr('d', 'M -32,8 L -6,8').attr('stroke', '#8ad7ff').attr('stroke-width', 2).attr('marker-end', 'url(#arrow)')
-					overlay.append('text').attr('x', -80).attr('y', 36).attr('fill', '#ffd54f').attr('font-size', 11).text(`${terms[0]} ⊆ ${terms[1]} (cue)`)
-				} else {
-					overlay.append('text').attr('x', -80).attr('y', 36).attr('fill', '#e0e6ff').attr('font-size', 11).text('Venn preview')
+				
+				const vennContainer = enhancedOverlay.append('g').attr('class', 'venn-container')
+				
+				function updateVenn() {
+					vennContainer.selectAll('*').remove()
+					
+					const gx = vennContainer.append('g').attr('transform', `translate(-20,-20) scale(${currentScale})`)
+					const palette = ['#40c4ff','#00e676','#ffd740','#ff8a80','#b388ff']
+					const r = 28
+					const positions: Array<[number,number]> = terms.length <= 2 ? [[-20,20],[20,20]] : terms.length === 3 ? [[-24,20],[24,20],[0,-2]] : terms.length === 4 ? [[-24,20],[24,20],[-24,-2],[24,-2]] : [[-28,18],[0,32],[28,18],[-16,-2],[16,-2]]
+					
+					// Enhanced circles with interactive features
+					terms.forEach((t, i) => {
+						const circle = gx.append('circle')
+							.attr('cx', positions[i][0]).attr('cy', positions[i][1]).attr('r', r)
+							.attr('fill', simulationMode ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.10)')
+							.attr('stroke', palette[i%palette.length])
+							.attr('stroke-width', simulationMode ? 2.5 : 2)
+							.style('cursor', simulationMode ? 'pointer' : 'default')
+						
+						if (simulationMode) {
+							circle.on('mouseover', function() {
+								d3.select(this).attr('fill', 'rgba(255,255,255,0.25)')
+								onInfo?.(`Set ${t}: Click to evaluate relations`)
+							})
+							.on('mouseout', function() {
+								d3.select(this).attr('fill', 'rgba(255,255,255,0.15)')
+							})
+							.on('click', () => {
+								// Trigger Bayesian update for this set
+								const priorBelief = 0.5
+								const evidence = Math.random() * 0.3 + 0.7 // Simulate evidence
+								const likelihood = getRuleStrength(datum.rule, modes)
+								const posteriorBelief = bayesianUpdate(priorBelief, evidence, likelihood)
+								onInfo?.(`Set ${t}: Updated belief ${(posteriorBelief * 100).toFixed(1)}%`)
+							})
+						}
+						
+						gx.append('text').attr('x', positions[i][0] + (positions[i][0]<0?-r-8:r+8)).attr('y', positions[i][1]-10)
+							.attr('fill', '#cfe9ff').attr('font-size', simulationMode ? 12 : 11).text(t)
+					})
+					
+					// Enhanced operation highlighting
+					if (op === 'and') {
+						const intersectionPath = gx.append('ellipse').attr('cx', 0).attr('cy', 20).attr('rx', 18).attr('ry', 12)
+							.attr('fill', simulationMode ? 'rgba(0,230,118,0.5)' : 'rgba(0,230,118,0.35)')
+						if (simulationMode) {
+							intersectionPath.style('cursor', 'pointer')
+								.on('click', () => onInfo?.('Intersection: A ∧ B - Elements in both sets'))
+						}
+						overlay.append('text').attr('x', -80).attr('y', 36).attr('fill', '#a0ffcf').attr('font-size', 11).text('Highlight: ∩')
+					} else if (op === 'or') {
+						gx.append('circle').attr('cx', -20).attr('cy', 20).attr('r', 28).attr('fill', 'none')
+							.attr('stroke', '#40c4ff').attr('stroke-width', simulationMode ? 3 : 2.5).attr('stroke-opacity', simulationMode ? 0.8 : 0.6)
+						gx.append('circle').attr('cx', 20).attr('cy', 20).attr('r', 28).attr('fill', 'none')
+							.attr('stroke', '#00e676').attr('stroke-width', simulationMode ? 3 : 2.5).attr('stroke-opacity', simulationMode ? 0.8 : 0.6)
+						overlay.append('text').attr('x', -80).attr('y', 36).attr('fill', '#cfe9ff').attr('font-size', 11).text('Highlight: ∪')
+					} else if (op === 'imp' && terms.length >= 2) {
+						const arrow = gx.append('path').attr('d', 'M -32,8 L -6,8').attr('stroke', '#8ad7ff')
+							.attr('stroke-width', simulationMode ? 3 : 2).attr('marker-end', 'url(#arrow)')
+						if (simulationMode) {
+							arrow.style('cursor', 'pointer')
+								.on('click', () => onInfo?.(`Implication: ${terms[0]} → ${terms[1]} - Subset relation`))
+						}
+						overlay.append('text').attr('x', -80).attr('y', 36).attr('fill', '#ffd54f').attr('font-size', 11).text(`${terms[0]} ⊆ ${terms[1]} (cue)`)
+					} else {
+						overlay.append('text').attr('x', -80).attr('y', 36).attr('fill', '#e0e6ff').attr('font-size', 11).text('Venn preview')
+					}
+					
+					// Enhanced shading indicators
+					if (shade.intersection) {
+						gx.append('ellipse').attr('cx', 0).attr('cy', 20).attr('rx', 14).attr('ry', 9)
+							.attr('fill', simulationMode ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.15)')
+							.attr('stroke', simulationMode ? '#fff' : 'none')
+							.attr('stroke-dasharray', simulationMode ? '2,2' : 'none')
+					}
+					if (shade.disjoint) {
+						gx.append('line').attr('x1', -40).attr('y1', 20).attr('x2', 40).attr('y2', 20)
+							.attr('stroke', '#ff8080').attr('stroke-dasharray', '4,3')
+							.attr('stroke-width', simulationMode ? 2.5 : 2)
+					}
+					
+					// Update zoom indicator
+					vennContainer.append('text').attr('x', -80).attr('y', 50)
+						.attr('fill', '#90caf9').attr('font-size', 9).text(`Zoom: ${(currentScale * 100).toFixed(0)}%`)
 				}
-				if (shade.intersection) gx.append('ellipse').attr('cx', 0).attr('cy', 20).attr('rx', 14).attr('ry', 9).attr('fill', 'rgba(255,255,255,0.15)')
-				if (shade.disjoint) gx.append('line').attr('x1', -40).attr('y1', 20).attr('x2', 40).attr('y2', 20).attr('stroke', '#ff8080').attr('stroke-dasharray', '4,3')
+				
+				// Enhanced validation badge
 				if (parsed.kind) {
 					const ok = parsed.kind !== 'no'
-					overlay.append('rect').attr('x', 54).attr('y', -68).attr('rx', 4).attr('width', 32).attr('height', 16).attr('fill', ok ? 'rgba(0,230,118,0.25)' : 'rgba(255,82,82,0.25)').attr('stroke', ok ? '#00e676' : '#ff5252')
-					overlay.append('text').attr('x', 70).attr('y', -56).attr('fill', ok ? '#a0ffcf' : '#ffb3b3').attr('font-size', 10).text(ok ? 'Pass' : 'Fail')
+					const validationStrength = getRuleStrength(datum.rule, modes)
+					const badgeColor = ok ? (validationStrength > 0.8 ? '#00e676' : '#ffc107') : '#ff5252'
+					const badgeText = ok ? (validationStrength > 0.8 ? 'Valid' : 'Weak') : 'Invalid'
+					
+					overlay.append('rect').attr('x', 54).attr('y', -68).attr('rx', 4).attr('width', 40).attr('height', 16)
+						.attr('fill', `${badgeColor}40`).attr('stroke', badgeColor)
+					overlay.append('text').attr('x', 74).attr('y', -56).attr('fill', badgeColor).attr('font-size', 10)
+						.attr('text-anchor', 'middle').text(badgeText)
+					
+					// Add strength indicator
+					if (simulationMode) {
+						overlay.append('text').attr('x', 54).attr('y', -45).attr('fill', '#90caf9').attr('font-size', 8)
+							.text(`Strength: ${(validationStrength * 100).toFixed(0)}%`)
+					}
 				}
-			} else if (type === 'timeline') {
-				// simple timeline preview: axis with ticks and a highlighted interval
-				const gtl = overlay.append('g').attr('transform', 'translate(-70, -10)')
-				// axis
-				gtl.append('line').attr('x1', 0).attr('y1', 40).attr('x2', 140).attr('y2', 40).attr('stroke', '#90caf9').attr('stroke-width', 1.5)
-				// ticks
-				const ticks = d3.range(0, 6).map(i => ({ x: i * 28, label: `t${i}` }))
-				gtl.selectAll('line.tick')
-					.data(ticks)
-					.join('line')
-					.attr('class', 'tick')
-					.attr('x1', d => d.x)
-					.attr('x2', d => d.x)
-					.attr('y1', 34)
-					.attr('y2', 46)
-					.attr('stroke', '#90caf9')
-					.attr('stroke-width', 1)
-				gtl.selectAll('text.tlabel')
-					.data(ticks)
-					.join('text')
-					.attr('class', 'tlabel')
-					.attr('x', d => d.x)
-					.attr('y', 56)
-					.attr('fill', '#cfe9ff')
-					.attr('font-size', 10)
+				
+				// Initialize the diagram
+				updateVenn()
+			} else if (type === 'truth') {
+				// Enhanced interactive truth table facet
+				const datum: any = (host.datum && host.datum()) || {}
+				const expression = datum.symbol || datum.label || datum.id || 'P ∧ Q'
+				
+				// Extract variables from expression
+				const variables: string[] = Array.from(new Set((expression.match(/[A-Z]/g) || ['P', 'Q']).slice(0, 4)))
+				const numRows = Math.pow(2, variables.length)
+				
+				// Create truth table container
+				const truthContainer = overlay.append('g').attr('class', 'truth-table-container')
+				
+				// Calculate table dimensions
+				const cellWidth = 20
+				const cellHeight = 16
+				const tableWidth = (variables.length + 1) * cellWidth
+				const startX = -tableWidth / 2
+				const startY = -50
+				
+				// Header row
+				variables.forEach((variable, i) => {
+					const rect = truthContainer.append('rect')
+						.attr('x', startX + i * cellWidth)
+						.attr('y', startY)
+						.attr('width', cellWidth)
+						.attr('height', cellHeight)
+						.attr('fill', '#2e3440')
+						.attr('stroke', '#4c566a')
+						.style('cursor', simulationMode ? 'pointer' : 'default')
+					
+					truthContainer.append('text')
+						.attr('x', startX + i * cellWidth + cellWidth / 2)
+						.attr('y', startY + cellHeight / 2 + 4)
+						.attr('text-anchor', 'middle')
+						.attr('fill', '#eceff4')
+						.attr('font-size', 10)
+						.text(variable.toString())
+					
+					if (simulationMode) {
+						rect.on('click', () => onInfo?.(`Variable ${variable}: Click to toggle column`))
+					}
+				})
+				
+				// Result column header
+				truthContainer.append('rect')
+					.attr('x', startX + variables.length * cellWidth)
+					.attr('y', startY)
+					.attr('width', cellWidth)
+					.attr('height', cellHeight)
+					.attr('fill', '#5e81ac')
+					.attr('stroke', '#4c566a')
+				
+				truthContainer.append('text')
+					.attr('x', startX + variables.length * cellWidth + cellWidth / 2)
+					.attr('y', startY + cellHeight / 2 + 4)
 					.attr('text-anchor', 'middle')
-					.text(d => d.label)
-				// highlighted interval
-				gtl.append('rect')
-					.attr('x', 28)
-					.attr('y', 36)
-					.attr('width', 56)
-					.attr('height', 8)
-					.attr('fill', 'rgba(255,215,64,0.35)')
-					.attr('stroke', '#ffd740')
-				overlay.append('text').attr('x', -80).attr('y', -50).attr('fill', '#e0e6ff').attr('font-size', 12).text('Timeline')
-			} else if (type === 'counter') {
-				// simple counter mini-graph: three small nodes with dashed red edges, pulsing
-				const gc = overlay.append('g').attr('transform', 'translate(-40,-20)')
-				const nodes = [
-					{ x: 0, y: 40 }, { x: 50, y: 20 }, { x: 90, y: 44 }
+					.attr('fill', '#eceff4')
+					.attr('font-size', 8)
+					.text('Result')
+				
+				// Data rows
+				for (let row = 0; row < numRows; row++) {
+					const truthValues: boolean[] = []
+					
+					// Generate truth values for this row
+					for (let col = 0; col < variables.length; col++) {
+						const value = Boolean(row & (1 << (variables.length - 1 - col)))
+						truthValues.push(value)
+					}
+					
+					// Evaluate expression (simplified)
+					const result = evaluateSimpleExpression(expression.toString(), variables, truthValues)
+					
+					// Variable cells
+					variables.forEach((variable, col) => {
+						const value = truthValues[col]
+						const cellColor = value ? '#a3be8c' : '#bf616a'
+						const textColor = value ? '#2e3440' : '#eceff4'
+						
+						const rect = truthContainer.append('rect')
+							.attr('x', startX + col * cellWidth)
+							.attr('y', startY + (row + 1) * cellHeight)
+							.attr('width', cellWidth)
+							.attr('height', cellHeight)
+							.attr('fill', cellColor)
+							.attr('stroke', '#4c566a')
+							.style('cursor', simulationMode ? 'pointer' : 'default')
+						
+						truthContainer.append('text')
+							.attr('x', startX + col * cellWidth + cellWidth / 2)
+							.attr('y', startY + (row + 1) * cellHeight + cellHeight / 2 + 4)
+							.attr('text-anchor', 'middle')
+							.attr('fill', textColor)
+							.attr('font-size', 10)
+							.text(value ? 'T' : 'F')
+						
+						if (simulationMode) {
+							rect.on('mouseover', function() {
+								d3.select(this).attr('opacity', 0.8)
+							})
+							.on('mouseout', function() {
+								d3.select(this).attr('opacity', 1)
+							})
+							.on('click', () => {
+								onInfo?.(`Row ${row + 1}: ${variable} = ${value ? 'True' : 'False'}`)
+							})
+						}
+					})
+					
+					// Result cell
+					const resultColor = result ? '#a3be8c' : '#bf616a'
+					const resultTextColor = result ? '#2e3440' : '#eceff4'
+					
+					const resultRect = truthContainer.append('rect')
+						.attr('x', startX + variables.length * cellWidth)
+						.attr('y', startY + (row + 1) * cellHeight)
+						.attr('width', cellWidth)
+						.attr('height', cellHeight)
+						.attr('fill', resultColor)
+						.attr('stroke', '#4c566a')
+						.style('cursor', simulationMode ? 'pointer' : 'default')
+					
+					truthContainer.append('text')
+						.attr('x', startX + variables.length * cellWidth + cellWidth / 2)
+						.attr('y', startY + (row + 1) * cellHeight + cellHeight / 2 + 4)
+						.attr('text-anchor', 'middle')
+						.attr('fill', resultTextColor)
+						.attr('font-size', 10)
+						.text(result ? 'T' : 'F')
+					
+					if (simulationMode) {
+						resultRect.on('click', () => {
+							const assignment = variables.map((v, i) => `${v}=${truthValues[i] ? 'T' : 'F'}`).join(', ')
+							onInfo?.(`Row ${row + 1}: ${assignment} → ${result ? 'True' : 'False'}`)
+						})
+					}
+				}
+				
+				// Add expression label
+				overlay.append('text')
+					.attr('x', 0)
+					.attr('y', -60)
+					.attr('text-anchor', 'middle')
+					.attr('fill', '#81a1c1')
+					.attr('font-size', 12)
+					.text(`Truth Table: ${expression}`)
+				
+				// Add tautology/contradiction indicator
+				const allResults = Array.from({ length: numRows }, (_, row) => {
+					const truthValues = variables.map((_, col) => 
+						Boolean(row & (1 << (variables.length - 1 - col)))
+					)
+					return evaluateSimpleExpression(expression.toString(), variables, truthValues)
+				})
+				
+				const isTautology = allResults.every(r => r)
+				const isContradiction = allResults.every(r => !r)
+				
+				if (isTautology || isContradiction) {
+					const indicatorColor = isTautology ? '#a3be8c' : '#bf616a'
+					const indicatorText = isTautology ? 'Tautology' : 'Contradiction'
+					
+					overlay.append('rect')
+						.attr('x', startX + tableWidth + 5)
+						.attr('y', startY)
+						.attr('width', 60)
+						.attr('height', 20)
+						.attr('fill', `${indicatorColor}40`)
+						.attr('stroke', indicatorColor)
+						.attr('rx', 4)
+					
+					overlay.append('text')
+						.attr('x', startX + tableWidth + 35)
+						.attr('y', startY + 14)
+						.attr('text-anchor', 'middle')
+						.attr('fill', indicatorColor)
+						.attr('font-size', 8)
+						.text(indicatorText)
+				}
+				
+			} else if (type === 'timeline') {
+				// Enhanced timeline preview with interactive segments
+				const gtl = overlay.append('g').attr('transform', 'translate(-70, -10)')
+				
+				// Main axis
+				gtl.append('line').attr('x1', 0).attr('y1', 40).attr('x2', 140).attr('y2', 40)
+					.attr('stroke', '#90caf9').attr('stroke-width', 2)
+				
+				// Time points and segments
+				const timePoints = [
+					{ x: 0, label: 't₀', description: 'Initial state' },
+					{ x: 28, label: 't₁', description: 'Premise introduced' },
+					{ x: 56, label: 't₂', description: 'Inference applied' },
+					{ x: 84, label: 't₃', description: 'Conclusion reached' },
+					{ x: 112, label: 't₄', description: 'Evaluation' },
+					{ x: 140, label: 't₅', description: 'Final state' }
 				]
-				gc.selectAll('circle.counter')
-					.data(nodes)
-					.join('circle')
-					.attr('class', 'counter')
-					.attr('r', 4)
-					.attr('cx', d => d.x)
-					.attr('cy', d => d.y)
-					.attr('fill', '#ff8a80')
-					.attr('stroke', '#ff5252')
-				gc.selectAll('line.counter')
-					.data([[0,1],[1,2]])
-					.join('line')
-					.attr('class', 'counter')
-					.attr('x1', d => nodes[d[0]].x)
-					.attr('y1', d => nodes[d[0]].y)
-					.attr('x2', d => nodes[d[1]].x)
-					.attr('y2', d => nodes[d[1]].y)
-					.attr('stroke', '#ff5252')
-					.attr('stroke-dasharray', '4,3')
+				
+				// Draw ticks and labels
+				timePoints.forEach((point, i) => {
+					const tick = gtl.append('line')
+						.attr('x1', point.x).attr('x2', point.x)
+						.attr('y1', 34).attr('y2', 46)
+						.attr('stroke', '#90caf9').attr('stroke-width', 2)
+						.style('cursor', simulationMode ? 'pointer' : 'default')
+					
+					gtl.append('text')
+						.attr('x', point.x).attr('y', 56)
+						.attr('fill', '#cfe9ff').attr('font-size', 10)
+						.attr('text-anchor', 'middle').text(point.label)
+					
+					if (simulationMode) {
+						tick.on('click', () => onInfo?.(`${point.label}: ${point.description}`))
+						
+						// Add interactive zones
+						if (i < timePoints.length - 1) {
+							const nextPoint = timePoints[i + 1]
+							gtl.append('rect')
+								.attr('x', point.x).attr('y', 36)
+								.attr('width', nextPoint.x - point.x).attr('height', 8)
+								.attr('fill', 'rgba(255,215,64,0.2)')
+								.attr('stroke', 'none')
+								.style('cursor', 'pointer')
+								.on('mouseover', function() {
+									d3.select(this).attr('fill', 'rgba(255,215,64,0.4)')
+								})
+								.on('mouseout', function() {
+									d3.select(this).attr('fill', 'rgba(255,215,64,0.2)')
+								})
+								.on('click', () => {
+									onInfo?.(`Segment ${i + 1}: ${point.label} → ${nextPoint.label}`)
+								})
+						}
+					}
+				})
+				
+				// Highlighted active interval
+				gtl.append('rect')
+					.attr('x', 28).attr('y', 36)
+					.attr('width', 56).attr('height', 8)
+					.attr('fill', 'rgba(255,215,64,0.5)')
+					.attr('stroke', '#ffd740')
+					.attr('stroke-width', simulationMode ? 2 : 1)
+				
+				overlay.append('text').attr('x', 0).attr('y', -60)
+					.attr('text-anchor', 'middle').attr('fill', '#e0e6ff').attr('font-size', 12).text('Timeline Analysis')
+			} else if (type === 'counter') {
+				// Enhanced counter facet with mini-graph, pulsing animation, and fallacy detection
+				const gc = overlay.append('g').attr('transform', 'translate(-40,-20)')
+				
+				// Counter-argument mini-graph nodes
+				const counterNodes = [
+					{ id: 'premise', x: 0, y: 40, label: 'P', type: 'premise' },
+					{ id: 'counter', x: 50, y: 20, label: 'C', type: 'counterexample' },
+					{ id: 'conclusion', x: 90, y: 44, label: 'Q', type: 'conclusion' }
+				]
+				
+				// Counter-argument edges with red dashed style
+				const counterEdges = [
+					{ from: 'premise', to: 'conclusion', type: 'support', dashed: false },
+					{ from: 'counter', to: 'premise', type: 'counterexample', dashed: true },
+					{ from: 'counter', to: 'conclusion', type: 'counterexample', dashed: true }
+				]
+				
+				// Draw edges first (so they appear behind nodes)
+				counterEdges.forEach(edge => {
+					const fromNode = counterNodes.find(n => n.id === edge.from)!
+					const toNode = counterNodes.find(n => n.id === edge.to)!
+					
+					const line = gc.append('line')
+						.attr('x1', fromNode.x).attr('y1', fromNode.y)
+						.attr('x2', toNode.x).attr('y2', toNode.y)
+						.attr('stroke', edge.type === 'counterexample' ? '#ff5252' : '#90caf9')
+						.attr('stroke-width', edge.type === 'counterexample' ? 3 : 2)
+						.attr('stroke-dasharray', edge.dashed ? '5,3' : 'none')
+						.attr('opacity', 0.8)
+					
+					// Add pulsing animation for counterexample edges
+					if (edge.type === 'counterexample') {
+						line.append('animate')
+							.attr('attributeName', 'opacity')
+							.attr('values', '0.4;1;0.4')
+							.attr('dur', '2s')
+							.attr('repeatCount', 'indefinite')
+						
+						line.append('animate')
+							.attr('attributeName', 'stroke-width')
+							.attr('values', '2;4;2')
+							.attr('dur', '2s')
+							.attr('repeatCount', 'indefinite')
+					}
+					
+					if (simulationMode) {
+						line.style('cursor', 'pointer')
+							.on('click', () => {
+								const strength = getRuleStrength('Counterexample', modes)
+								onInfo?.(`${edge.type === 'counterexample' ? 'Counter-evidence' : 'Support'}: ${fromNode.label} → ${toNode.label} (strength: ${(strength * 100).toFixed(0)}%)`)
+							})
+					}
+				})
+				
+				// Draw nodes
+				counterNodes.forEach(node => {
+					const nodeGroup = gc.append('g').attr('class', 'counter-node')
+					
+					const nodeColor = node.type === 'counterexample' ? '#ff5252' : 
+									  node.type === 'premise' ? '#2196f3' : '#4caf50'
+					
+					const circle = nodeGroup.append('circle')
+						.attr('cx', node.x).attr('cy', node.y)
+						.attr('r', node.type === 'counterexample' ? 8 : 6)
+						.attr('fill', nodeColor)
+						.attr('stroke', '#fff')
+						.attr('stroke-width', 2)
+						.style('cursor', simulationMode ? 'pointer' : 'default')
+					
+					// Add pulsing animation for counterexample nodes
+					if (node.type === 'counterexample') {
+						circle.append('animate')
+							.attr('attributeName', 'r')
+							.attr('values', '6;10;6')
+							.attr('dur', '1.5s')
+							.attr('repeatCount', 'indefinite')
+						
+						circle.append('animate')
+							.attr('attributeName', 'fill-opacity')
+							.attr('values', '0.7;1;0.7')
+							.attr('dur', '1.5s')
+							.attr('repeatCount', 'indefinite')
+					}
+					
+					// Node labels
+					nodeGroup.append('text')
+						.attr('x', node.x).attr('y', node.y + 3)
+						.attr('text-anchor', 'middle')
+						.attr('fill', 'white')
+						.attr('font-size', 8)
+						.attr('font-weight', 'bold')
+						.text(node.label)
+						.style('pointer-events', 'none')
+					
+					// Node type labels
+					nodeGroup.append('text')
+						.attr('x', node.x).attr('y', node.y + 18)
+						.attr('text-anchor', 'middle')
+						.attr('fill', '#cfd8dc')
+						.attr('font-size', 7)
+						.text(node.type === 'counterexample' ? 'Counter' : 
+							   node.type === 'premise' ? 'Premise' : 'Conclusion')
+						.style('pointer-events', 'none')
+					
+					if (simulationMode) {
+						circle.on('mouseover', function() {
+							d3.select(this).attr('stroke-width', 3)
+						})
+						.on('mouseout', function() {
+							d3.select(this).attr('stroke-width', 2)
+						})
+						.on('click', () => {
+							if (node.type === 'counterexample') {
+								// Demonstrate Bayesian update for counter-evidence
+								const priorBelief = 0.8 // High initial belief
+								const counterEvidence = 0.3 // Strong counter-evidence
+								const likelihood = 0.4 // Likelihood of evidence given hypothesis
+								const posteriorBelief = bayesianUpdate(priorBelief, counterEvidence, likelihood)
+								onInfo?.(`Counter-evidence impact: Prior ${(priorBelief * 100).toFixed(0)}% → Posterior ${(posteriorBelief * 100).toFixed(0)}%`)
+							} else {
+								onInfo?.(`${node.type}: ${node.label} - Click to analyze logical role`)
+							}
+						})
+					}
+				})
+				
+				// Add conflict indicator
+				const conflictIndicator = gc.append('g').attr('class', 'conflict-indicator')
+					.attr('transform', 'translate(45, 0)')
+				
+				conflictIndicator.append('polygon')
+					.attr('points', '-8,-5 8,-5 0,8')
+					.attr('fill', '#ff5722')
+					.attr('stroke', '#d32f2f')
 					.attr('stroke-width', 1.5)
-					.attr('opacity', 0.9)
-					.transition()
-					.duration(800)
-					.ease(d3.easeSinInOut)
-					.attr('opacity', 0.4)
-					.on('end', function repeat() { d3.select(this).transition().duration(800).ease(d3.easeSinInOut).attr('opacity', 0.9).on('end', repeat) })
-				overlay.append('text').attr('x', -80).attr('y', -50).attr('fill', '#ffb3b3').attr('font-size', 12).text('Counterarguments')
-			} else {
-				overlay.append('text').attr('x', -80).attr('y', -50).attr('fill', '#e0e6ff').attr('font-size', 12).text(type === 'truth' ? 'Truth table placeholder' : 'Timeline placeholder')
+				
+				conflictIndicator.append('text')
+					.attr('x', 0).attr('y', 1)
+					.attr('text-anchor', 'middle')
+					.attr('fill', 'white')
+					.attr('font-size', 8)
+					.attr('font-weight', 'bold')
+					.text('!')
+				
+				// Conflict indicator pulsing
+				conflictIndicator.append('animateTransform')
+					.attr('attributeName', 'transform')
+					.attr('type', 'scale')
+					.attr('values', '1;1.2;1')
+					.attr('dur', '1s')
+					.attr('repeatCount', 'indefinite')
+				
+				// Add fallacy detection
+				const currentNode: any = (host.datum && host.datum()) || {}
+				const ruleName = currentNode.rule || 'Unknown'
+				const isFallacious = isRuleFallacy(ruleName)
+				
+				if (isFallacious) {
+					const fallacyBadge = gc.append('g').attr('class', 'fallacy-badge')
+						.attr('transform', 'translate(20, -15)')
+					
+					fallacyBadge.append('rect')
+						.attr('width', 50).attr('height', 12)
+						.attr('rx', 6).attr('fill', '#ff5722')
+						.attr('stroke', '#d32f2f')
+					
+					fallacyBadge.append('text')
+						.attr('x', 25).attr('y', 8)
+						.attr('text-anchor', 'middle')
+						.attr('fill', 'white')
+						.attr('font-size', 7)
+						.text('FALLACY')
+					
+					if (simulationMode) {
+						fallacyBadge.style('cursor', 'pointer')
+							.on('click', () => {
+								onInfo?.(`Fallacy detected: ${ruleName}. This inference rule may be logically invalid.`)
+							})
+					}
+				}
+				
+				// Add explanatory text
+				overlay.append('text').attr('x', 0).attr('y', -60)
+					.attr('text-anchor', 'middle').attr('fill', '#ffcdd2').attr('font-size', 12)
+					.text('Counter-Argument Analysis')
+				
+				overlay.append('text').attr('x', 0).attr('y', -45)
+					.attr('text-anchor', 'middle').attr('fill', '#ffcdd2').attr('font-size', 9)
+					.text('Red = Counter-evidence • Pulsing = Active conflict')
 			}
 			overlay.append('text').attr('x', 72).attr('y', -56).attr('fill', '#ff8080').attr('font-size', 12).style('cursor','pointer').text('×').on('click', () => overlay.remove())
 			overlay.raise()
@@ -1510,31 +2016,111 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		// legend panel (optional)
 		if (showLegend) {
 			const lg = g.append('g').attr('class', 'legend-panel')
-			const panelW = 240, panelH = 128
+			const panelW = 280, panelH = 180
 			lg.attr('transform', `translate(${(width - panelW - 12)},${12})`)
-			lg.append('rect').attr('rx', 8).attr('fill', 'rgba(20,30,50,0.92)').attr('stroke', '#66a6ff').attr('width', panelW).attr('height', panelH)
-			lg.append('text').attr('x', 10).attr('y', 18).attr('fill', '#cfe9ff').attr('font-size', 12).text('Legend')
-			// zones row
-			const zr = lg.append('g').attr('transform', 'translate(10,30)')
-			const items = [
-				{ label: 'Premises', color: '#20B2AA' },
-				{ label: 'Terms', color: '#4169E1' },
-				{ label: 'Conclusions', color: '#9370DB' },
-				{ label: 'Fallacies', color: '#DC143C' }
+			
+			// Background with educational styling
+			lg.append('rect').attr('rx', 8).attr('fill', 'rgba(15,25,45,0.95)').attr('stroke', '#66a6ff')
+				.attr('stroke-width', 2).attr('width', panelW).attr('height', panelH)
+			
+			// Header with mode indicators
+			lg.append('text').attr('x', 10).attr('y', 18).attr('fill', '#cfe9ff').attr('font-size', 14)
+				.attr('font-weight', 'bold').text('ZLFN Educational Guide')
+			
+			// Active modes indicator
+			const activeModes = Object.keys(modes).filter(m => modes[m as keyof typeof modes])
+			if (activeModes.length > 0) {
+				lg.append('text').attr('x', 10).attr('y', 35).attr('fill', '#a8d5ff').attr('font-size', 9)
+					.text(`Active Modes: ${activeModes.join(', ')}`)
+			}
+			
+			// Node types section
+			const nodeSection = lg.append('g').attr('transform', 'translate(10,45)')
+			nodeSection.append('text').attr('x', 0).attr('y', 0).attr('fill', '#81c784').attr('font-size', 11)
+				.attr('font-weight', 'bold').text('Node Types:')
+			
+			const nodeTypes = [
+				{ label: 'Premises', color: '#20B2AA', description: 'Initial assumptions' },
+				{ label: 'Terms', color: '#4169E1', description: 'Intermediate concepts' },
+				{ label: 'Conclusions', color: '#9370DB', description: 'Final deductions' },
+				{ label: 'Fallacies', color: '#DC143C', description: 'Logical errors' }
 			]
-			items.forEach((it, i) => {
-				zr.append('rect').attr('x', i*56).attr('y', 0).attr('width', 10).attr('height', 10).attr('fill', it.color)
-				zr.append('text').attr('x', i*56 + 14).attr('y', 9).attr('fill', '#cfe9ff').attr('font-size', 10).text(it.label)
+			
+			nodeTypes.forEach((type, i) => {
+				const y = 12 + i * 14
+				const nodeG = nodeSection.append('g').attr('transform', `translate(0, ${y})`)
+				
+				// Visual example
+				nodeG.append('rect').attr('x', 0).attr('y', -6).attr('width', 12).attr('height', 8)
+					.attr('fill', type.color).attr('rx', 2).attr('opacity', 0.8)
+				
+				// Label and description
+				nodeG.append('text').attr('x', 18).attr('y', -1).attr('fill', '#cfe9ff').attr('font-size', 10)
+					.text(`${type.label}: ${type.description}`)
 			})
-			const er = lg.append('g').attr('transform', 'translate(10,60)')
-			er.append('line').attr('x1',0).attr('y1',0).attr('x2',36).attr('y2',0).attr('stroke','#7aa').attr('stroke-width',2)
-			er.append('text').attr('x',40).attr('y',4).attr('fill','#cfe9ff').attr('font-size',10).text('semantic')
-			er.append('line').attr('x1',100).attr('y1',0).attr('x2',136).attr('y2',0).attr('stroke','#7aa').attr('stroke-width',2).attr('stroke-dasharray','5,5')
-			er.append('text').attr('x',140).attr('y',4).attr('fill','#cfe9ff').attr('font-size',10).text('dashed rule')
-			const dr = lg.append('g').attr('transform','translate(10,86)')
-			dr.append('rect').attr('x',0).attr('y',-9).attr('width',48).attr('height',16).attr('rx',3).attr('fill','rgba(30,30,47,0.9)').attr('stroke','#66a6ff')
-			dr.append('circle').attr('cx',-6).attr('cy',-2).attr('r',3).attr('fill','#00e676')
-			dr.append('text').attr('x',4).attr('y',2).attr('fill','#e0e6ff').attr('font-size',10).text('rule badge')
+			
+			// Edge types section
+			const edgeSection = lg.append('g').attr('transform', 'translate(10,110)')
+			edgeSection.append('text').attr('x', 0).attr('y', 0).attr('fill', '#81c784').attr('font-size', 11)
+				.attr('font-weight', 'bold').text('Connection Types:')
+			
+			const edgeTypes = [
+				{ style: 'solid', color: '#7aa', description: 'Strong inference', strength: '> 80%' },
+				{ style: 'dashed', color: '#ffa726', description: 'Moderate inference', strength: '60-80%' },
+				{ style: 'dotted', color: '#ef5350', description: 'Weak/Counter', strength: '< 60%' }
+			]
+			
+			edgeTypes.forEach((edge, i) => {
+				const y = 12 + i * 12
+				const edgeG = edgeSection.append('g').attr('transform', `translate(0, ${y})`)
+				
+				// Visual example
+				const line = edgeG.append('line').attr('x1', 0).attr('y1', 0).attr('x2', 30).attr('y2', 0)
+					.attr('stroke', edge.color).attr('stroke-width', 2)
+				
+				if (edge.style === 'dashed') line.attr('stroke-dasharray', '4,2')
+				if (edge.style === 'dotted') line.attr('stroke-dasharray', '2,2')
+				
+				// Arrow
+				edgeG.append('polygon').attr('points', '28,-2 32,0 28,2').attr('fill', edge.color)
+				
+				// Description
+				edgeG.append('text').attr('x', 38).attr('y', 3).attr('fill', '#cfe9ff').attr('font-size', 9)
+					.text(`${edge.description} (${edge.strength})`)
+			})
+			
+			// Status indicators section
+			const statusSection = lg.append('g').attr('transform', 'translate(150,110)')
+			statusSection.append('text').attr('x', 0).attr('y', 0).attr('fill', '#81c784').attr('font-size', 11)
+				.attr('font-weight', 'bold').text('Status Indicators:')
+			
+			const statusTypes = [
+				{ indicator: '●', color: '#4caf50', description: 'Active node' },
+				{ indicator: '●', color: '#f44336', description: 'Conflict detected' },
+				{ indicator: '📌', color: '#ffc107', description: 'Pinned position' },
+				{ indicator: '!', color: '#ff5722', description: 'Fallacy warning' }
+			]
+			
+			statusTypes.forEach((status, i) => {
+				const y = 12 + i * 12
+				const statusG = statusSection.append('g').attr('transform', `translate(0, ${y})`)
+				
+				statusG.append('text').attr('x', 0).attr('y', 3).attr('fill', status.color)
+					.attr('font-size', 10).attr('text-anchor', 'middle').text(status.indicator)
+				
+				statusG.append('text').attr('x', 12).attr('y', 3).attr('fill', '#cfe9ff').attr('font-size', 9)
+					.text(status.description)
+			})
+			
+			// Educational tips
+			const tipsSection = lg.append('g').attr('transform', 'translate(10,165)')
+			if (simulationMode) {
+				tipsSection.append('text').attr('x', 0).attr('y', 0).attr('fill', '#90caf9').attr('font-size', 8)
+					.text('💡 Tips: Hover nodes/edges for details • Click facet icons for analysis')
+			} else {
+				tipsSection.append('text').attr('x', 0).attr('y', 0).attr('fill', '#90caf9').attr('font-size', 8)
+					.text('ℹ️ Enable Simulation Mode for interactive educational features')
+			}
 		}
 
 		// minimize label overlap by hiding ones whose bbox overlaps another (simple pass)
