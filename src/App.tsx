@@ -8,6 +8,7 @@ const VizVenn = lazy(() => import('./pages/VizVenn'))
 const VizAst = lazy(() => import('./pages/VizAst'))
 const VizSymbols = lazy(() => import('./pages/VizSymbols'))
 const LogicVisualizer = lazy(() => import('./pages/LogicVisualizer'))
+const Phase1Verification = lazy(() => import('./test/Phase1Verification'))
 import './App.css'
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
             <Route path="/viz/ast" element={<VizAst />} />
             <Route path="/viz/symbols" element={<VizSymbols />} />
             <Route path="/viz" element={<LogicVisualizer />} />
+            <Route path="/test/phase1" element={<Phase1Verification />} />
             <Route path="*" element={<Home />} />
           </Routes>
         </Suspense>
