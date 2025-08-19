@@ -12,6 +12,174 @@ import { NeonAccordion, type NeonAccordionItem } from '../Accordion/NeonAccordio
 import { parseMarkdownStructure, type MarkdownSection } from '../../services/markdownParser'
 import ScienceIcon from '@mui/icons-material/Science'
 
+// Enhanced markdown renderer for accordion content
+const AccordionMarkdownRenderer: React.FC<{ 
+  content: string 
+  skipHeadings?: boolean
+  setCurrentExpression: (expr: string) => void
+}> = ({ content, skipHeadings = true, setCurrentExpression }) => {
+  const [remarkPlugins, setRemarkPlugins] = useState<any[] | null>(null)
+  const [rehypePlugins, setRehypePlugins] = useState<any[] | null>(null)
+
+  useEffect(() => {
+    Promise.all([
+      import('remark-gfm').then(m => m.default),
+      import('remark-math').then(m => m.default),
+    ]).then(setRemarkPlugins)
+    Promise.all([
+      import('rehype-katex').then(m => m.default),
+      import('rehype-highlight').then(m => m.default),
+      import('rehype-raw').then(m => m.default),
+    ]).then(setRehypePlugins)
+  }, [])
+
+  if (!remarkPlugins || !rehypePlugins) {
+    return <Typography variant="body2" sx={{ opacity: 0.7 }}>Loading content...</Typography>
+  }
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={[...remarkPlugins, logicRemarkPlugin]}
+      rehypePlugins={[...rehypePlugins]}
+      components={{
+        // Skip headings if requested (they're in accordion titles)
+        h1: skipHeadings ? () => null : ({ children }) => <Typography variant="h5" sx={{ color: '#40c4ff', mb: 1, mt: 2, fontWeight: 600 }}>{children}</Typography>,
+        h2: skipHeadings ? () => null : ({ children }) => <Typography variant="h6" sx={{ color: '#8ad7ff', mb: 1, mt: 2, fontWeight: 600 }}>{children}</Typography>,
+        h3: skipHeadings ? () => null : ({ children }) => <Typography variant="subtitle1" sx={{ color: '#b3e5ff', mb: 1, mt: 2, fontWeight: 600 }}>{children}</Typography>,
+        h4: skipHeadings ? () => null : ({ children }) => <Typography variant="subtitle2" sx={{ color: '#cfe9ff', mb: 1, mt: 1.5, fontWeight: 600 }}>{children}</Typography>,
+        h5: skipHeadings ? () => null : ({ children }) => <Typography variant="body1" sx={{ color: '#e1f5fe', mb: 1, mt: 1, fontWeight: 600 }}>{children}</Typography>,
+        h6: skipHeadings ? () => null : ({ children }) => <Typography variant="body2" sx={{ color: '#f3e5f5', mb: 1, fontWeight: 600 }}>{children}</Typography>,
+        p: ({ children }) => <Typography variant="body2" sx={{ mb: 1.5, lineHeight: 1.6 }}>{children}</Typography>,
+        ul: ({ children }) => <Box component="ul" sx={{ mb: 1.5, pl: 2, '& li': { mb: 0.5 } }}>{children}</Box>,
+        ol: ({ children }) => <Box component="ol" sx={{ mb: 1.5, pl: 2, '& li': { mb: 0.5 } }}>{children}</Box>,
+        li: ({ children }) => <Typography component="li" variant="body2" sx={{ mb: 0.5, lineHeight: 1.6 }}>{children}</Typography>,
+        blockquote: ({ children }) => (
+          <Box sx={{ 
+            borderLeft: '4px solid rgba(64,196,255,0.5)',
+            pl: 2,
+            py: 1,
+            mb: 1.5,
+            backgroundColor: 'rgba(64,196,255,0.05)',
+            borderRadius: '0 4px 4px 0',
+            fontStyle: 'italic'
+          }}>
+            {children}
+          </Box>
+        ),
+        table: ({ children }) => (
+          <Box sx={{ mb: 1.5, overflow: 'auto' }}>
+            <Box component="table" sx={{ 
+              width: '100%', 
+              borderCollapse: 'collapse',
+              '& th, & td': {
+                border: '1px solid rgba(64,196,255,0.3)',
+                padding: '8px 12px',
+                textAlign: 'left'
+              },
+              '& th': {
+                backgroundColor: 'rgba(64,196,255,0.1)',
+                color: '#40c4ff',
+                fontWeight: 600
+              },
+              '& td': {
+                backgroundColor: 'rgba(64,196,255,0.02)'
+              }
+            }}>
+              {children}
+            </Box>
+          </Box>
+        ),
+        code: ({ children, className }) => {
+          // Check if it's inline code (no className usually means inline)
+          if (!className) {
+            return (
+              <Box component="code" sx={{ 
+                backgroundColor: 'rgba(64,196,255,0.15)', 
+                color: '#40c4ff',
+                px: 0.5,
+                py: 0.2,
+                borderRadius: 0.5,
+                fontSize: 13,
+                fontFamily: 'monospace'
+              }}>
+                {children}
+              </Box>
+            )
+          }
+          
+          // Check if it's an expression block
+          const content = String(children).trim()
+          const isExpression = className?.includes('language-expression') || content.match(/^[\(\)\w\s→↔⇒⇔¬∧∨⊻↑⊢⊨∀∃⊥⊤&|!~<>=\-]+$/)
+          
+          if (isExpression) {
+            return (
+              <Box sx={{ mb: 1.5 }}>
+                <Box sx={{ 
+                  backgroundColor: 'rgba(0,0,0,0.4)', 
+                  border: '2px solid rgba(64,196,255,0.5)',
+                  borderRadius: 1,
+                  p: 1.5,
+                  fontFamily: 'monospace',
+                  fontSize: 14,
+                  overflow: 'auto',
+                  position: 'relative',
+                  '&::before': {
+                    content: '"Expression"',
+                    position: 'absolute',
+                    top: -10,
+                    left: 12,
+                    backgroundColor: 'rgba(20,25,35,1)',
+                    color: '#40c4ff',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    padding: '2px 8px',
+                    borderRadius: 1
+                  }
+                }}>
+                  <pre style={{ margin: 0, color: '#00e676' }}>{content}</pre>
+                  <button 
+                    onClick={() => setCurrentExpression(content)}
+                    style={{ 
+                      marginTop: 8,
+                      padding: '4px 8px', 
+                      borderRadius: 4, 
+                      border: '1px solid #40c4ff', 
+                      backgroundColor: 'rgba(64,196,255,0.1)', 
+                      color: '#40c4ff', 
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      fontWeight: 600
+                    }}
+                  >
+                    Use Expression
+                  </button>
+                </Box>
+              </Box>
+            )
+          }
+          
+          return (
+            <Box sx={{ 
+              backgroundColor: 'rgba(0,0,0,0.4)', 
+              border: '1px solid rgba(64,196,255,0.3)',
+              borderRadius: 1,
+              p: 1.5,
+              mb: 1.5,
+              fontFamily: 'monospace',
+              fontSize: 13,
+              overflow: 'auto'
+            }}>
+              <pre style={{ margin: 0 }}>{children}</pre>
+            </Box>
+          )
+        }
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  )
+}
+
 type DocumentViewerProps = {
   filenameOverride?: string
 }
@@ -100,113 +268,21 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
         ),
         content: (
           <Box>
-            {/* Render section content with markdown */}
-            <ReactMarkdown
-              remarkPlugins={[logicRemarkPlugin]}
-              components={{
-                // Skip the main heading since it's in the accordion title
-                h1: () => null,
-                h2: () => null,
-                h3: () => null,
-                h4: () => null,
-                h5: () => null,
-                h6: () => null,
-                p: ({ children }) => <Typography variant="body2" sx={{ mb: 1.5, lineHeight: 1.6 }}>{children}</Typography>,
-                ul: ({ children }) => <Box component="ul" sx={{ mb: 1.5, pl: 2, '& li': { mb: 0.5 } }}>{children}</Box>,
-                ol: ({ children }) => <Box component="ol" sx={{ mb: 1.5, pl: 2, '& li': { mb: 0.5 } }}>{children}</Box>,
-                blockquote: ({ children }) => (
-                  <Box sx={{ 
-                    borderLeft: '4px solid rgba(64,196,255,0.5)',
-                    pl: 2,
-                    py: 1,
-                    mb: 1.5,
-                    backgroundColor: 'rgba(64,196,255,0.05)',
-                    borderRadius: '0 4px 4px 0',
-                    fontStyle: 'italic'
-                  }}>
-                    {children}
-                  </Box>
-                ),
-                code: ({ children, className }) => {
-                  const isBlock = className?.includes('language-')
-                  if (isBlock) {
-                    return (
-                      <Box sx={{ 
-                        backgroundColor: 'rgba(0,0,0,0.4)', 
-                        border: '1px solid rgba(64,196,255,0.3)',
-                        borderRadius: 1,
-                        p: 1.5,
-                        mb: 1.5,
-                        fontFamily: 'monospace',
-                        fontSize: 13,
-                        overflow: 'auto'
-                      }}>
-                        {children}
-                      </Box>
-                    )
-                  }
-                  return (
-                    <Box component="code" sx={{ 
-                      backgroundColor: 'rgba(64,196,255,0.15)', 
-                      color: '#40c4ff',
-                      px: 0.5,
-                      py: 0.2,
-                      borderRadius: 0.5,
-                      fontSize: 13,
-                      fontFamily: 'monospace'
-                    }}>
-                      {children}
-                    </Box>
-                  )
-                }
-              }}
-            >
-              {section.content}
-            </ReactMarkdown>
-            
-            {/* Expression buttons for this section */}
-            {markdownStructure.expressions
-              .filter(expr => expr.sectionId === section.id)
-              .map((expr, idx) => (
-                <Box key={idx} sx={{ mt: 2, p: 1.5, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 1, border: '1px solid rgba(64,196,255,0.2)' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                    <Typography variant="caption" sx={{ color: '#40c4ff', fontWeight: 600 }}>Expression (Line {expr.line + 1}):</Typography>
-                  </Box>
-                  <pre style={{ 
-                    margin: 0, 
-                    fontSize: 13, 
-                    backgroundColor: 'rgba(0,0,0,0.4)',
-                    padding: 12,
-                    borderRadius: 6,
-                    overflow: 'auto',
-                    border: '1px solid rgba(64,196,255,0.1)'
-                  }}>
-                    {expr.expression}
-                  </pre>
-                  <button 
-                    onClick={() => setCurrentExpression(expr.expression)}
-                    style={{ 
-                      marginTop: 8,
-                      padding: '6px 12px', 
-                      borderRadius: 6, 
-                      border: '1px solid #40c4ff', 
-                      backgroundColor: 'rgba(64,196,255,0.1)', 
-                      color: '#40c4ff', 
-                      cursor: 'pointer',
-                      fontSize: 12,
-                      fontWeight: 600
-                    }}
-                  >
-                    Use Expression
-                  </button>
-                </Box>
-              ))
-            }
+            {/* Render section content with enhanced markdown */}
+            <AccordionMarkdownRenderer 
+              content={section.content}
+              skipHeadings={true}
+              setCurrentExpression={setCurrentExpression}
+            />
+
             
             {/* Render child sections as nested accordions */}
             {section.children.length > 0 && (
               <Box sx={{ mt: 2 }}>
-                <NeonAccordion items={section.children.map(createAccordionItem)} />
+                <NeonAccordion 
+                  items={section.children.map(createAccordionItem)} 
+                  level={section.level}
+                />
               </Box>
             )}
           </Box>

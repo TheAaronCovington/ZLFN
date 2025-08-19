@@ -42,25 +42,65 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <header className="header">
         <nav className="navbar">
           <Link to="/" className="logo">
-            Xervean
+            <span className="logo-text">Xervean</span>
+            <span className="logo-subtitle">Logic Explorer</span>
           </Link>
           <div className="nav-links">
-            <Link to="/" className="nav-link">Home</Link>
-            <Link to="/viz/zlfn" className="nav-link">ZLFN</Link>
+            <Link to="/" className="nav-link">
+              <HomeIcon sx={{ fontSize: 18, mr: 0.5 }} />
+              Home
+            </Link>
+            <Link to="/viz/zlfn" className="nav-link">
+              <HubIcon sx={{ fontSize: 18, mr: 0.5 }} />
+              ZLFN
+            </Link>
             <Link to="/viz/venn" className="nav-link">Venn</Link>
             <Link to="/viz/ast" className="nav-link">AST</Link>
-            <Link to="/viz" className="nav-link">Visualizer</Link>
+            <Link to="/viz" className="nav-link">
+              <ArticleIcon sx={{ fontSize: 18, mr: 0.5 }} />
+              Visualizer
+            </Link>
             <div className="dropdown">
-              <span className="nav-link dropdown-toggle">Documents</span>
+              <span className="nav-link dropdown-toggle">
+                <ArticleIcon sx={{ fontSize: 18, mr: 0.5 }} />
+                Documents
+              </span>
               <div className="dropdown-content">
                 <Link to="/document/TAG_Critique" className="dropdown-link">
-                  TAG Critique {isPinned('TAG_Critique') && <Chip size="small" icon={<PushPinIcon sx={{ fontSize: 14 }} />} label="Pinned" variant="outlined" sx={{ ml: 1, height: 20 }} />}
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                    <span>TAG Critique</span>
+                    {isPinned('TAG_Critique') && <Chip size="small" icon={<PushPinIcon sx={{ fontSize: 12 }} />} label="Pinned" sx={{ 
+                      ml: 1, 
+                      height: 18, 
+                      backgroundColor: 'rgba(64,196,255,0.15)', 
+                      color: '#40c4ff',
+                      fontSize: 10
+                    }} />}
+                  </Box>
                 </Link>
                 <Link to="/document/logic_demo" className="dropdown-link">
-                  Logic Demo {isPinned('logic_demo') && <Chip size="small" icon={<PushPinIcon sx={{ fontSize: 14 }} />} label="Pinned" variant="outlined" sx={{ ml: 1, height: 20 }} />}
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                    <span>Logic Demo</span>
+                    {isPinned('logic_demo') && <Chip size="small" icon={<PushPinIcon sx={{ fontSize: 12 }} />} label="Pinned" sx={{ 
+                      ml: 1, 
+                      height: 18, 
+                      backgroundColor: 'rgba(64,196,255,0.15)', 
+                      color: '#40c4ff',
+                      fontSize: 10
+                    }} />}
+                  </Box>
                 </Link>
                 <Link to="/document/test" className="dropdown-link">
-                  Test Document {isPinned('test') && <Chip size="small" icon={<PushPinIcon sx={{ fontSize: 14 }} />} label="Pinned" variant="outlined" sx={{ ml: 1, height: 20 }} />}
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                    <span>Test Document</span>
+                    {isPinned('test') && <Chip size="small" icon={<PushPinIcon sx={{ fontSize: 12 }} />} label="Pinned" sx={{ 
+                      ml: 1, 
+                      height: 18, 
+                      backgroundColor: 'rgba(64,196,255,0.15)', 
+                      color: '#40c4ff',
+                      fontSize: 10
+                    }} />}
+                  </Box>
                 </Link>
               </div>
             </div>
