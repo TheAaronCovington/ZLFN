@@ -4,7 +4,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 
 export interface NeonAccordionItem {
 	id: string
-	title: string
+	title: string | React.ReactNode
 	content: React.ReactNode
 }
 
@@ -38,7 +38,11 @@ export const NeonAccordion: React.FC<NeonAccordionProps> = ({ items }) => {
 			{items.map(item => (
 				<Accordion key={item.id} disableGutters>
 					<AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: '#40c4ff' }} />}>
-						<Typography sx={{ fontWeight: 600, color: '#40c4ff' }}>{item.title}</Typography>
+						{typeof item.title === 'string' ? (
+							<Typography sx={{ fontWeight: 600, color: '#40c4ff' }}>{item.title}</Typography>
+						) : (
+							item.title
+						)}
 					</AccordionSummary>
 					<AccordionDetails>
 						{item.content}

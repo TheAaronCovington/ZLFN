@@ -43,15 +43,34 @@ Here's a more complex example:
 
 ## Advanced Logical Reasoning
 
-### Transcendental Argument Analysis
+### Argument: Transcendental Argument for God (TAG)
 
-The **Transcendental Argument for God (TAG)** can be formalized as:
+The **Transcendental Argument for God (TAG)** is a **transcendental** argument that can be formalized as:
 
-1. **Premise 1**: <span class="logic-term">∀x (Logic(x) → God_Grounds(x))</span>
-2. **Premise 2**: <span class="logic-term">Logic_Exists</span>
-3. **Conclusion**: <span class="logic-term">∃God</span>
+1. **Premise 1**: Logic and reasoning exist and are meaningful
+2. **Premise 2**: For logic to be meaningful, it must have an ultimate foundation  
+3. **Premise 3**: Only God can provide the ultimate foundation for logic
+4. **Conclusion**: Therefore, God exists
 
-However, the logical flaw lies in establishing the truth of **Premise 1**.
+```expression
+(Logic_Exists ∧ (Logic_Exists → Need_Foundation) ∧ (Need_Foundation → God_Provides)) → God_Exists
+```
+
+However, the logical flaw lies in establishing the truth of **Premise 3**.
+
+### Argument: Classical Modus Ponens
+
+A simple **deductive** argument demonstrating modus ponens:
+
+1. **Premise 1**: If it is raining, then the ground is wet
+2. **Premise 2**: It is raining  
+3. **Conclusion**: Therefore, the ground is wet
+
+```expression
+(Raining → Ground_Wet) ∧ Raining → Ground_Wet
+```
+
+This argument is **valid** and demonstrates the logical rule of modus ponens.
 
 ### Code Example: Logic Parser
 

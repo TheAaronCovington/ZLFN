@@ -8,6 +8,7 @@ import type { VennDiagramData, NecessarySufficientExample } from '../components/
 import Heatmap from '../components/Visualizations/Heatmap'
 import NeonCard from '../components/UI/NeonCard'
 import { parseExpressionToAst, astToZlfnGraph, toNNF, toCNF, astToString } from '../services/logic'
+import { parseDocumentToGraph, type DocumentGraphData } from '../services/documentParser'
 import ASTTree from '../components/Visualizations/ASTTree'
 import type { AstNodeRec } from '../components/Visualizations/ASTTree'
 import { useLogicShared } from '../context/LogicSharedContext'
@@ -28,12 +29,21 @@ const LogicVisualizer: React.FC = () => {
 	const graph = React.useMemo(() => (ast ? astToZlfnGraph(ast) : null), [ast])
 	const [showDemoExtras, setShowDemoExtras] = React.useState<boolean>(() => localStorage.getItem('xv_demo_extras') === '1')
 	React.useEffect(() => { try { localStorage.setItem('xv_demo_extras', showDemoExtras ? '1' : '0') } catch {} }, [showDemoExtras])
-	let nodes: ZlfnNode[] = (graph?.nodes as ZlfnNode[]) || [
+	
+	// Document-based graph data
+	const [documentGraphData, setDocumentGraphData] = React.useState<DocumentGraphData | null>(null)
+	const [useDocumentData, setUseDocumentData] = React.useState<boolean>(() => localStorage.getItem('xv_use_document') === '1')
+	React.useEffect(() => { try { localStorage.setItem('xv_use_document', useDocumentData ? '1' : '0') } catch {} }, [useDocumentData])
+	// Determine data source: document graph data takes precedence over AST graph
+	const activeData = useDocumentData && documentGraphData ? documentGraphData : 
+					   graph ? { nodes: graph.nodes as ZlfnNode[], edges: graph.edges as ZlfnEdge[] } : null
+	
+	let nodes: ZlfnNode[] = activeData?.nodes || [
 		{ id: 'P1', label: 'P1', color: '#20B2AA', type: 'premise', size: { width: 100, height: 30 }, argumentId: 'Demo' },
 		{ id: 'T1', label: 'T1', color: '#4169E1', type: 'term', size: { radius: 20 }, argumentId: 'Demo' },
 		{ id: 'C', label: 'C', color: '#9370DB', type: 'conclusion', size: { width: 100, height: 30 }, argumentId: 'Demo' },
 	]
-	let edges: ZlfnEdge[] = (graph?.edges as ZlfnEdge[]) || [
+	let edges: ZlfnEdge[] = activeData?.edges || [
 		{ from: 'P1', to: 'T1', weight: 85, style: 'solid', rule: 'Modus Ponens' },
 		{ from: 'T1', to: 'C', weight: 75, style: 'dashed', rule: 'Hypothetical Syllogism' },
 	]
@@ -82,6 +92,24 @@ const LogicVisualizer: React.FC = () => {
 	const selectedNode = React.useMemo(() => nodes.find(n => n.id === selectedNodeId) || null, [nodes, selectedNodeId])
 	const [snackbar, setSnackbar] = React.useState<{ open: boolean; msg: string; severity?: 'success'|'info'|'warning'|'error' }>({ open: false, msg: '' })
 	const showInfo = (msg: string, severity: 'success'|'info'|'warning'|'error' = 'info') => setSnackbar({ open: true, msg, severity })
+	
+	// Load document graph data when docId changes
+	React.useEffect(() => {
+		if (useDocumentData && docId) {
+			parseDocumentToGraph(docId).then(data => {
+				setDocumentGraphData(data)
+				if (data && data.arguments.length > 0) {
+					showInfo(`Loaded ${data.arguments.length} logical arguments from document`, 'success')
+				}
+			}).catch(error => {
+				console.error('Failed to parse document:', error)
+				showInfo('Failed to parse document for logical arguments', 'error')
+			})
+		} else {
+			setDocumentGraphData(null)
+		}
+	}, [docId, useDocumentData, showInfo])
+	
 	const exprInputRef = React.useRef<HTMLInputElement | null>(null)
 	const [searchId, setSearchId] = React.useState<string>('')
 	const [searchTrigger, setSearchTrigger] = React.useState<number>(0)
@@ -260,7 +288,50 @@ const LogicVisualizer: React.FC = () => {
 							<Button size="small" variant="outlined" sx={{ ml: 1 }} onClick={() => setShortcutsOpen(true)}>Shortcuts</Button>
 							<Button size="small" variant="outlined" sx={{ ml: 1 }} onClick={toggleQS}>{qsDismissed ? 'Show Quick Start' : 'Hide Quick Start'}</Button>
 							<Button size="small" variant={showDemoExtras ? 'contained' : 'outlined'} sx={{ ml: 1 }} onClick={() => setShowDemoExtras(v=>!v)}>Demo Extras</Button>
+							<Button size="small" variant={useDocumentData ? 'contained' : 'outlined'} sx={{ ml: 1 }} onClick={() => setUseDocumentData(v=>!v)}>Document Mode</Button>
 						</NeonCard>
+						
+						{/* Document Arguments Panel */}
+						{useDocumentData && documentGraphData && documentGraphData.arguments.length > 0 && (
+							<NeonCard title={`Logical Arguments (${documentGraphData.arguments.length})`}>
+								<Stack spacing={1}>
+									{documentGraphData.arguments.map((arg) => (
+										<Box key={arg.id} sx={{ p: 1, border: '1px solid rgba(64,196,255,0.3)', borderRadius: 1, backgroundColor: 'rgba(25,25,35,0.5)' }}>
+											<Typography variant="subtitle2" sx={{ color: '#40c4ff', mb: 0.5 }}>{arg.title}</Typography>
+											<Typography variant="caption" sx={{ color: '#8ad7ff', textTransform: 'uppercase' }}>{arg.type} argument</Typography>
+											{arg.premises.length > 0 && (
+												<Box sx={{ mt: 1 }}>
+													<Typography variant="caption" sx={{ color: '#20B2AA', fontWeight: 600 }}>Premises:</Typography>
+													{arg.premises.map((premise, pIdx) => (
+														<Box key={pIdx} sx={{ ml: 1, fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>
+															{pIdx + 1}. {premise.length > 80 ? premise.substring(0, 80) + '...' : premise}
+														</Box>
+													))}
+												</Box>
+											)}
+											{arg.conclusions.length > 0 && (
+												<Box sx={{ mt: 1 }}>
+													<Typography variant="caption" sx={{ color: '#9370DB', fontWeight: 600 }}>Conclusions:</Typography>
+													{arg.conclusions.map((conclusion, cIdx) => (
+														<Box key={cIdx} sx={{ ml: 1, fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>
+															{cIdx + 1}. {conclusion.length > 80 ? conclusion.substring(0, 80) + '...' : conclusion}
+														</Box>
+													))}
+												</Box>
+											)}
+											{arg.validity && (
+												<Box sx={{ mt: 1 }}>
+													<Typography variant="caption" sx={{ color: arg.validity === 'valid' ? '#00e676' : '#ff5252' }}>
+														{arg.validity.toUpperCase()}
+													</Typography>
+												</Box>
+											)}
+										</Box>
+									))}
+								</Stack>
+							</NeonCard>
+						)}
+						
 						{(truthAst || ast) && (
 							<NeonCard title={truthAst ? 'Truth Table (node expression)' : 'Truth Table'}>
 								{truthAst && (

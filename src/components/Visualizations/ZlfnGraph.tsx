@@ -1,9 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import * as d3 from 'd3'
 import { useResizeObserver } from '../../hooks/useResizeObserver'
-import { Button, Stack, IconButton, TextField, Chip, Menu, MenuItem, Divider } from '@mui/material'
+import { Button, Stack, IconButton, TextField, Chip, Menu, MenuItem, Divider, ButtonGroup, Collapse, Paper, Box } from '@mui/material'
 import { useLogicShared } from '../../context/LogicSharedContext'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import ExpandLessIcon from '@mui/icons-material/ExpandLess'
+import PlayArrowIcon from '@mui/icons-material/PlayArrow'
+import PauseIcon from '@mui/icons-material/Pause'
+import SearchIcon from '@mui/icons-material/Search'
+import FilterListIcon from '@mui/icons-material/FilterList'
 import { evaluateInference, evaluateStates, getRuleStrength, isRuleFallacy, bayesianUpdate } from '../../services/inference'
 import { downloadJson } from '../../services/io'
 import { parseVennRule, computeShading } from '../../services/venn'
@@ -144,6 +150,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	const [nodeSearchTerm, setNodeSearchTerm] = useState<string>('')
 	const [showNodeSearch, setShowNodeSearch] = useState<boolean>(false)
 	const [selectedSearchIndex, setSelectedSearchIndex] = useState<number>(-1)
+	const [toolbarExpanded, setToolbarExpanded] = useState<boolean>(false)
 	const fileInputRef = useRef<HTMLInputElement | null>(null)
 	const nodeSearchRef = useRef<HTMLInputElement | null>(null)
 
@@ -3075,7 +3082,7 @@ Controls:
 			})
 		try { localStorage.setItem(`xv_layout_${storageKey}`, JSON.stringify(data)); onInfo?.('Layout saved') } catch {}
 	}
-	// const clearLayout = () => { if (!storageKey) return; try { localStorage.removeItem(`xv_layout_${storageKey}`); onInfo?.('Layout cleared') } catch {} }
+
 	const toggleFreeze = () => {
 		setFrozen(prev => {
 			const next = !prev
@@ -3119,52 +3126,236 @@ Controls:
 
 	return (
 		<div ref={elementRef} style={{ width: '100%', height: 560, position: 'relative' }}>
-			<Stack direction="row" spacing={1} sx={{ position: 'absolute', top: 8, left: 8, zIndex: 2, flexWrap: 'wrap', alignItems: 'center', paddingRight: 6 }}>
-				<Button aria-label="Toggle simulation mode" size="small" variant={simulationMode ? 'contained' : 'outlined'} onClick={() => {
-					const next = !simulationMode
-					setSimulationMode(next)
-					if (!next) resetStates()
-					onInfo?.(next ? 'Simulation enabled' : 'Simulation disabled')
-				}}>
-					Simulation
-				</Button>
-				<Button aria-label="Fit to contents" size="small" variant="outlined" onClick={fitToContents}>
-					Fit
-				</Button>
-				<Button aria-label="Center on selection" size="small" variant="outlined" onClick={centerOnSelection} disabled={!selectedNodeId}>
-					Center
-				</Button>
-				<Button aria-label="Path highlight" size="small" variant={pathHighlight ? 'contained' : 'outlined'} onClick={()=>{ setPathHighlight(s=>{ const next = !s; onInfo?.(next ? 'Path highlight on' : 'Path highlight off'); return next }) }}>
-					Path Highlight
-				</Button>
-				<Button aria-label="Hierarchy mode" size="small" variant={hierarchyMode ? 'contained' : 'outlined'} onClick={()=>{ const next = !hierarchyMode; setHierarchyMode(next); try { localStorage.setItem('xv_hierarchy', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Hierarchy mode on' : 'Hierarchy mode off') }}>Hierarchy</Button>
-				<Button aria-label="Toggle clusters" size="small" variant={showClusters ? 'contained' : 'outlined'} onClick={()=> setShowClusters(s=>!s)}>Clusters</Button>
-				<Button aria-label="Toggle rivers" size="small" variant={showRivers ? 'contained' : 'outlined'} onClick={()=> setShowRivers(s=>!s)}>Rivers</Button>
-				<TextField size="small" placeholder="Filter rule" value={ruleFilter} onChange={(e)=>setRuleFilter(e.target.value)} inputRef={ruleFilterRef} sx={{ minWidth: 140, maxWidth: 220 }} />
-				{showNodeSearch && (
-					<TextField size="small" placeholder="Search nodes (Ctrl+F)" value={nodeSearchTerm} onChange={(e)=>setNodeSearchTerm(e.target.value)} inputRef={nodeSearchRef} sx={{ minWidth: 160, maxWidth: 240 }} />
-				)}
-				<Button aria-label="Clear filters" size="small" variant="outlined" onClick={()=>{ setRuleFilter(''); setPathHighlight(false); setHideNonPath(false); setNodeSearchTerm(''); onInfo?.('Cleared filters') }}>Clear</Button>
-				<IconButton aria-label="More options" size="small" onClick={openMenu}>
-					<MoreVertIcon />
-				</IconButton>
-				{/* Modes legend */}
-				<Stack direction="row" spacing={0.5} sx={{ ml: 1, alignItems: 'center' }}>
-					{Object.entries(modes).filter(([,v]) => !!v).map(([k]) => (
-						<Chip key={k} size="small" label={k} color="primary" variant="outlined" />
-					))}
-				</Stack>
-				{/* Status summary */}
-				<span style={{ marginLeft: 8, fontSize: 12, opacity: 0.8 }}>{statusText}</span>
-				{/* Argument selector chips */}
-				{argumentIds.length > 0 && (
-					<Stack direction="row" spacing={0.5} sx={{ ml: 1, alignItems: 'center' }}>
+			{/* Compact Main Toolbar */}
+			<Paper 
+				elevation={2} 
+				sx={{ 
+					position: 'absolute', 
+					top: 8, 
+					left: 8, 
+					zIndex: 2, 
+					borderRadius: 2,
+					overflow: 'hidden',
+					maxWidth: 'calc(100% - 180px)'
+				}}
+			>
+				{/* Primary Controls Row */}
+				<Box sx={{ p: 1, display: 'flex', alignItems: 'center', gap: 1, backgroundColor: 'rgba(25,25,35,0.95)' }}>
+					{/* Core Controls */}
+					<ButtonGroup size="small" variant="outlined">
+						<Button 
+							variant={simulationMode ? 'contained' : 'outlined'}
+							startIcon={simulationMode ? <PauseIcon /> : <PlayArrowIcon />}
+							onClick={() => {
+								const next = !simulationMode
+								setSimulationMode(next)
+								if (!next) resetStates()
+								onInfo?.(next ? 'Simulation enabled' : 'Simulation disabled')
+							}}
+						>
+							{simulationMode ? 'Pause' : 'Simulate'}
+						</Button>
+						<Button onClick={fitToContents}>
+							Fit
+						</Button>
+						<Button onClick={centerOnSelection} disabled={!selectedNodeId}>
+							Center
+						</Button>
+					</ButtonGroup>
+					
+					{/* Quick Search */}
+					<IconButton 
+						size="small" 
+						onClick={() => setShowNodeSearch(v => !v)}
+						color={showNodeSearch ? 'primary' : 'default'}
+					>
+						<SearchIcon />
+					</IconButton>
+					{showNodeSearch && (
+						<TextField 
+							size="small" 
+							placeholder="Search nodes..." 
+							value={nodeSearchTerm} 
+							onChange={(e) => setNodeSearchTerm(e.target.value)} 
+							inputRef={nodeSearchRef} 
+							sx={{ width: 160 }}
+						/>
+					)}
+
+					{/* Mode Indicators */}
+					<Stack direction="row" spacing={0.5}>
+						{Object.entries(modes).filter(([,v]) => !!v).map(([k]) => (
+							<Chip key={k} size="small" label={k} color="primary" variant="outlined" />
+						))}
+					</Stack>
+
+					{/* Expand Toggle */}
+					<IconButton 
+						size="small" 
+						onClick={() => setToolbarExpanded(v => !v)}
+						sx={{ ml: 'auto' }}
+					>
+						{toolbarExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+					</IconButton>
+				</Box>
+
+				{/* Expanded Toolbar */}
+				<Collapse in={toolbarExpanded}>
+					<Box sx={{ p: 1, backgroundColor: 'rgba(35,35,45,0.98)', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+						<Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+							{/* Visual Controls */}
+							<ButtonGroup size="small">
+								<Button 
+									variant={showClusters ? 'contained' : 'outlined'}
+									onClick={() => setShowClusters(s => !s)}
+								>
+									Clusters
+								</Button>
+								<Button 
+									variant={showRivers ? 'contained' : 'outlined'}
+									onClick={() => setShowRivers(s => !s)}
+								>
+									Rivers
+								</Button>
+								<Button 
+									variant={pathHighlight ? 'contained' : 'outlined'}
+									onClick={() => {
+										setPathHighlight(s => {
+											const next = !s
+											onInfo?.(next ? 'Path highlight on' : 'Path highlight off')
+											return next
+										})
+									}}
+								>
+									Highlight
+								</Button>
+							</ButtonGroup>
+
+							{/* Layout Controls */}
+							<ButtonGroup size="small">
+								<Button 
+									variant={hierarchyMode ? 'contained' : 'outlined'}
+									onClick={() => {
+										const next = !hierarchyMode
+										setHierarchyMode(next)
+										try { localStorage.setItem('xv_hierarchy', next ? '1' : '0') } catch {}
+										onInfo?.(next ? 'Hierarchy mode on' : 'Hierarchy mode off')
+									}}
+								>
+									Hierarchy
+								</Button>
+								<Button 
+									variant={showLegend ? 'contained' : 'outlined'}
+									onClick={() => {
+										const next = !showLegend
+										setShowLegend(next)
+										try { localStorage.setItem('xv_legend', next ? '1' : '0') } catch {}
+										onInfo?.(next ? 'Legend shown' : 'Legend hidden')
+									}}
+								>
+									Legend
+								</Button>
+								<Button 
+									variant={showMiniMap ? 'contained' : 'outlined'}
+									onClick={() => {
+										const next = !showMiniMap
+										setShowMiniMap(next)
+										try { localStorage.setItem('xv_minimap', next ? '1' : '0') } catch {}
+										onInfo?.(next ? 'Minimap on' : 'Minimap off')
+									}}
+								>
+									Minimap
+								</Button>
+							</ButtonGroup>
+
+							{/* Zone Controls */}
+							<ButtonGroup size="small">
+								<Button 
+									variant={showInformalZone ? 'contained' : 'outlined'}
+									onClick={() => setShowInformalZone(s => !s)}
+								>
+									Informal Zone
+								</Button>
+								<Button 
+									variant={showTemporalZone ? 'contained' : 'outlined'}
+									onClick={() => setShowTemporalZone(s => !s)}
+								>
+									Temporal Zone
+								</Button>
+								<Button 
+									variant={snapEnabled ? 'contained' : 'outlined'}
+									onClick={() => {
+										const next = !snapEnabled
+										setSnapEnabled(next)
+										try { localStorage.setItem('xv_snap', next ? '1' : '0') } catch {}
+										onInfo?.(next ? 'Snap enabled' : 'Snap disabled')
+									}}
+								>
+									Snap
+								</Button>
+							</ButtonGroup>
+
+							{/* Filter Controls */}
+							<TextField 
+								size="small" 
+								placeholder="Filter rules..." 
+								value={ruleFilter} 
+								onChange={(e) => setRuleFilter(e.target.value)} 
+								inputRef={ruleFilterRef}
+								InputProps={{
+									startAdornment: <FilterListIcon sx={{ mr: 1, color: 'action.active' }} />
+								}}
+								sx={{ width: 180 }}
+							/>
+							
+							<Button 
+								size="small" 
+								variant="outlined" 
+								onClick={() => {
+									setRuleFilter('')
+									setPathHighlight(false)
+									setHideNonPath(false)
+									setNodeSearchTerm('')
+									onInfo?.('Cleared filters')
+								}}
+							>
+								Clear
+							</Button>
+
+							<IconButton size="small" onClick={openMenu}>
+								<MoreVertIcon />
+							</IconButton>
+						</Stack>
+					</Box>
+				</Collapse>
+			</Paper>
+
+			{/* Argument Selector - Positioned Below Toolbar */}
+			{argumentIds.length > 0 && (
+				<Paper 
+					elevation={1} 
+					sx={{ 
+						position: 'absolute', 
+						top: toolbarExpanded ? 120 : 70, 
+						left: 8, 
+						zIndex: 1,
+						p: 0.5,
+						backgroundColor: 'rgba(25,25,35,0.95)',
+						borderRadius: 1
+					}}
+				>
+					<Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+						<span style={{ fontSize: 11, opacity: 0.7, marginRight: 4 }}>Args:</span>
 						<Chip
 							size="small"
-							label={selectedArgumentId ? 'All' : 'Overview'}
-							variant={selectedArgumentId ? 'outlined' : 'filled'}
-							onClick={() => { setSelectedArgumentId(null); if (storageKey) { try { localStorage.removeItem(`xv_argument_${storageKey}`) } catch {} } }}
-							title="Show all arguments"
+							label="All"
+							variant={!selectedArgumentId ? 'filled' : 'outlined'}
+							onClick={() => { 
+								setSelectedArgumentId(null); 
+								if (storageKey) { 
+									try { localStorage.removeItem(`xv_argument_${storageKey}`) } catch {} 
+								} 
+							}}
 						/>
 						{argumentIds.map(aid => (
 							<Chip
@@ -3173,25 +3364,43 @@ Controls:
 								label={aid}
 								color={selectedArgumentId === aid ? 'warning' : 'default'}
 								variant={selectedArgumentId === aid ? 'filled' : 'outlined'}
-								title="Focus argument"
 								onClick={() => {
 									setSelectedArgumentId(prev => {
 										const next = prev === aid ? null : aid
-										if (storageKey) { try { if (next) localStorage.setItem(`xv_argument_${storageKey}`, next); else localStorage.removeItem(`xv_argument_${storageKey}`) } catch {} }
+										if (storageKey) { 
+											try { 
+												if (next) localStorage.setItem(`xv_argument_${storageKey}`, next)
+												else localStorage.removeItem(`xv_argument_${storageKey}`) 
+											} catch {} 
+										}
 										return next
 									})
 								}}
 							/>
 						))}
 					</Stack>
-				)}
-				<Button aria-label="Toggle informal" size="small" variant={showInformalZone ? 'contained' : 'outlined'} onClick={()=> setShowInformalZone(s=>!s)}>Informal</Button>
-				<Button aria-label="Toggle temporal" size="small" variant={showTemporalZone ? 'contained' : 'outlined'} onClick={()=> setShowTemporalZone(s=>!s)}>Temporal</Button>
-				{/* Floating legend & dynamic fit chips */}
-				<Chip size="small" label={showLegend ? 'Legend: On' : 'Legend'} onClick={() => { const next = !showLegend; setShowLegend(next); try { localStorage.setItem('xv_legend', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Legend shown' : 'Legend hidden') }} />
-				<Chip size="small" label={dynamicFit ? 'Dynamic Fit: On' : 'Dynamic Fit'} onClick={() => { const next = !dynamicFit; setDynamicFit(next); try { localStorage.setItem('xv_dynamic_fit', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Dynamic fit on' : 'Dynamic fit off') }} />
-				<Chip size="small" label={snapEnabled ? 'Snap: On' : 'Snap'} onClick={() => { const next = !snapEnabled; setSnapEnabled(next); try { localStorage.setItem('xv_snap', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Snap on' : 'Snap off') }} />
-			</Stack>
+				</Paper>
+			)}
+
+			{/* Status Text */}
+			{statusText && (
+				<Box 
+					sx={{ 
+						position: 'absolute', 
+						bottom: 8, 
+						left: 8, 
+						backgroundColor: 'rgba(0,0,0,0.7)', 
+						color: 'white', 
+						px: 1, 
+						py: 0.5, 
+						borderRadius: 1, 
+						fontSize: 12,
+						zIndex: 1
+					}}
+				>
+					{statusText}
+				</Box>
+			)}
 			{tooltip && (
 				<div
 					style={{
