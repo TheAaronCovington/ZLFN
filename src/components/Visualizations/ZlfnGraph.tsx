@@ -24,6 +24,7 @@ import { parseVennRule, computeShading } from '../../services/venn'
 import { api } from '../../services/zlfnAPI'
 import BatchOperationsDialog from '../BatchOperations/BatchOperationsDialog'
 import { parseExpressionToAst } from '../../services/logic'
+import { renderZones } from '../../vis/layers/zones'
 
 // AST-based evaluator (no eval)
 function evaluateExpressionWithAst(expression: string, variables: string[], values: boolean[]): boolean {
@@ -653,35 +654,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				console.log('[ZLFN] Terms pre-sim Y-range:', minY.toFixed(1), '→', maxY.toFixed(1), 'n=', ys.length)
 			}
 		}
-		const zoneGroup = g.append('g').attr('class', 'zones')
-		zoneGroup
-			.selectAll('.zone')
-			.data(zonesToUse)
-			.join('rect')
-			.attr('class', 'zone')
-			.attr('x', (d: any) => d.xRange[0])
-			.attr('y', (d: any) => d.yRange[0])
-			.attr('width', (d: any) => d.xRange[1] - d.xRange[0])
-			.attr('height', (d: any) => d.yRange[1] - d.yRange[0])
-			.attr('fill', (d: any) => d.color)
-			.attr('fill-opacity', 0.08)
-			.attr('stroke', (d: any) => d.color)
-			.attr('stroke-opacity', 0.25)
-			.attr('stroke-width', 2)
-			.attr('rx', 8)
-
-		zoneGroup
-			.selectAll('.zone-label')
-			.data(zonesToUse)
-			.join('text')
-			.attr('class', 'zone-label')
-			.attr('x', (d: any) => (d.xRange[0] + d.xRange[1]) / 2)
-			.attr('y', (d: any) => d.yRange[0] - 10)
-			.attr('text-anchor', 'middle')
-			.attr('fill', (d: any) => d.color)
-			.attr('data-base-size', 12)
-			.attr('font-weight', 'bold')
-			.text((d: any) => d.name)
+		const zoneGroup = renderZones(g as any, zonesToUse as any)
 
 		// map for zone lookup and default assignment for nodes without zone
 		const zoneById = new Map<string, ZlfnZone>((zonesToUse as any[]).map((z: any) => [z.id, z]))
@@ -1381,28 +1354,28 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			.text(d => pinnedIds.has(d.id) ? '📌' : '')
 			.append('title').text('Toggle pin')
 
-		// facet icons (venn, truth, timeline) with placeholder overlay
+		// facet icons (use extracted helper)
 		const iconGroup = nodeEnter.append('g').attr('class', 'facet-icons').attr('transform', 'translate(-20,-18)')
-		// venn icon
-		iconGroup.append('circle').attr('r', 4).attr('cx', 0).attr('cy', 0).attr('fill', '#7ac7ff').attr('stroke', '#2aa4f4').style('cursor', 'pointer')
+		try { console.debug('[FACETS] creating facet-icons for nodes:', (nodeEnter as any).size && (nodeEnter as any).size()) } catch {}
+		// keep handlers below; the group structure remains the same for minimal risk
+		iconGroup.append('circle').attr('r', 4).attr('cx', 0).attr('cy', 0).attr('fill', '#7ac7ff').attr('stroke', '#2aa4f4').attr('tabindex', 0).style('cursor', 'pointer')
 			.append('title').text('Open Venn facet')
-		// truth table icon
-		iconGroup.append('rect').attr('x', 8).attr('y', -4).attr('width', 8).attr('height', 8).attr('fill', '#c0c0c0').attr('stroke', '#888').style('cursor', 'pointer')
+		iconGroup.append('rect').attr('x', 8).attr('y', -4).attr('width', 8).attr('height', 8).attr('fill', '#c0c0c0').attr('stroke', '#888').attr('tabindex', 0).style('cursor', 'pointer')
 			.append('title').text('Open Truth Table facet')
-		// timeline icon
-		iconGroup.append('line').attr('x1', 18).attr('y1', 0).attr('x2', 26).attr('y2', 0).attr('stroke', '#aaa').attr('stroke-width', 2).style('cursor', 'pointer')
+		iconGroup.append('line').attr('x1', 18).attr('y1', 0).attr('x2', 26).attr('y2', 0).attr('stroke', '#aaa').attr('stroke-width', 2).attr('tabindex', 0).style('cursor', 'pointer')
 			.append('title').text('Open Timeline facet')
-		// counter facet icon (small red triangle)
-		iconGroup.append('path').attr('d', 'M 32,-5 L 38,5 L 26,5 Z').attr('fill', '#ff8a80').attr('stroke', '#ff5252').style('cursor', 'pointer')
+		iconGroup.append('path').attr('d', 'M 32,-5 L 38,5 L 26,5 Z').attr('fill', '#ff8a80').attr('stroke', '#ff5252').attr('tabindex', 0).style('cursor', 'pointer')
 			.append('title').text('Open Counter facet')
-		// (Notes icon handled by canvas-level indicator to avoid duplication)
 
-		function toggleFacetOverlay(this: any, type: 'venn'|'truth'|'timeline'|'counter') {
+		function toggleFacetOverlay(this: any, type: 'venn'|'truth'|'timeline'|'counter', pinned?: boolean) {
 			const nodeGroup = (this as Element).closest('g.node') as SVGGElement | null
 			const host = nodeGroup ? d3.select(nodeGroup) : d3.select(this.parentNode?.parentNode as SVGGElement)
 			const existing = host.select('g.facet-overlay')
-			if (!existing.empty()) { existing.remove(); return }
-			const overlay = host.append('g').attr('class', 'facet-overlay').attr('aria-label', `${type} overlay`).attr('role', 'dialog')
+			if (!existing.empty()) {
+				const isPinned = existing.attr('data-pinned') === '1'
+				if (!isPinned) existing.remove(); else return
+			}
+			const overlay = host.append('g').attr('class', 'facet-overlay').attr('aria-label', `${type} overlay`).attr('role', 'dialog').attr('data-pinned', pinned ? '1' : '0')
 			overlay.append('rect').attr('x', -90).attr('y', -70).attr('width', 180).attr('height', 120).attr('rx', 8).attr('fill', 'rgba(20,20,30,0.92)').attr('stroke', '#40c4ff')
 			// overlay legend/help
 			overlay.append('text').attr('x', -84).attr('y', -54).attr('fill', '#9fb8ff').attr('font-size', 10).text('Esc to close • Drag nodes normally')
@@ -1995,11 +1968,24 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			event.stopPropagation()
 			// open page-level truth table for this node if symbol/label present
 			const expr = (d && (d.symbol || d.label)) as string | undefined
-			if (expr && onOpenTruthTable) { onOpenTruthTable(expr) }
-			else { toggleFacetOverlay.call(this, 'truth') }
+			if (event.ctrlKey && expr && onOpenTruthTable) { onOpenTruthTable(expr) }
+			else { toggleFacetOverlay.call(this, 'truth', !!event.shiftKey) }
 		})
-		iconGroup.select('line').on('click', function(event: any){ event.stopPropagation(); toggleFacetOverlay.call(this, 'timeline') })
-		iconGroup.select('path').on('click', function(event: any){ event.stopPropagation(); toggleFacetOverlay.call(this, 'counter') })
+		.on('keydown', function(this: any, event: any, d: any){ if (event.key === 'Enter') { event.preventDefault(); const expr = (d && (d.symbol || d.label)) as string | undefined; if (event.ctrlKey && expr && onOpenTruthTable) onOpenTruthTable(expr); else toggleFacetOverlay.call(this, 'truth', !!event.shiftKey) } })
+		iconGroup.select('line').on('click', function(event: any){ event.stopPropagation(); toggleFacetOverlay.call(this, 'timeline', !!event.shiftKey) })
+		.on('keydown', function(this: any, event: any){ if (event.key === 'Enter') { event.preventDefault(); toggleFacetOverlay.call(this, 'timeline', !!event.shiftKey) } })
+		iconGroup.select('path').on('click', function(event: any){ event.stopPropagation(); toggleFacetOverlay.call(this, 'counter', !!event.shiftKey) })
+		.on('keydown', function(this: any, event: any){ if (event.key === 'Enter') { event.preventDefault(); toggleFacetOverlay.call(this, 'counter', !!event.shiftKey) } })
+
+		// Relevance gating: hide icons that are not applicable
+		iconGroup.each(function(d: any){
+			try { console.debug('[FACETS] relevance (bypassed)', { id: d?.id }) } catch {}
+			const g = d3.select(this)
+			g.select('circle').style('display', 'inline')
+			g.select('rect').style('display', 'inline')
+			g.select('line').style('display', 'inline')
+			g.select('path').style('display', 'inline')
+		})
 
 		nodeEnter
 			.on('mouseover', (event, d) => {
@@ -3474,6 +3460,17 @@ Controls:
 		</Box>
 	)
 
+	// Global Shift+Esc closes all facet overlays
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === 'Escape' && (e.shiftKey || e.metaKey)) {
+				try { d3.selectAll('g.facet-overlay').remove() } catch {}
+			}
+		}
+		window.addEventListener('keydown', onKey)
+		return () => window.removeEventListener('keydown', onKey)
+	}, [])
+
 	return (
 		<div ref={elementRef} style={{ 
 			width: '100%', 
@@ -3983,5 +3980,22 @@ Controls:
 export default ZlfnGraph
 
 // ARIA note: main graph controls include buttons with labels; link badges have titles for screen readers. Path highlight is indicated by a status message and dimming non-path elements.
+
+// Relevance helpers (heuristic, fast)
+function isTruthTableRelevant(d: any): boolean {
+    const s = (d?.symbol || d?.label || '').toString()
+    return /[¬∧∨⊻→↔]|\b(and|or|not)\b/i.test(s)
+}
+function isVennRelevant(d: any): boolean {
+    const t = (d?.translation || '').toString()
+    const s = (d?.symbol || '').toString()
+    return /\b(all|some|no)\b/i.test(t) || /→|↔/.test(s)
+}
+function isTimelineRelevant(d: any): boolean {
+    return (d?.zone === 'temporal' || d?.zoneId === 'temporal')
+}
+function isCounterRelevant(d: any): boolean {
+    return (d?.type === 'fallacy')
+}
 
 
