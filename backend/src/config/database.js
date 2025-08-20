@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import config from './config.js';
 import { createLogger } from './logger.js';
 
 const logger = createLogger('database');
@@ -10,7 +11,7 @@ class DatabaseConnection {
     this.maxRetries = 5;
   }
 
-  async connect(uri = process.env.MONGODB_URI) {
+  async connect(uri = config.mongodb.uri) {
     try {
       if (this.isConnected) {
         logger.info('Database already connected');
@@ -18,9 +19,7 @@ class DatabaseConnection {
       }
 
       const options = {
-        maxPoolSize: 10,
-        serverSelectionTimeoutMS: 5000,
-        socketTimeoutMS: 45000,
+        ...config.mongodb.options,
         bufferCommands: false,
         bufferMaxEntries: 0,
         retryWrites: true,

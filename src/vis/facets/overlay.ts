@@ -15,3 +15,7 @@ export function closeIfNotPinned(host: d3.Selection<SVGGElement, any, any, any>)
 	const existing = host.select('g.facet-overlay')
 	if (!existing.empty() && existing.attr('data-pinned') !== '1') existing.remove()
 }
+
+export function createFacetOverlay(host: d3.Selection<SVGGElement, any, any, any>, roleLabel: string, pinned?: boolean) {
+	return appendOverlay(host, roleLabel, pinned)
+}

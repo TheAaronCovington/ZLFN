@@ -233,8 +233,8 @@ export interface MergeResult {
 // API Response Types
 export interface APIResponse<T = any> {
   success: boolean
-  data?: T
-  error?: string
+  data: T | null
+  error: string | null
   warnings?: string[]
   metadata?: {
     timestamp: string

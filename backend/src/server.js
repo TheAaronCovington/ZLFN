@@ -9,6 +9,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 // Import configurations
+import config from './config/config.js';
 import database from './config/database.js';
 import redis from './config/redis.js';
 import { createLogger } from './config/logger.js';
@@ -46,8 +47,7 @@ app.use(helmet({
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-  credentials: true,
+  ...config.cors,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -57,8 +57,8 @@ app.use(compression());
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests per windowMs
+  windowMs: config.rateLimit.windowMs,
+  max: config.rateLimit.maxRequests,
   message: {
     success: false,
     error: 'Too many requests from this IP, please try again later'
@@ -117,6 +117,18 @@ app.get('/health', async (req, res) => {
 });
 
 // API routes
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Backend server is running',
+    timestamp: new Date().toISOString(),
+    environment: config.nodeEnv,
+    version: '1.0.0'
+  });
+});
+
+// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/zlfn', zlfnRoutes);
 
@@ -222,11 +234,12 @@ const startServer = async () => {
     socketService.initialize(server);
     
     // Start HTTP server
-    const port = process.env.PORT || 3001;
-    server.listen(port, () => {
-      logger.info(`Server running on port ${port}`);
-      logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-      logger.info(`Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+    server.listen(config.port, () => {
+      logger.info(`Server running on port ${config.port}`);
+      logger.info(`Environment: ${config.nodeEnv}`);
+      logger.info(`CORS Origins: ${config.cors.origin.join(', ')}`);
+      logger.info(`MongoDB URI: ${config.mongodb.uri}`);
+      logger.info(`Redis: ${config.redis.host}:${config.redis.port}`);
     });
   } catch (error) {
     logger.error('Failed to start server:', error);

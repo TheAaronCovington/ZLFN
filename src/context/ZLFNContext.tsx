@@ -11,7 +11,7 @@ import type {
   CollaborationState,
   ZLFNVersion
 } from '../types/zlfn'
-import { api } from '../services/zlfnAPI'
+import { getCurrentAPI } from '../services/apiConfig'
 
 // Action Types
 type ZLFNAction =
@@ -200,7 +200,7 @@ export function ZLFNProvider({
   const loadObject = React.useCallback(async (id: string) => {
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
-      const response = await api.getObject(id)
+      const response = await getCurrentAPI().getObject(id)
       if (response.success && response.data) {
         dispatch({ type: 'SET_CURRENT_OBJECT', payload: response.data })
       } else {
@@ -214,7 +214,7 @@ export function ZLFNProvider({
   const createObject = React.useCallback(async (markdownContent: string, initialJson?: ZLFNStructure): Promise<ZLFNObject | null> => {
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
-      const response = await api.createObject(markdownContent, initialJson)
+      const response = await getCurrentAPI().createObject(markdownContent, initialJson)
       if (response.success && response.data) {
         dispatch({ type: 'SET_CURRENT_OBJECT', payload: response.data })
         dispatch({ type: 'SET_SUCCESS', payload: 'Object created successfully' })
@@ -234,7 +234,7 @@ export function ZLFNProvider({
     if (!state.currentObject) return
     
     try {
-      const response = await api.updateMarkdown(state.currentObject.id, markdown)
+      const response = await getCurrentAPI().updateMarkdown(state.currentObject.id, markdown)
       if (response.success && response.data) {
         dispatch({ type: 'SET_CURRENT_OBJECT', payload: response.data })
         dispatch({ type: 'SET_SUCCESS', payload: 'Markdown updated successfully' })
@@ -250,13 +250,14 @@ export function ZLFNProvider({
     if (!state.currentObject) return null
     
     try {
-      const response = await api.updateJSON(state.currentObject.id, zflnJson, options)
+      const response = await getCurrentAPI().updateJSON(state.currentObject.id, zflnJson, options)
       if (response.success && response.data) {
         // Reload the object to get updated state
         await loadObject(state.currentObject.id)
         
-        if (response.data.warnings?.length) {
-          dispatch({ type: 'SET_SUCCESS', payload: `JSON updated with ${response.data.warnings.length} warnings` })
+        const warnings = (response.data as any)?.warnings
+        if (warnings?.length) {
+          dispatch({ type: 'SET_SUCCESS', payload: `JSON updated with ${warnings.length} warnings` })
         } else {
           dispatch({ type: 'SET_SUCCESS', payload: 'JSON updated successfully' })
         }
@@ -276,7 +277,7 @@ export function ZLFNProvider({
   const importFile = React.useCallback(async (file: File): Promise<ImportResult | null> => {
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
-      const response = await api.uploadFile(file, state.currentObject?.id)
+      const response = await getCurrentAPI().uploadFile(file, state.currentObject?.id)
       if (response.success && response.data) {
         if (response.data.objectId) {
           await loadObject(response.data.objectId)
@@ -300,12 +301,25 @@ export function ZLFNProvider({
     if (!state.currentObject) return
     
     try {
-      const response = await api.exportObject(state.currentObject.id, format)
+      const response = await getCurrentAPI().exportObject(state.currentObject.id, format)
       if (response.success && response.data) {
         const filename = `${state.currentObject.metadata.title || state.currentObject.id}.${format === 'markdown' ? 'md' : 'json'}`
         const contentType = format === 'markdown' ? 'text/markdown' : 'application/json'
         
-        api.downloadFile(filename, response.data, contentType)
+        const api = getCurrentAPI()
+        if (typeof response.data === 'string') {
+          api.downloadFile(filename, response.data, contentType)
+        } else {
+          // Handle Blob from real API
+          const url = URL.createObjectURL(response.data as Blob)
+          const link = document.createElement('a')
+          link.href = url
+          link.download = filename
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          URL.revokeObjectURL(url)
+        }
         dispatch({ type: 'SET_SUCCESS', payload: 'Export completed successfully' })
       } else {
         dispatch({ type: 'SET_ERROR', payload: response.error || 'Failed to export object' })
@@ -320,7 +334,7 @@ export function ZLFNProvider({
     if (!state.currentObject) return null
     
     try {
-      const response = await api.getVersionHistory(state.currentObject.id)
+      const response = await getCurrentAPI().getVersionHistory(state.currentObject.id)
       if (response.success) {
         return response.data || []
       }
@@ -337,7 +351,7 @@ export function ZLFNProvider({
       // Our VersionHistory passes a string key as id; resolve timestamp from current version list
       let timestamp = versionId
       try {
-        const list = await api.getVersionHistory(state.currentObject.id)
+        const list = await getCurrentAPI().getVersionHistory(state.currentObject.id)
         if (list.success && Array.isArray(list.data)) {
           const idx = Number(versionId)
           if (!Number.isNaN(idx) && list.data[idx]?.timestamp) {
@@ -345,7 +359,7 @@ export function ZLFNProvider({
           }
         }
       } catch {}
-      const response = await api.revertToVersion(state.currentObject.id, timestamp)
+      const response = await getCurrentAPI().revertToVersion(state.currentObject.id, timestamp)
       if (response.success && response.data) {
         dispatch({ type: 'SET_CURRENT_OBJECT', payload: response.data })
         dispatch({ type: 'SET_SUCCESS', payload: 'Successfully reverted to previous version' })

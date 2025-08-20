@@ -654,7 +654,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				console.log('[ZLFN] Terms pre-sim Y-range:', minY.toFixed(1), '→', maxY.toFixed(1), 'n=', ys.length)
 			}
 		}
-		const zoneGroup = renderZones(g as any, zonesToUse as any)
+		renderZones(g as any, zonesToUse as any)
 
 		// map for zone lookup and default assignment for nodes without zone
 		const zoneById = new Map<string, ZlfnZone>((zonesToUse as any[]).map((z: any) => [z.id, z]))
@@ -3981,21 +3981,6 @@ export default ZlfnGraph
 
 // ARIA note: main graph controls include buttons with labels; link badges have titles for screen readers. Path highlight is indicated by a status message and dimming non-path elements.
 
-// Relevance helpers (heuristic, fast)
-function isTruthTableRelevant(d: any): boolean {
-    const s = (d?.symbol || d?.label || '').toString()
-    return /[¬∧∨⊻→↔]|\b(and|or|not)\b/i.test(s)
-}
-function isVennRelevant(d: any): boolean {
-    const t = (d?.translation || '').toString()
-    const s = (d?.symbol || '').toString()
-    return /\b(all|some|no)\b/i.test(t) || /→|↔/.test(s)
-}
-function isTimelineRelevant(d: any): boolean {
-    return (d?.zone === 'temporal' || d?.zoneId === 'temporal')
-}
-function isCounterRelevant(d: any): boolean {
-    return (d?.type === 'fallacy')
-}
+// Relevance helpers moved to src/vis/utils/relevance.ts
 
 

@@ -11,6 +11,7 @@ import { ZLFNProvider, useZLFN } from '../context/ZLFNContext'
 import VersionHistory from '../components/VersionControl/VersionHistory'
 import DiffViewer from '../components/VersionControl/DiffViewer'
 import NeonCard from '../components/UI/NeonCard'
+import APISwitcher from '../components/Settings/APISwitcher'
 
 const Phase2Demo: React.FC = () => {
   const [activeTab, setActiveTab] = React.useState('graph')
@@ -45,6 +46,7 @@ const Phase2Demo: React.FC = () => {
             <Tab label="Graph with Notes" value="graph" />
             <Tab label="File Manager" value="fileManager" />
             <Tab label="Version Control" value="versionControl" />
+            <Tab label="API Settings" value="apiSettings" />
             <Tab label="Collaboration" value="collaboration" />
           </Tabs>
         </Box>
@@ -83,6 +85,12 @@ const Phase2Demo: React.FC = () => {
                 onViewDiff={handleViewDiff}
               />
             )}
+          </NeonCard>
+        )}
+
+        {activeTab === 'apiSettings' && (
+          <NeonCard title="API Configuration">
+            <APISwitcher />
           </NeonCard>
         )}
 

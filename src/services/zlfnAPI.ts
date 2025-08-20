@@ -25,24 +25,12 @@ class ZLFNAPIService {
       const object = await zlfnObjectManager.getObject(id) || await zlfnObjectManager.ensureObject(id)
       
       if (!object) {
-        return {
-          success: false,
-          error: 'Object not found',
-          metadata: this.createMetadata()
-        }
+        return this.createErrorResponse('Object not found')
       }
 
-      return {
-        success: true,
-        data: object,
-        metadata: this.createMetadata()
-      }
+      return this.createSuccessResponse(object)
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        metadata: this.createMetadata()
-      }
+      return this.createErrorResponse(error instanceof Error ? error.message : 'Unknown error')
     }
   }
 
@@ -50,17 +38,9 @@ class ZLFNAPIService {
     try {
       const object = await zlfnObjectManager.createObject(markdown, zflnJson)
       
-      return {
-        success: true,
-        data: object,
-        metadata: this.createMetadata()
-      }
+      return this.createSuccessResponse(object)
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        metadata: this.createMetadata()
-      }
+      return this.createErrorResponse(error instanceof Error ? error.message : 'Unknown error')
     }
   }
 
@@ -69,24 +49,12 @@ class ZLFNAPIService {
       const object = await zlfnObjectManager.updateObject(id, updates)
       
       if (!object) {
-        return {
-          success: false,
-          error: 'Object not found or update failed',
-          metadata: this.createMetadata()
-        }
+        return this.createErrorResponse('Object not found or update failed')
       }
 
-      return {
-        success: true,
-        data: object,
-        metadata: this.createMetadata()
-      }
+      return this.createSuccessResponse(object)
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        metadata: this.createMetadata()
-      }
+      return this.createErrorResponse(error instanceof Error ? error.message : 'Unknown error')
     }
   }
 
@@ -97,7 +65,7 @@ class ZLFNAPIService {
       return {
         success,
         data: success,
-        error: success ? undefined : 'Object not found or deletion failed',
+        error: success ? null : 'Object not found or deletion failed',
         metadata: this.createMetadata()
       }
     } catch (error) {
@@ -116,24 +84,12 @@ class ZLFNAPIService {
       const object = await zlfnObjectManager.updateMarkdown(id, markdown, author)
       
       if (!object) {
-        return {
-          success: false,
-          error: 'Object not found',
-          metadata: this.createMetadata()
-        }
+        return this.createErrorResponse('Object not found')
       }
 
-      return {
-        success: true,
-        data: object,
-        metadata: this.createMetadata()
-      }
+      return this.createSuccessResponse(object)
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        metadata: this.createMetadata()
-      }
+      return this.createErrorResponse(error instanceof Error ? error.message : 'Unknown error')
     }
   }
 
@@ -149,15 +105,12 @@ class ZLFNAPIService {
       return {
         success: result.success,
         data: result,
+        error: null,
         warnings: result.warnings,
         metadata: this.createMetadata()
       }
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        metadata: this.createMetadata()
-      }
+      return this.createErrorResponse(error instanceof Error ? error.message : 'Unknown error')
     }
   }
 
@@ -169,15 +122,12 @@ class ZLFNAPIService {
       return {
         success: result.success,
         data: result,
+        error: null,
         warnings: result.warnings,
         metadata: this.createMetadata()
       }
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        metadata: this.createMetadata()
-      }
+      return this.createErrorResponse(error instanceof Error ? error.message : 'Unknown error')
     }
   }
 
@@ -189,7 +139,7 @@ class ZLFNAPIService {
       return {
         success,
         data: success,
-        error: success ? undefined : 'Failed to save note',
+        error: success ? null : 'Failed to save note',
         metadata: this.createMetadata()
       }
     } catch (error) {
@@ -209,7 +159,7 @@ class ZLFNAPIService {
       return {
         success,
         data: success,
-        error: success ? undefined : 'Note not found or deletion failed',
+        error: success ? null : 'Note not found or deletion failed',
         metadata: this.createMetadata()
       }
     } catch (error) {
@@ -227,17 +177,9 @@ class ZLFNAPIService {
     try {
       const versions = await zlfnObjectManager.getVersionHistory(objectId)
       
-      return {
-        success: true,
-        data: versions,
-        metadata: this.createMetadata()
-      }
+      return this.createSuccessResponse(versions)
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        metadata: this.createMetadata()
-      }
+      return this.createErrorResponse(error instanceof Error ? error.message : 'Unknown error')
     }
   }
 
@@ -246,24 +188,12 @@ class ZLFNAPIService {
       const object = await zlfnObjectManager.revertToVersion(objectId, versionTimestamp)
       
       if (!object) {
-        return {
-          success: false,
-          error: 'Object or version not found',
-          metadata: this.createMetadata()
-        }
+        return this.createErrorResponse('Object or version not found')
       }
 
-      return {
-        success: true,
-        data: object,
-        metadata: this.createMetadata()
-      }
+      return this.createSuccessResponse(object)
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        metadata: this.createMetadata()
-      }
+      return this.createErrorResponse(error instanceof Error ? error.message : 'Unknown error')
     }
   }
 
@@ -272,11 +202,11 @@ class ZLFNAPIService {
     try {
       const object = await zlfnObjectManager.createSnapshot(objectId, description, changeType, author, layout)
       if (!object) {
-        return { success: false, error: 'Object not found', metadata: this.createMetadata() }
+        return this.createErrorResponse('Object not found')
       }
-      return { success: true, data: object, metadata: this.createMetadata() }
+      return this.createSuccessResponse(object)
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error', metadata: this.createMetadata() }
+      return this.createErrorResponse(error instanceof Error ? error.message : 'Unknown error')
     }
   }
 
@@ -286,24 +216,12 @@ class ZLFNAPIService {
       const exportData = await zlfnObjectManager.exportObject(objectId, format)
       
       if (!exportData) {
-        return {
-          success: false,
-          error: 'Object not found or export failed',
-          metadata: this.createMetadata()
-        }
+        return this.createErrorResponse('Object not found or export failed')
       }
 
-      return {
-        success: true,
-        data: exportData,
-        metadata: this.createMetadata()
-      }
+      return this.createSuccessResponse(exportData)
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        metadata: this.createMetadata()
-      }
+      return this.createErrorResponse(error instanceof Error ? error.message : 'Unknown error')
     }
   }
 
@@ -312,17 +230,9 @@ class ZLFNAPIService {
     try {
       const objects = zlfnObjectManager.getAllObjects()
       
-      return {
-        success: true,
-        data: objects,
-        metadata: this.createMetadata()
-      }
+      return this.createSuccessResponse(objects)
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        metadata: this.createMetadata()
-      }
+      return this.createErrorResponse(error instanceof Error ? error.message : 'Unknown error')
     }
   }
 
@@ -330,17 +240,9 @@ class ZLFNAPIService {
     try {
       const objects = zlfnObjectManager.searchObjects(query)
       
-      return {
-        success: true,
-        data: objects,
-        metadata: this.createMetadata()
-      }
+      return this.createSuccessResponse(objects)
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        metadata: this.createMetadata()
-      }
+      return this.createErrorResponse(error instanceof Error ? error.message : 'Unknown error')
     }
   }
 
@@ -352,7 +254,7 @@ class ZLFNAPIService {
       return {
         success,
         data: success,
-        error: success ? undefined : 'Failed to acquire lock - object may be locked by another user',
+        error: success ? null : 'Failed to acquire lock - object may be locked by another user',
         metadata: this.createMetadata()
       }
     } catch (error) {
@@ -372,7 +274,7 @@ class ZLFNAPIService {
       return {
         success,
         data: success,
-        error: success ? undefined : 'Failed to release lock',
+        error: success ? null : 'Failed to release lock',
         metadata: this.createMetadata()
       }
     } catch (error) {
@@ -425,6 +327,24 @@ class ZLFNAPIService {
       timestamp: new Date().toISOString(),
       version: '1.0.0',
       requestId: this.generateRequestId()
+    }
+  }
+
+  private createSuccessResponse<T>(data: T): APIResponse<T> {
+    return {
+      success: true,
+      data,
+      error: null,
+      metadata: this.createMetadata()
+    }
+  }
+
+  private createErrorResponse<T>(error: string): APIResponse<T> {
+    return {
+      success: false,
+      data: null,
+      error,
+      metadata: this.createMetadata()
     }
   }
 
@@ -487,3 +407,6 @@ export const api = {
   downloadFile: (filename: string, content: string, contentType?: string) => 
     zlfnAPI.downloadFile(filename, content, contentType)
 }
+
+// Export for backward compatibility
+export default api
