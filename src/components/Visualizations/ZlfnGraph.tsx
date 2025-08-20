@@ -18,6 +18,7 @@ import DownloadIcon from '@mui/icons-material/Download'
 import StickyNote2Icon from '@mui/icons-material/StickyNote2'
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
 import BatchPredictionIcon from '@mui/icons-material/BatchPrediction'
+import SpeedIcon from '@mui/icons-material/Speed'
 import { evaluateInference, evaluateStates, getRuleStrength, isRuleFallacy, bayesianUpdate } from '../../services/inference'
 import { downloadJson } from '../../services/io'
 import { parseVennRule, computeShading } from '../../services/venn'
@@ -29,6 +30,9 @@ import ExportDialog from '../Export/ExportDialog'
 import AdvancedSearch from '../Search/AdvancedSearch'
 import { NodeEditDialog } from '../NodeEditor'
 import type { MarkdownReference } from '../MarkdownReference'
+import { performanceOptimizer, type OptimizedGraphData } from '../../services/performanceOptimizer'
+import { usePerformanceMonitor } from '../../hooks/usePerformanceMonitor'
+import { PerformanceOverlay } from '../Performance'
 
 // AST-based evaluator (no eval)
 function evaluateExpressionWithAst(expression: string, variables: string[], values: boolean[]): boolean {
@@ -183,6 +187,27 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false)
 	const [nodeEditDialogOpen, setNodeEditDialogOpen] = useState(false)
 	const [editingNode, setEditingNode] = useState<ZlfnNode | null>(null)
+	const [showPerformanceOverlay, setShowPerformanceOverlay] = useState<boolean>(() => localStorage.getItem('xv_perf_overlay') === '1')
+	const [optimizedData, setOptimizedData] = useState<OptimizedGraphData | null>(null)
+
+	// Performance monitoring
+	const performanceMonitor = usePerformanceMonitor({
+		enabled: showPerformanceOverlay, // enable sampling only when visible to avoid continuous updates
+		showOverlay: showPerformanceOverlay,
+		alertThresholds: {
+			lowFPS: 30,
+			highFrameTime: 33,
+			highMemoryUsage: 100 * 1024 * 1024
+		}
+	})
+	const { startRenderTiming, endRenderTiming, updateGraphMetrics } = performanceMonitor
+
+	// Persist performance overlay setting
+	useEffect(() => {
+		try {
+			localStorage.setItem('xv_perf_overlay', showPerformanceOverlay ? '1' : '0')
+		} catch {}
+	}, [showPerformanceOverlay])
 
 	// Export handler for the dialog
 	const handleExport = useCallback(async (options: any) => {
@@ -283,6 +308,44 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		// For now, just show an info message
 		onInfo?.(`Navigate to: ${reference.documentTitle} > ${reference.sectionPath}`)
 	}, [onInfo])
+
+	// Graph optimization effect
+	useEffect(() => {
+		startRenderTiming()
+		
+		// Apply performance optimizations
+		const viewport = svgRef.current ? {
+			x: transformRef.current.invertX(0),
+			y: transformRef.current.invertY(0),
+			width: transformRef.current.invertX(size.width || 800) - transformRef.current.invertX(0),
+			height: transformRef.current.invertY(size.height || 600) - transformRef.current.invertY(0),
+			scale: transformRef.current.k
+		} : undefined
+
+		const optimized = performanceOptimizer.optimizeGraph(nodes, edges, viewport)
+		setOptimizedData(optimized)
+
+		// Update performance metrics
+		updateGraphMetrics(
+			optimized.metadata.visibleNodes,
+			optimized.metadata.visibleEdges,
+			optimized.metadata.optimizationLevel,
+			optimized.metadata.totalNodes > 0 ? 1 - (optimized.metadata.visibleNodes / optimized.metadata.totalNodes) : 0
+		)
+
+		endRenderTiming()
+
+		// Log optimization results
+		if (optimized.metadata.optimizationLevel !== 'none') {
+			const metrics = performanceOptimizer.getPerformanceMetrics(optimized)
+			console.log('[PERFORMANCE] Graph optimized:', {
+				level: optimized.metadata.optimizationLevel,
+				reduction: `${(metrics.reductionRatio * 100).toFixed(1)}%`,
+				visible: `${optimized.metadata.visibleNodes}/${optimized.metadata.totalNodes} nodes`,
+				complexity: metrics.renderComplexity
+			})
+		}
+	}, [nodes, edges, size, startRenderTiming, updateGraphMetrics, endRenderTiming])
 	const [showMiniMap, setShowMiniMap] = useState<boolean>(() => localStorage.getItem('xv_minimap') !== '0')
 	const [showHelp, setShowHelp] = useState<boolean>(false)
 	const [nodeSearchTerm, setNodeSearchTerm] = useState<string>('')
@@ -789,7 +852,9 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			color: aid === selectedArgumentId ? '#ffd740' : '#9e9e9e'
 		}))
 		const zoneAllowed = new Set(zonesToUse.map((z:any)=>z.id))
-		const filteredNodes = (nodes as any[]).filter(n => (!n.zone && !n.zoneId) ? true : zoneAllowed.has((n.zoneId || n.zone) as any))
+		// Use optimized nodes if available, otherwise use original nodes
+		const sourceNodes = optimizedData?.visibleNodes || nodes
+		const filteredNodes = (sourceNodes as any[]).filter(n => (!n.zone && !n.zoneId) ? true : zoneAllowed.has((n.zoneId || n.zone) as any))
 		const nodesWithArgs: any[] = [...filteredNodes, ...argBadges]
 
 		// seed or repair Terms positions if they are coincident (stacking) or uninitialized
@@ -816,9 +881,10 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			}
 		})()
 
-		// derive edges for d3 (source/target)
+		// derive edges for d3 (source/target) - use optimized edges if available
 		const nodeIdSet = new Set((nodesWithArgs as any[]).map(n => n.id))
-		const linkData = edges
+		const sourceEdges = optimizedData?.visibleEdges || edges
+		const linkData = sourceEdges
 			.filter(e => nodeIdSet.has((e.from ?? e.source) as any) && nodeIdSet.has((e.to ?? e.target) as any))
 			.map(e => ({
 				source: (e.from ?? e.source) as string,
@@ -1035,26 +1101,29 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		const adjustedWidth = adjustedDimensions.width
 		const adjustedHeight = adjustedDimensions.height
 		
-		// Create optimized simulation with DAG pruning for large graphs
+		// Create optimized simulation with performance-based parameters
+		performanceMonitor.startSimulationTiming()
+		const optimizedParams = performanceOptimizer.getOptimizedSimulationParams(nodesWithArgs.length, linkData.length)
+		
 		const simulation = d3.forceSimulation(nodesWithArgs as any)
-			.velocityDecay(performanceSettings.velocityDecay)
-			.alphaDecay(performanceSettings.alphaDecay)
-			.alphaMin(performanceSettings.alphaMin)
+			.velocityDecay(optimizedParams.velocityDecay)
+			.alphaDecay(optimizedParams.alphaDecay)
+			.alphaTarget(optimizedParams.alphaTarget)
 			.force('link', d3.forceLink(linkData as any)
 				.id((d: any) => d.id)
-				.distance(isLargeGraph ? 80 : 100)
-				.strength(isLargeGraph ? 0.8 : 1.0)
+				.distance(optimizedParams.forces.link.distance)
+				.strength(optimizedParams.forces.link.strength)
 			)
 			.force('charge', d3.forceManyBody()
-				.strength(performanceSettings.chargeStrength)
+				.strength(optimizedParams.forces.charge.strength)
+				.distanceMax(optimizedParams.forces.charge.distanceMax)
 				.distanceMin(10)
-				.distanceMax(isLargeGraph ? 150 : 200)
 			)
 			.force('center', d3.forceCenter(adjustedWidth / 2, adjustedHeight / 2))
 			.force('collision', d3.forceCollide()
-				.radius((d: any) => radiusFor(d) + (isLargeGraph ? 15 : 20))
-				.strength(isLargeGraph ? 0.8 : 1.0)
-				.iterations(performanceSettings.collisionIterations)
+				.radius((d: any) => radiusFor(d) + optimizedParams.forces.collision.radius)
+				.strength(optimizedParams.forces.collision.strength)
+				.iterations(Math.min(optimizedParams.iterations / 10, 3))
 			)
 			.force('boxCollide', boxCollide(8, isLargeGraph ? 1.0 : 1.15))
 			.force('termsRepel', termsRepel(showInformalZone && showTemporalZone ? 1.3 : 0.7))
@@ -1109,6 +1178,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		
 		// Early termination for converged simulations
 		simulation.on('end', () => {
+			performanceMonitor.endSimulationTiming()
 			const optimizationTime = performance.now() - startOptimization
 			if (debug) {
 				console.log('[ZLFN] Simulation completed:', {
@@ -3610,6 +3680,12 @@ Controls:
 		return () => window.removeEventListener('keydown', onKey)
 	}, [])
 
+	useEffect(() => {
+		const onOpenAdvanced = () => setAdvancedSearchOpen(true)
+		window.addEventListener('zlfn:open-advanced-search' as any, onOpenAdvanced as any)
+		return () => window.removeEventListener('zlfn:open-advanced-search' as any, onOpenAdvanced as any)
+	}, [])
+
 	return (
 		<div ref={elementRef} style={{ 
 			width: '100%', 
@@ -3670,7 +3746,7 @@ Controls:
 						size={responsive.isMobile ? 'medium' : 'small'} 
 						onClick={() => setShowNodeSearch(v => !v)}
 						color={showNodeSearch ? 'primary' : 'default'}
-						sx={{ minWidth: responsive.isMobile ? 44 : 'auto' }}
+						sx={{ minWidth: responsive.isMobile ? 44 : 'auto', display: 'none' }}
 					>
 						<SearchIcon />
 					</IconButton>
@@ -3679,13 +3755,21 @@ Controls:
 							<ContentCopyIcon />
 						</IconButton>
 					)}
-					<IconButton size="small" onClick={() => setAdvancedSearchOpen(true)} title="Advanced Search">
+					<IconButton size="small" onClick={() => setAdvancedSearchOpen(true)} title="Advanced Search" sx={{ display: 'none' }}>
 						<SearchIcon />
 					</IconButton>
-					<IconButton size="small" onClick={() => setExportDialogOpen(true)} title="Export Object">
+					<IconButton 
+						size="small" 
+						onClick={() => setShowPerformanceOverlay(!showPerformanceOverlay)} 
+						title="Toggle Performance Monitor"
+						sx={{ color: showPerformanceOverlay ? '#00ffff' : 'inherit', display: 'none' }}
+					>
+						<SpeedIcon />
+					</IconButton>
+					<IconButton size="small" onClick={() => setExportDialogOpen(true)} title="Export Object" sx={{ display: 'none' }}>
 						<DownloadIcon />
 					</IconButton>
-					<Button size="small" variant="outlined" component="label" title="Import Object">
+					<Button size="small" variant="outlined" component="label" title="Import Object" sx={{ display: 'none' }}>
 						Import
 						<input hidden type="file" accept="application/json" onChange={(e)=>{ const f=e.target.files?.[0]; if(f) onImportFull?.(f) }} />
 					</Button>
@@ -3713,7 +3797,7 @@ Controls:
 						document.body.appendChild(overlay)
 						const onEsc = (ev: KeyboardEvent) => { if (ev.key === 'Escape') { overlay.remove(); window.removeEventListener('keydown', onEsc) } }
 						window.addEventListener('keydown', onEsc)
-					}} title="Shortcuts">
+					}} title="Shortcuts" sx={{ display: 'none' }}>
 						<HelpOutlineIcon />
 					</IconButton>
 					{/* Notes Toggle (always visible in toolbar) */}
@@ -3739,7 +3823,7 @@ Controls:
 					)}
 
 					{/* Mode Indicators and Quick Actions */}
-					<Stack direction="row" spacing={0.5}>
+					<Stack direction="row" spacing={0.5} sx={{ display: 'none' }}>
 						{typeof collabCount === 'number' && (
 							<Chip size="small" label={`Collab: ${collabCount}`} variant="outlined" sx={{ ml: 1 }} />
 						)}
@@ -4134,6 +4218,8 @@ Controls:
 				open={advancedSearchOpen}
 				onClose={() => setAdvancedSearchOpen(false)}
 				onSelectResult={handleSelectSearchResult}
+				currentNodes={(nodes as any[]).map(n => ({ id: n.id, name: (n as any).name || (n as any).label || (n as any).symbol, type: (n as any).type }))}
+				currentObjectId={objectId || storageKey || 'current-graph'}
 			/>
 
 			{/* Node Edit Dialog */}
@@ -4147,6 +4233,17 @@ Controls:
 				onSave={handleNodeSave}
 				onNavigateToReference={handleNavigateToReference}
 			/>
+
+			{/* Performance Overlay */}
+			{showPerformanceOverlay && (
+				<PerformanceOverlay
+					metrics={performanceMonitor.metrics}
+					alerts={performanceMonitor.alerts}
+					summary={performanceMonitor.summary}
+					position="top-right"
+					compact={responsive.isMobile}
+				/>
+			)}
 		</div>
 	)
 }

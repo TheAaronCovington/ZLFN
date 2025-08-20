@@ -25,10 +25,13 @@ import {
   Delete as DeleteIcon,
   Undo as UndoIcon,
   Redo as RedoIcon,
-  AutoMode as AutoModeIcon
+  AutoMode as AutoModeIcon,
+  Visibility as PreviewIcon,
+  Edit as EditIcon
 } from '@mui/icons-material'
 import { useZLFNNotes } from '../../hooks/useZLFNNotes'
 import type { ZLFNNode } from '../../types/zlfn'
+import MarkdownPreview from '../MarkdownPreview/MarkdownPreview'
 
 interface NotesDialogProps {
   open: boolean
@@ -48,6 +51,13 @@ export function NotesDialog({
   const [localNote, setLocalNote] = useState('')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
+  const [useMarkdownPreview, setUseMarkdownPreview] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('xv_notes_markdown_preview') === '1'
+    } catch {
+      return false
+    }
+  })
 
   const notesHook = useZLFNNotes({
     objectId,
@@ -88,12 +98,31 @@ export function NotesDialog({
     }
   }, [open])
 
-  // Handle text changes
+  // Persist markdown preview setting
+  useEffect(() => {
+    try {
+      localStorage.setItem('xv_notes_markdown_preview', useMarkdownPreview ? '1' : '0')
+    } catch {}
+  }, [useMarkdownPreview])
+
+  // Handle text changes (for regular TextField)
   const handleNoteChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = event.target.value
     try { console.debug('[NOTES] change len=', newValue.length) } catch {}
     setLocalNote(newValue)
     setHasUnsavedChanges(newValue !== notesHook.getNoteContent(node?.id || ''))
+  }
+
+  // Handle text changes (for MarkdownPreview component)
+  const handleMarkdownChange = (newValue: string) => {
+    try { console.debug('[NOTES] markdown change len=', newValue.length) } catch {}
+    setLocalNote(newValue)
+    setHasUnsavedChanges(newValue !== notesHook.getNoteContent(node?.id || ''))
+  }
+
+  // Toggle markdown preview mode
+  const toggleMarkdownPreview = () => {
+    setUseMarkdownPreview(!useMarkdownPreview)
   }
 
   // Save note
@@ -237,6 +266,16 @@ export function NotesDialog({
               </IconButton>
             </span>
           </Tooltip>
+
+          <Tooltip title={`${useMarkdownPreview ? 'Switch to plain text editor' : 'Enable markdown preview'}`}>
+            <IconButton 
+              onClick={toggleMarkdownPreview}
+              size="small"
+              sx={{ color: useMarkdownPreview ? '#40c4ff' : 'rgba(255,255,255,0.7)' }}
+            >
+              {useMarkdownPreview ? <EditIcon /> : <PreviewIcon />}
+            </IconButton>
+          </Tooltip>
           
           <IconButton onClick={handleClose} size="small">
             <CloseIcon />
@@ -276,42 +315,54 @@ export function NotesDialog({
         )}
 
         {/* Note Editor */}
-        <TextField
-          id="notes-textarea"
-          multiline
-          rows={8}
-          fullWidth
-          autoFocus
-          disabled={false}
-          value={localNote}
-          onChange={handleNoteChange}
-          onKeyDown={handleKeyDown}
-          onKeyUp={(e)=> { try { console.debug('[NOTES] keyup', { key: (e as any).key }); } catch {} ; e.stopPropagation()}}
-          onKeyPress={(e)=> { try { console.debug('[NOTES] keypress', { key: (e as any).key }); } catch {} ; e.stopPropagation()}}
-          placeholder={`Add your notes for node "${node.id}"...\n\nTip: Use Ctrl+S to save quickly`}
-          variant="outlined"
-          inputProps={{ readOnly: false, 'data-notes-input': '1', tabIndex: 0 }}
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              bgcolor: 'rgba(255, 255, 255, 0.05)',
-              '& fieldset': {
-                borderColor: 'rgba(255, 255, 255, 0.2)',
+        {useMarkdownPreview ? (
+          <MarkdownPreview
+            value={localNote}
+            onChange={handleMarkdownChange}
+            placeholder={`Add your notes for node "${node.id}"...\n\nTip: Use Ctrl+S to save quickly\nMarkdown preview is enabled - you can use **bold**, *italic*, and other markdown syntax.`}
+            height={300}
+            showToolbar={true}
+            enableSync={true}
+            className="notes-markdown-editor"
+          />
+        ) : (
+          <TextField
+            id="notes-textarea"
+            multiline
+            rows={8}
+            fullWidth
+            autoFocus
+            disabled={false}
+            value={localNote}
+            onChange={handleNoteChange}
+            onKeyDown={handleKeyDown}
+            onKeyUp={(e)=> { try { console.debug('[NOTES] keyup', { key: (e as any).key }); } catch {} ; e.stopPropagation()}}
+            onKeyPress={(e)=> { try { console.debug('[NOTES] keypress', { key: (e as any).key }); } catch {} ; e.stopPropagation()}}
+            placeholder={`Add your notes for node "${node.id}"...\n\nTip: Use Ctrl+S to save quickly\nClick the preview icon to enable markdown preview.`}
+            variant="outlined"
+            inputProps={{ readOnly: false, 'data-notes-input': '1', tabIndex: 0 }}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                bgcolor: 'rgba(255, 255, 255, 0.05)',
+                '& fieldset': {
+                  borderColor: 'rgba(255, 255, 255, 0.2)',
+                },
+                '&:hover fieldset': {
+                  borderColor: 'rgba(64, 196, 255, 0.5)',
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: '#40c4ff',
+                },
               },
-              '&:hover fieldset': {
-                borderColor: 'rgba(64, 196, 255, 0.5)',
-              },
-              '&.Mui-focused fieldset': {
-                borderColor: '#40c4ff',
-              },
-            },
-            '& .MuiInputBase-input': {
-              color: '#e0e0e0',
-              fontFamily: 'inherit',
-              fontSize: '0.95rem',
-              lineHeight: 1.6
-            }
-          }}
-        />
+              '& .MuiInputBase-input': {
+                color: '#e0e0e0',
+                fontFamily: 'inherit',
+                fontSize: '0.95rem',
+                lineHeight: 1.6
+              }
+            }}
+          />
+        )}
 
         {/* Statistics */}
         <Box sx={{ 

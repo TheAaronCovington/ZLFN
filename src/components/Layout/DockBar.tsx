@@ -4,7 +4,6 @@ import HomeIcon from '@mui/icons-material/Home'
 import ArticleIcon from '@mui/icons-material/Article'
 import HubIcon from '@mui/icons-material/Hub'
 import DonutLargeIcon from '@mui/icons-material/DonutLarge'
-import SchemaIcon from '@mui/icons-material/Schema'
 import FunctionsIcon from '@mui/icons-material/Functions'
 import ScienceIcon from '@mui/icons-material/Science'
 import { useNavigate } from 'react-router-dom'
@@ -24,7 +23,6 @@ const DockBar: React.FC = () => {
 			<SpeedDialAction icon={<ArticleIcon />} tooltipTitle="Documents" onClick={() => navigate('/document/TAG_Critique')} />
 			<SpeedDialAction icon={<HubIcon />} tooltipTitle="ZLFN" onClick={() => navigate('/viz/zlfn')} />
 			<SpeedDialAction icon={<DonutLargeIcon />} tooltipTitle="Venn" onClick={() => navigate('/viz/venn')} />
-			<SpeedDialAction icon={<SchemaIcon />} tooltipTitle="AST" onClick={() => navigate('/viz/ast')} />
 			<SpeedDialAction icon={<FunctionsIcon />} tooltipTitle={simulationMode ? 'Disable Simulation' : 'Enable Simulation'} onClick={() => { const next = !simulationMode; setSimulationMode(next); if (!next) resetStates() }} />
 		</SpeedDial>
 	)

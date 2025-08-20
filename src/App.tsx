@@ -5,7 +5,6 @@ import Home from './components/Home/Home'
 const DocumentViewer = lazy(() => import('./components/DocumentViewer/DocumentViewer'))
 const VizZlfn = lazy(() => import('./pages/VizZlfn'))
 const VizVenn = lazy(() => import('./pages/VizVenn'))
-const VizAst = lazy(() => import('./pages/VizAst'))
 const VizSymbols = lazy(() => import('./pages/VizSymbols'))
 const LogicVisualizer = lazy(() => import('./pages/LogicVisualizer'))
 const Phase1Verification = lazy(() => import('./test/Phase1Verification'))
@@ -22,7 +21,6 @@ function App() {
             <Route path="/document/:filename" element={<DocumentViewer />} />
             <Route path="/viz/zlfn" element={<VizZlfn />} />
             <Route path="/viz/venn" element={<VizVenn />} />
-            <Route path="/viz/ast" element={<VizAst />} />
             <Route path="/viz/symbols" element={<VizSymbols />} />
             <Route path="/viz" element={<LogicVisualizer />} />
             <Route path="/test/phase1" element={<Phase1Verification />} />

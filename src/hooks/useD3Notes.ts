@@ -56,15 +56,19 @@ export function useD3Notes({
     }
 
     return () => {
-      // unmount root first, then detach element to avoid "synchronously unmount" warnings
-      if (tooltipRootRef.current) {
-        tooltipRootRef.current.unmount()
-        tooltipRootRef.current = null
-      }
-      if (tooltipRef.current) {
-        document.body.removeChild(tooltipRef.current)
-        tooltipRef.current = null
-      }
+      // Defer unmount and detach to the microtask queue to avoid unmounting during render commit
+      const root = tooltipRootRef.current
+      const el = tooltipRef.current
+      tooltipRootRef.current = null
+      tooltipRef.current = null
+      Promise.resolve().then(() => {
+        if (root) {
+          try { root.unmount() } catch {}
+        }
+        if (el && el.parentNode) {
+          try { el.parentNode.removeChild(el) } catch {}
+        }
+      })
     }
   }, [])
 

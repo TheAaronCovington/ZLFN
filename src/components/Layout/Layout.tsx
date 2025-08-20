@@ -1,10 +1,9 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { BottomNavigation, BottomNavigationAction, Paper, Box, Chip } from '@mui/material'
+import { BottomNavigation, BottomNavigationAction, Paper, Box } from '@mui/material'
 import HomeIcon from '@mui/icons-material/Home'
 import ArticleIcon from '@mui/icons-material/Article'
 import HubIcon from '@mui/icons-material/Hub'
-import PushPinIcon from '@mui/icons-material/PushPin'
 import LibrarySidebar from './LibrarySidebar'
 import DockBar from './DockBar'
 import './Layout.css'
@@ -16,19 +15,10 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const [pinsSet, setPinsSet] = React.useState<Set<string>>(() => {
-    try {
-      const raw = localStorage.getItem(PINS_KEY)
-      const arr: string[] = raw ? JSON.parse(raw) : []
-      return new Set(arr)
-    } catch { return new Set<string>() }
-  })
   React.useEffect(() => {
     const load = () => {
       try {
-        const raw = localStorage.getItem(PINS_KEY)
-        const arr: string[] = raw ? JSON.parse(raw) : []
-        setPinsSet(new Set(arr))
+        localStorage.getItem(PINS_KEY)
       } catch {}
     }
     load()
@@ -36,7 +26,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
   }, [])
-  const isPinned = (id: string) => pinsSet.has(id)
   return (
     <div className="layout">
       <header className="header">
@@ -55,55 +44,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               ZLFN
             </Link>
             <Link to="/viz/venn" className="nav-link">Venn</Link>
-            <Link to="/viz/ast" className="nav-link">AST</Link>
             <Link to="/viz" className="nav-link">
               <ArticleIcon sx={{ fontSize: 18, mr: 0.5 }} />
               Visualizer
             </Link>
-            <div className="dropdown">
-              <span className="nav-link dropdown-toggle">
-                <ArticleIcon sx={{ fontSize: 18, mr: 0.5 }} />
-                Documents
-              </span>
-              <div className="dropdown-content">
-                <Link to="/document/TAG_Critique" className="dropdown-link">
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                    <span>TAG Critique</span>
-                    {isPinned('TAG_Critique') && <Chip size="small" icon={<PushPinIcon sx={{ fontSize: 12 }} />} label="Pinned" sx={{ 
-                      ml: 1, 
-                      height: 18, 
-                      backgroundColor: 'rgba(64,196,255,0.15)', 
-                      color: '#40c4ff',
-                      fontSize: 10
-                    }} />}
-                  </Box>
-                </Link>
-                <Link to="/document/logic_demo" className="dropdown-link">
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                    <span>Logic Demo</span>
-                    {isPinned('logic_demo') && <Chip size="small" icon={<PushPinIcon sx={{ fontSize: 12 }} />} label="Pinned" sx={{ 
-                      ml: 1, 
-                      height: 18, 
-                      backgroundColor: 'rgba(64,196,255,0.15)', 
-                      color: '#40c4ff',
-                      fontSize: 10
-                    }} />}
-                  </Box>
-                </Link>
-                <Link to="/document/test" className="dropdown-link">
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                    <span>Test Document</span>
-                    {isPinned('test') && <Chip size="small" icon={<PushPinIcon sx={{ fontSize: 12 }} />} label="Pinned" sx={{ 
-                      ml: 1, 
-                      height: 18, 
-                      backgroundColor: 'rgba(64,196,255,0.15)', 
-                      color: '#40c4ff',
-                      fontSize: 10
-                    }} />}
-                  </Box>
-                </Link>
-              </div>
-            </div>
+            {/* Documents dropdown removed; documents will be selected from the sidebar */}
             <Box>
               <LibrarySidebar />
             </Box>

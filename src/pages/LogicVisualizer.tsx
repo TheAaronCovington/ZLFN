@@ -5,12 +5,9 @@ import { ZlfnGraphWithNotes } from '../components/Visualizations/ZlfnGraphWithNo
 import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph'
 import VennDiagram from '../components/Visualizations/VennDiagram'
 import type { VennDiagramData, NecessarySufficientExample } from '../components/Visualizations/VennDiagram'
-import Heatmap from '../components/Visualizations/Heatmap'
 import NeonCard from '../components/UI/NeonCard'
-import { parseExpressionToAst, astToZlfnGraph, toNNF, toCNF, astToString } from '../services/logic'
+import { parseExpressionToAst, astToZlfnGraph, toNNF, toCNF, astToString, type AstNodeRec } from '../services/logic'
 import { parseDocumentToGraph, type DocumentGraphData } from '../services/documentParser'
-import ASTTree from '../components/Visualizations/ASTTree'
-import type { AstNodeRec } from '../components/Visualizations/ASTTree'
 import { useLogicShared } from '../context/LogicSharedContext'
 import NeonAccordion from '../components/Accordion/NeonAccordion'
 import { downloadJson, readJsonFile, readSavedLayout } from '../services/io'
@@ -18,8 +15,8 @@ import TruthTable from '../components/Visualizations/TruthTable'
 
 const LogicVisualizer: React.FC = () => {
 	const { selectedNodeId, setSelectedNodeId, currentExpression, setCurrentExpression, bumpExpressionHighlight, modes, setModes } = useLogicShared()
-	const [viewMode, setViewMode] = React.useState<'graph' | 'ast' | 'both'>(() => (localStorage.getItem('xv_view_mode') as 'graph'|'ast'|'both') || 'graph')
-	React.useEffect(() => { try { localStorage.setItem('xv_view_mode', viewMode) } catch {} }, [viewMode])
+	// Graph-only view
+	const [viewMode, setViewMode] = React.useState<'graph'>(() => 'graph')
 	const [docId, setDocId] = React.useState<'TAG_Critique' | 'expressions_guide'>(() => (localStorage.getItem('xv_viz_doc') as any) || 'TAG_Critique')
 	React.useEffect(() => { try { localStorage.setItem('xv_viz_doc', docId) } catch {} }, [docId])
 	const [qsDismissed, setQsDismissed] = React.useState<boolean>(() => localStorage.getItem('xv_qs_dismissed') === '1')
@@ -130,8 +127,6 @@ const LogicVisualizer: React.FC = () => {
 			}
 			const k = e.key.toLowerCase()
 			if (k === 'g') { setViewMode('graph'); showInfo('View: Graph') }
-			if (k === 'a') { setViewMode('ast'); showInfo('View: AST') }
-			if (k === 'b') { setViewMode('both'); showInfo('View: Both') }
 			if (e.key === '?') { setShortcutsOpen(true) }
 			if (k === 'k') { searchInputRef.current?.focus() }
 			if (k === 'escape') { setShortcutsOpen(false) }
@@ -228,7 +223,7 @@ const LogicVisualizer: React.FC = () => {
 	const applyPreview = () => {
 		if (!preview) return
 		if (typeof preview?.expression === 'string') setCurrentExpression(preview.expression)
-		if (preview?.viewMode === 'graph' || preview?.viewMode === 'ast' || preview?.viewMode === 'both') setViewMode(preview.viewMode)
+		if (preview?.viewMode === 'graph') setViewMode(preview.viewMode as 'graph')
 		if (typeof preview?.selectedNodeId === 'string' || preview?.selectedNodeId === null) setSelectedNodeId(preview.selectedNodeId ?? null)
 		if (preview?.layout && typeof preview.layout === 'object') {
 			try { localStorage.setItem(`xv_layout_${preview.expression}`, JSON.stringify(preview.layout)) } catch {}
@@ -290,8 +285,6 @@ const LogicVisualizer: React.FC = () => {
 								size="small"
 							>
 								<ToggleButton value="graph">Graph</ToggleButton>
-								<ToggleButton value="ast">AST</ToggleButton>
-								<ToggleButton value="both">Both</ToggleButton>
 							</ToggleButtonGroup>
 							<Button size="small" variant="outlined" sx={{ ml: 1 }} onClick={() => setShortcutsOpen(true)}>Shortcuts</Button>
 							<Button size="small" variant="outlined" sx={{ ml: 1 }} onClick={toggleQS}>{qsDismissed ? 'Show Quick Start' : 'Hide Quick Start'}</Button>
@@ -384,7 +377,7 @@ const LogicVisualizer: React.FC = () => {
 								<Box sx={{ color: 'text.secondary', fontSize: 14 }}>No node selected.</Box>
 							)}
 						</NeonCard>
-						{(viewMode === 'graph' || viewMode === 'both') && (
+						{(viewMode === 'graph') && (
 							<NeonCard 
 								title="ZLFN Graph" 
 								sx={{ position: 'relative', overflow: 'visible', height: '600px' }}
@@ -402,11 +395,6 @@ const LogicVisualizer: React.FC = () => {
 									objectId="main-visualizer"
 									showNotesIndicators={true}
 								/>
-							</NeonCard>
-						)}
-						{(viewMode === 'ast' || viewMode === 'both') && (
-							<NeonCard title="AST Tree">
-								{ast ? <ASTTree roots={[ast]} /> : <div>Invalid expression.</div>}
 							</NeonCard>
 						)}
 						<NeonCard title="Edge Details">
@@ -429,9 +417,6 @@ const LogicVisualizer: React.FC = () => {
 						<NeonCard title="Necessary & Sufficient">
 							<VennDiagram title="" data={vennData} type="necessary-sufficient" examples={examples} />
 						</NeonCard>
-						<NeonCard title="Heatmap">
-							<Heatmap data={Array.from({ length: 16 * 8 }, (_, i) => ({ x: i % 16, y: Math.floor(i / 16), value: Math.random() * 100 }))} xSize={16} ySize={8} />
-						</NeonCard>
 					</Stack>
 				</Box>
 			</Box>
@@ -442,8 +427,6 @@ const LogicVisualizer: React.FC = () => {
 				<DialogTitle>Keyboard Shortcuts</DialogTitle>
 				<DialogContent sx={{ fontSize: 14 }}>
 					<div><strong>g</strong>: View Graph</div>
-					<div><strong>a</strong>: View AST</div>
-					<div><strong>b</strong>: View Both</div>
 					<div><strong>f</strong>: Fit Graph</div>
 					<div><strong>c</strong>: Center on Selection</div>
 					<div><strong>p</strong>: Center on Path</div>

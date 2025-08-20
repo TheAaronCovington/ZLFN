@@ -66,13 +66,18 @@ interface AdvancedSearchProps {
   onClose: () => void;
   onSelectResult?: (objectId: string, nodeId?: string) => void;
   initialQuery?: string;
+  // New: search within the currently displayed graph
+  currentNodes?: Array<{ id: string; name?: string; type?: string }>;
+  currentObjectId?: string;
 }
 
 export default function AdvancedSearch({ 
   open, 
   onClose, 
   onSelectResult, 
-  initialQuery = '' 
+  initialQuery = '',
+  currentNodes,
+  currentObjectId
 }: AdvancedSearchProps) {
   const [filters, setFilters] = useState<SearchFilters>({
     query: initialQuery,
@@ -90,7 +95,6 @@ export default function AdvancedSearch({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [availableAuthors, setAvailableAuthors] = useState<string[]>([]);
   const [availableNodeTypes, setAvailableNodeTypes] = useState<string[]>([]);
 
@@ -112,21 +116,13 @@ export default function AdvancedSearch({
 
   const loadFilterOptions = async () => {
     try {
-      // In a real implementation, you'd have dedicated endpoints for this
       const response = await api.getAllObjects();
       if (response.success && response.data) {
         const objects = response.data;
-        
-        // Extract unique tags
-        const tags = new Set<string>();
         const authors = new Set<string>();
         const nodeTypes = new Set<string>();
-        
         objects.forEach(obj => {
-          // Note: tags property doesn't exist in current ZLFNObject type
-          // obj.metadata?.tags?.forEach(tag => tags.add(tag));
           if (obj.metadata?.author) authors.add(obj.metadata.author);
-          // Extract node types from arguments structure
           obj.zflnJson?.arguments?.forEach((arg: any) => {
             if (arg.zones) {
               arg.zones.forEach((zone: any) => {
@@ -139,8 +135,6 @@ export default function AdvancedSearch({
             }
           });
         });
-        
-        setAvailableTags(Array.from(tags).sort());
         setAvailableAuthors(Array.from(authors).sort());
         setAvailableNodeTypes(Array.from(nodeTypes).sort());
       }
@@ -151,17 +145,40 @@ export default function AdvancedSearch({
 
   const performSearch = async () => {
     if (!filters.query.trim()) return;
-    
     setLoading(true);
     setError(null);
-    
     try {
-      // Simulate advanced search - in reality, this would be a backend endpoint
       const response = await api.getAllObjects();
-      if (response.success && response.data) {
-        const searchResults = performClientSideSearch(response.data, filters);
-        setResults(searchResults);
+      const objects = response.success && response.data ? response.data : [];
+      const globalResults = performClientSideSearch(objects, filters);
+      const merged: SearchResult[] = [...globalResults];
+
+      // Augment with current graph node search if provided
+      if (currentNodes && filters.searchIn.includes('nodes')) {
+        const q = filters.query.toLowerCase();
+        const nodeMatches: SearchResult['matches'] = [];
+        currentNodes.forEach(node => {
+          if (!node || !node.id) return;
+          if (node.id.toLowerCase().includes(q) || (node.name && node.name.toLowerCase().includes(q))) {
+            nodeMatches.push({
+              type: 'node',
+              field: node.name ? 'name' : 'id',
+              value: node.name || node.id,
+              context: node.name || node.id,
+              nodeId: node.id
+            });
+          }
+        });
+        if (nodeMatches.length > 0) {
+          merged.unshift({
+            object: { id: currentObjectId || 'current-graph' } as any,
+            matches: nodeMatches,
+            score: 1000 + nodeMatches.length
+          });
+        }
       }
+
+      setResults(merged);
     } catch (err) {
       setError('Search failed. Please try again.');
       console.error('Search error:', err);
@@ -178,17 +195,8 @@ export default function AdvancedSearch({
       const matches: SearchResult['matches'] = [];
       let score = 0;
 
-      // Filter by author
       if (filters.author && obj.metadata?.author !== filters.author) return;
 
-      // Filter by tags (disabled - tags property doesn't exist in current type)
-      // if (filters.tags.length > 0) {
-      //   const objTags = obj.metadata?.tags || [];
-      //   const hasAllTags = filters.tags.every(tag => objTags.includes(tag));
-      //   if (!hasAllTags) return;
-      // }
-
-      // Filter by date range
       if (filters.dateFrom) {
         const fromDate = new Date(filters.dateFrom);
         const objDate = new Date(obj.metadata?.created || 0);
@@ -200,19 +208,16 @@ export default function AdvancedSearch({
         if (objDate > toDate) return;
       }
 
-      // Filter by has notes
       if (filters.hasNotes !== null) {
         const hasNotes = obj.notes && typeof obj.notes === 'object' && Object.keys(obj.notes).length > 0;
         if (filters.hasNotes !== hasNotes) return;
       }
 
-      // Filter by has versions
       if (filters.hasVersions !== null) {
         const hasVersions = obj.versionHistory && obj.versionHistory.length > 1;
         if (filters.hasVersions !== hasVersions) return;
       }
 
-      // Search in content
       if (filters.searchIn.includes('content')) {
         if (obj.id?.toLowerCase().includes(query)) {
           matches.push({
@@ -223,21 +228,8 @@ export default function AdvancedSearch({
           });
           score += 10;
         }
-
-        // Note: markdownContent doesn't exist in current ZLFNObject type
-        // if (obj.markdownContent?.toLowerCase().includes(query)) {
-        //   const context = extractContext(obj.markdownContent, query);
-        //   matches.push({
-        //     type: 'content',
-        //     field: 'markdown',
-        //     value: obj.markdownContent,
-        //     context
-        //   });
-        //   score += 5;
-        // }
       }
 
-      // Search in notes
       if (filters.searchIn.includes('notes') && obj.notes) {
         Object.entries(obj.notes).forEach(([nodeId, noteContent]) => {
           if (typeof noteContent === 'string' && noteContent.toLowerCase().includes(query)) {
@@ -254,18 +246,15 @@ export default function AdvancedSearch({
         });
       }
 
-      // Search in nodes (from arguments structure)
       if (filters.searchIn.includes('nodes') && obj.zflnJson?.arguments) {
         obj.zflnJson.arguments.forEach((arg: any) => {
           if (arg.zones) {
             arg.zones.forEach((zone: any) => {
               if (zone.nodes) {
                 zone.nodes.forEach((node: any) => {
-                  // Filter by node type
                   if (filters.nodeTypes.length > 0 && !filters.nodeTypes.includes(node.type)) {
                     return;
                   }
-
                   if (node.name?.toLowerCase().includes(query)) {
                     matches.push({
                       type: 'node',
@@ -276,7 +265,6 @@ export default function AdvancedSearch({
                     });
                     score += 8;
                   }
-
                   if (node.id.toLowerCase().includes(query)) {
                     matches.push({
                       type: 'node',
@@ -294,7 +282,6 @@ export default function AdvancedSearch({
         });
       }
 
-      // Search in metadata
       if (filters.searchIn.includes('metadata')) {
         if (obj.metadata?.author?.toLowerCase().includes(query)) {
           matches.push({
@@ -305,19 +292,6 @@ export default function AdvancedSearch({
           });
           score += 3;
         }
-
-        // Note: tags property doesn't exist in current ZLFNObject type
-        // obj.metadata?.tags?.forEach(tag => {
-        //   if (tag.toLowerCase().includes(query)) {
-        //     matches.push({
-        //       type: 'metadata',
-        //       field: 'tag',
-        //       value: tag,
-        //       context: tag
-        //     });
-        //     score += 4;
-        //   }
-        // });
       }
 
       if (matches.length > 0) {
@@ -325,40 +299,22 @@ export default function AdvancedSearch({
       }
     });
 
-    // Sort by score (descending)
     return results.sort((a, b) => b.score - a.score);
   };
 
   const extractContext = (text: string, query: string, contextLength = 100): string => {
     const index = text.toLowerCase().indexOf(query.toLowerCase());
     if (index === -1) return text.substring(0, contextLength);
-    
     const start = Math.max(0, index - contextLength / 2);
     const end = Math.min(text.length, index + query.length + contextLength / 2);
-    
     let context = text.substring(start, end);
     if (start > 0) context = '...' + context;
     if (end < text.length) context = context + '...';
-    
     return context;
   };
 
   const handleFilterChange = (key: keyof SearchFilters, value: any) => {
     setFilters(prev => ({ ...prev, [key]: value }));
-  };
-
-  const clearFilters = () => {
-    setFilters({
-      query: '',
-      searchIn: ['content', 'notes', 'nodes', 'metadata'],
-      author: '',
-      tags: [],
-      dateFrom: '',
-      dateTo: '',
-      nodeTypes: [],
-      hasNotes: null,
-      hasVersions: null
-    });
   };
 
   const getMatchIcon = (type: string) => {
@@ -431,16 +387,6 @@ export default function AdvancedSearch({
           >
             Filters
           </Button>
-          {(filters.author || filters.tags.length > 0 || filters.dateFrom || filters.dateTo) && (
-            <Button
-              size="small"
-              startIcon={<ClearIcon />}
-              onClick={clearFilters}
-              sx={{ ml: 1, color: '#b0bec5' }}
-            >
-              Clear
-            </Button>
-          )}
         </Box>
 
         {/* Filters Panel */}
@@ -489,41 +435,6 @@ export default function AdvancedSearch({
                     <TextField
                       {...params}
                       placeholder="Select author"
-                      size="small"
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          bgcolor: 'rgba(64, 196, 255, 0.05)',
-                          '& fieldset': { borderColor: 'rgba(64, 196, 255, 0.3)' }
-                        }
-                      }}
-                    />
-                  )}
-                />
-              </FormControl>
-
-              {/* Tags */}
-              <FormControl>
-                <FormLabel sx={{ color: '#8ad7ff', mb: 1 }}>Tags</FormLabel>
-                <Autocomplete
-                  multiple
-                  options={availableTags}
-                  value={filters.tags}
-                  onChange={(_, value) => handleFilterChange('tags', value)}
-                  renderTags={(value, getTagProps) =>
-                    value.map((option, index) => (
-                      <Chip
-                        {...getTagProps({ index })}
-                        key={option}
-                        label={option}
-                        size="small"
-                        sx={{ bgcolor: 'rgba(64, 196, 255, 0.2)' }}
-                      />
-                    ))
-                  }
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      placeholder="Select tags"
                       size="small"
                       sx={{
                         '& .MuiOutlinedInput-root': {
@@ -673,14 +584,14 @@ export default function AdvancedSearch({
                   >
                     <Box sx={{ width: '100%', mb: 1 }}>
                       <Typography variant="subtitle1" sx={{ color: '#40c4ff', fontWeight: 'bold' }}>
-                        {result.object.id}
+                        {result.object.id === (currentObjectId || 'current-graph') ? 'Current Graph' : result.object.id}
                       </Typography>
                       <Typography variant="caption" sx={{ color: '#b0bec5' }}>
                         Score: {result.score} • {result.matches.length} matches
                       </Typography>
                     </Box>
 
-                    {result.matches.slice(0, 3).map((match, matchIndex) => (
+                    {result.matches.slice(0, 5).map((match, matchIndex) => (
                       <Box
                         key={matchIndex}
                         sx={{
@@ -688,7 +599,14 @@ export default function AdvancedSearch({
                           alignItems: 'flex-start',
                           gap: 1,
                           width: '100%',
-                          mb: 0.5
+                          mb: 0.5,
+                          cursor: match.nodeId ? 'pointer' : 'default'
+                        }}
+                        onClick={(e) => {
+                          if (match.nodeId) {
+                            e.stopPropagation();
+                            onSelectResult?.(result.object.id, match.nodeId);
+                          }
                         }}
                       >
                         <Box sx={{ color: '#8ad7ff', mt: 0.5 }}>
@@ -714,9 +632,9 @@ export default function AdvancedSearch({
                       </Box>
                     ))}
 
-                    {result.matches.length > 3 && (
+                    {result.matches.length > 5 && (
                       <Typography variant="caption" sx={{ color: '#b0bec5', mt: 0.5 }}>
-                        +{result.matches.length - 3} more matches
+                        +{result.matches.length - 5} more matches
                       </Typography>
                     )}
                   </ListItemButton>

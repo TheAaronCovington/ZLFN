@@ -2,7 +2,8 @@ import React from 'react'
 import { ZlfnGraphWithNotes } from '../components/Visualizations/ZlfnGraphWithNotes'
 import type { ZlfnEdge, ZlfnNode } from '../components/Visualizations/ZlfnGraph'
 import { useLogicShared } from '../context/LogicSharedContext'
-import { Button, Stack, Typography } from '@mui/material'
+import { Button, Stack, Typography, IconButton, Tooltip } from '@mui/material'
+import SearchIcon from '@mui/icons-material/Search'
 import NeonCard from '../components/UI/NeonCard'
 
 const VizZlfn: React.FC = () => {
@@ -30,6 +31,14 @@ const VizZlfn: React.FC = () => {
 					Simulation Mode
 				</Button>
 				<Button size="small" variant="outlined" onClick={resetStates}>Reset States</Button>
+				<Tooltip title="Advanced Search">
+					<IconButton size="small" onClick={() => {
+						// Dispatch a custom event that ZlfnGraph listens to to open advanced search
+						window.dispatchEvent(new CustomEvent('zlfn:open-advanced-search'))
+					}}>
+						<SearchIcon />
+					</IconButton>
+				</Tooltip>
 			</Stack>
 			<NeonCard sx={{ position: 'relative', overflow: 'visible' }} contentSx={{ p: 0, '&:last-child': { pb: 0 } }}>
 				<ZlfnGraphWithNotes nodes={nodes} edges={edges} storageKey="/vis/zlfn" objectId="/vis/zlfn" showNotesIndicators={true} />
