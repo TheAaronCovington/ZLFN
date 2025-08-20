@@ -9,7 +9,7 @@ import { ZlfnGraphWithNotes } from '../components/Visualizations/ZlfnGraphWithNo
 import { FileManager } from '../components/FileUpload/FileManager'
 import { ZLFNProvider, useZLFN } from '../context/ZLFNContext'
 import VersionHistory from '../components/VersionControl/VersionHistory'
-import { DiffViewer } from '../components/VersionControl/DiffViewer'
+import DiffViewer from '../components/VersionControl/DiffViewer'
 import NeonCard from '../components/UI/NeonCard'
 
 const Phase2Demo: React.FC = () => {
@@ -23,8 +23,10 @@ const Phase2Demo: React.FC = () => {
 
 
   const handleViewDiff = (compareVersionId: string) => {
-    // For simplicity, we'll compare with the previous version or a fixed base
-    setViewingDiff({ base: 'base-version-id', compare: compareVersionId })
+    // compareVersionId is a versionKey (index as string) from VersionHistory
+    const compareIndex = Number(compareVersionId)
+    const baseIndex = Math.max(0, compareIndex + 1) // previous version as base, latest is index 0
+    setViewingDiff({ base: String(baseIndex), compare: String(compareIndex) })
     setDiffOpen(true)
   }
 

@@ -10,7 +10,10 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import PauseIcon from '@mui/icons-material/Pause'
 import SearchIcon from '@mui/icons-material/Search'
 import FilterListIcon from '@mui/icons-material/FilterList'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import DownloadIcon from '@mui/icons-material/Download'
 import StickyNote2Icon from '@mui/icons-material/StickyNote2'
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
 import { evaluateInference, evaluateStates, getRuleStrength, isRuleFallacy, bayesianUpdate } from '../../services/inference'
 import { downloadJson } from '../../services/io'
 import { parseVennRule, computeShading } from '../../services/venn'
@@ -109,9 +112,14 @@ export interface ZlfnGraphProps {
 	onNotesToggle?: () => void
 	notesEnabled?: boolean
 	onNoteRequest?: (nodeId: string) => void
+	externalSvgRef?: React.RefObject<SVGSVGElement | null>
+	suppressInternalNoteMarkers?: boolean
+    onExportFull?: () => void
+    onImportFull?: (file: File) => void
+    collabCount?: number
 }
 
-export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, storageKey, onInfo, centerOnSelectionTrigger, centerOnNodeId, centerOnNodeTrigger, onEdgeSelect, onOpenTruthTable, onNotesToggle, notesEnabled, onNoteRequest }) => {
+export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, storageKey, onInfo, centerOnSelectionTrigger, centerOnNodeId, centerOnNodeTrigger, onEdgeSelect, onOpenTruthTable, onNotesToggle, notesEnabled, onNoteRequest, externalSvgRef, suppressInternalNoteMarkers, onExportFull, onImportFull, collabCount }) => {
 	const { elementRef, size } = useResizeObserver<HTMLDivElement>()
 	const svgRef = useRef<SVGSVGElement | null>(null)
 	const gRef = useRef<SVGGElement | null>(null)
@@ -141,10 +149,23 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	const ruleFilterRef = useRef<HTMLInputElement | null>(null)
 	const [selectedEdgeIndex, setSelectedEdgeIndex] = useState<number | null>(null)
 	const [hierarchyMode, setHierarchyMode] = useState<boolean>(() => localStorage.getItem('xv_hierarchy') === '1')
-	const [showClusters, setShowClusters] = useState<boolean>(() => localStorage.getItem('xv_clusters') !== '0')
-	const [showRivers, setShowRivers] = useState<boolean>(() => localStorage.getItem('xv_rivers') !== '0')
+	const [showClusters, setShowClusters] = useState<boolean>(() => {
+		try {
+			const v = localStorage.getItem('xv_clusters')
+			return v ? v === '1' : false
+		} catch { return false }
+	})
+	const [showRivers, setShowRivers] = useState<boolean>(() => localStorage.getItem(`xv_rivers_${storageKey||'default'}`) !== '0')
 	const showRiversRef = useRef<boolean>(showRivers)
 	useEffect(() => { showRiversRef.current = showRivers }, [showRivers])
+	useEffect(() => {
+		try { localStorage.setItem(`xv_rivers_${storageKey||'default'}`, showRivers ? '1' : '0') } catch {}
+		// toggle visibility immediately
+		if (gRef.current) {
+			const g = d3.select(gRef.current)
+			g.select('g.flow-rivers').attr('display', showRivers ? null : 'none')
+		}
+	}, [showRivers, storageKey])
 	const [statusText, setStatusText] = useState<string>('')
 	const [showLegend, setShowLegend] = useState<boolean>(() => localStorage.getItem('xv_legend') === '1')
 	const [dynamicFit, setDynamicFit] = useState<boolean>(() => localStorage.getItem('xv_dynamic_fit') === '1')
@@ -157,6 +178,18 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	const [toolbarExpanded, setToolbarExpanded] = useState<boolean>(false)
 	const fileInputRef = useRef<HTMLInputElement | null>(null)
 	const nodeSearchRef = useRef<HTMLInputElement | null>(null)
+
+	// Force clusters off (prevents duplicate-looking rule boxes from cluster labels)
+	useEffect(() => {
+		if (showClusters) {
+			setShowClusters(false)
+			try { localStorage.setItem('xv_clusters', '0') } catch {}
+		}
+	}, [])
+
+	// Label update mutex to coalesce layout work and avoid duplicate/overlapping renders
+	const labelMutexRef = useRef<boolean>(false)
+	const labelPendingRef = useRef<boolean>(false)
 
 	// copy selected node details to clipboard
 	const copySelectedDetails = async () => {
@@ -181,8 +214,8 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	const menuOpen = Boolean(menuAnchorEl)
 	const openMenu = (e: React.MouseEvent<HTMLElement>) => setMenuAnchorEl(e.currentTarget)
 	const closeMenu = () => setMenuAnchorEl(null)
-	// debug helpers
-	const debug = true
+	// debug helpers (set to false for normal operation)
+	const debug = false
 	const tickRef = useRef<number>(0)
 	// zone visibility
 	const [showInformalZone, setShowInformalZone] = useState<boolean>(() => localStorage.getItem('xv_zone_informal') !== '0')
@@ -314,6 +347,10 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					onInfo?.(`Centered on ${nodeEl.name || nodeEl.symbol || nodeEl.id}`)
 				}
 			}
+			// Quick toggles
+			if (e.key.toLowerCase() === 'n') { e.preventDefault(); onNotesToggle?.(); onInfo?.('Toggled Notes') }
+			if (e.key.toLowerCase() === 'f') { e.preventDefault(); fitToContents(); onInfo?.('Fit') }
+			if (e.key.toLowerCase() === 'c') { e.preventDefault(); centerOnSelection(); onInfo?.('Center selection') }
 			if (e.key === 'Escape') {
 				e.preventDefault()
 				setSelectedNodeId(null)
@@ -426,7 +463,8 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				// at extreme zoom-out, do not render labels at all for performance/clarity
 				const show = transform.k >= 0.4
 				g.selectAll<any, any>('g.link-label').attr('display', show ? null : 'none')
-				g.selectAll<any, any>('g.link-paths text.curved-label').attr('display', show ? null : 'none')
+				// remove any legacy curved labels to prevent visual duplicates
+				g.selectAll<any, any>('g.link-paths text.curved-label').remove()
 				// soften badge stroke when zoomed out
 				g.selectAll<any, any>('g.link-label rect.link-badge').attr('stroke-opacity', Math.min(0.9, Math.max(0.3, 1 / (transform.k + 0.2))))
 			})
@@ -913,6 +951,10 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 
 		// links
 		const linksGroup = g.append('g').attr('class', 'links')
+		// dedicated layer for link labels to avoid accidental duplication across groups
+		// Recreate the labels layer each render to guarantee a single source of truth
+		g.select('g.link-labels').remove()
+		let labelsLayerSel = g.append('g').attr('class', 'link-labels').attr('pointer-events','none')
 		const link = linksGroup
 			.selectAll('line')
 			.data(linkData)
@@ -949,13 +991,65 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		riversGroup.lower()
 
 		// curved edge labels removed (redundant with badge labels)
+		// ensure any old curved-labels are cleared to avoid duplicate-looking overlays
+		g.selectAll('g.link-paths').remove()
 
-		// edge labels with background
-		const linkLabelG = linksGroup
+		// edge labels with background (stable keyed join to avoid duplicates)
+		const linkKey = (d: any) => {
+				// d3 may later replace source/target with node objects; at join-time they are strings
+				const s = (typeof d.source === 'string') ? d.source : (d.source?.id ?? '')
+				const t = (typeof d.target === 'string') ? d.target : (d.target?.id ?? '')
+				const r = (d.rule || d.label || '') as string
+				return `${s}->${t}:${r}`
+			}
+
+		// deterministic small jitter so labels for similar edges don't stack
+		const keyToJitter = (d: any) => {
+			const k = linkKey(d)
+			let h = 0
+			for (let i = 0; i < k.length; i++) h = ((h << 5) - h) + k.charCodeAt(i)
+			// map to [-1, 1]
+			const s = (h % 100) / 50 - 1
+			return s
+		}
+
+		// Deduplicate labels in case edges array contains logical duplicates
+		const seenKeys = new Set<string>()
+		const linkLabelData = linkData.filter((d: any) => {
+			const k = linkKey(d)
+			if (seenKeys.has(k)) return false
+			seenKeys.add(k)
+			return true
+		})
+
+		// Assign stable spread indices per rule to avoid visual overlap when different edges share the same rule text
+		const ruleCounts = new Map<string, number>()
+		for (const d of linkLabelData as any[]) {
+			const r = (d.rule || d.label || '') as string
+			ruleCounts.set(r, (ruleCounts.get(r) || 0) + 1)
+		}
+		const ruleNext = new Map<string, number>()
+		for (const d of linkLabelData as any[]) {
+			const r = (d.rule || d.label || '') as string
+			const nxt = ruleNext.get(r) || 0
+			;(d as any)._spreadIndex = nxt
+			ruleNext.set(r, nxt + 1)
+		}
+
+		if (debug) {
+			console.log('[ZLFN] labels join', { edges: linkData.length, labels: linkLabelData.length, keys: linkLabelData.slice(0,10).map(linkKey) })
+			try {
+				const existing = labelsLayerSel.selectAll('g.link-label').nodes().length
+				console.log('[ZLFN] pre-layout labels count', existing)
+			} catch {}
+		}
+
+		const linkLabelG = labelsLayerSel
 			.selectAll('g.link-label')
-			.data(linkData)
+			.data(linkLabelData, linkKey as any)
 			.join(enter => {
 				const g = enter.append('g').attr('class', 'link-label')
+					.attr('data-key', (d: any) => linkKey(d))
 				g.append('rect')
 					.attr('class', 'link-badge')
 					.attr('rx', 3)
@@ -984,8 +1078,12 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 						return w >= 70 ? '#00e676' : w <= 30 ? '#ff8a80' : '#ffd740'
 					})
 				return g
-			})
+			}, update => update.attr('data-key', (d: any) => linkKey(d)), exit => exit.remove())
 		linkLabelG.attr('display', showEdgeLabels ? null : 'none')
+		if (!showEdgeLabels) {
+			// If labels hidden, skip position work
+			return
+		}
 		linkLabelG
 			.on('mouseover', (event: any, d: any) => {
 				const rule = d.rule || d.label || 'Edge'
@@ -1022,6 +1120,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			.data(nodesWithArgs)
 			.join('g')
 			.attr('class', 'node')
+			.attr('id', (d: any) => `node-${d.id}`)
 			.style('cursor', 'pointer')
 			.call(
 				d3
@@ -1194,6 +1293,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		// counter facet icon (small red triangle)
 		iconGroup.append('path').attr('d', 'M 32,-5 L 38,5 L 26,5 Z').attr('fill', '#ff8a80').attr('stroke', '#ff5252').style('cursor', 'pointer')
 			.append('title').text('Open Counter facet')
+		// (Notes icon handled by canvas-level indicator to avoid duplication)
 
 		function toggleFacetOverlay(this: any, type: 'venn'|'truth'|'timeline'|'counter') {
 			const nodeGroup = (this as Element).closest('g.node') as SVGGElement | null
@@ -1888,6 +1988,14 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					const top = z.yRange[0] + r
 					const bottom = z.yRange[1] - r
 					if (typeof nd.y === 'number') nd.y = Math.max(top, Math.min(bottom, nd.y))
+
+					// update note marker absolute translate using current node coordinates
+					const offsetX = 18
+					const offsetY = -18
+					const marker = d3.select(this).select<SVGGElement>('g.note-marker')
+					if (!marker.empty() && typeof nd.x === 'number' && typeof nd.y === 'number') {
+						marker.attr('transform', `translate(${nd.x + offsetX}, ${nd.y + offsetY})`)
+					}
 				})
 			// diagnostics for Terms stacking when both toggles are on
 			if (debug) {
@@ -1974,10 +2082,40 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			// update curved paths and decide label mode
 			linkLabelG.attr('display', showEdgeLabels ? null : 'none')
 
-			// throttle heavy placement work every 3rd tick
+			// lightweight initial placement every tick to avoid stacked labels at (0,0)
+			linkLabelG.attr('transform', (d: any) => {
+				const s = d.source as any, t = d.target as any
+				const sx = s?.x ?? 0, sy = s?.y ?? 0, tx = t?.x ?? 0, ty = t?.y ?? 0
+				const cx0 = (sx + tx) / 2
+				const cy0 = (sy + ty) / 2 - 4
+				let angle = (Math.atan2(ty - sy, tx - sx) * 180) / Math.PI
+				if (angle > 90) angle -= 180
+				if (angle < -90) angle += 180
+				const dx = tx - sx, dy = ty - sy
+				const len = Math.hypot(dx, dy) || 1
+				const nx = -dy / len, ny = dx / len
+				const baseOff = Math.min(12, Math.max(6, len * 0.06))
+				const jitter = keyToJitter(d)
+				// add small tangential nudge using edge direction (tx-sx, ty-sy)
+				const txu = dx / len, tyu = dy / len
+				const spread = Number((d as any)._spreadIndex || 0)
+				const side = spread % 2 === 0 ? 1 : -1
+				const rank = Math.floor(spread / 2)
+				const extraN = rank * 10
+				const extraT = side * rank * 10
+				const bx = cx0 + nx * (baseOff + jitter * 6 + extraN) + txu * (jitter * 8 + extraT)
+				const by = cy0 + ny * (baseOff + jitter * 6 + extraN) + tyu * (jitter * 8 + extraT)
+				return `translate(${bx},${by}) rotate(${angle})`
+			})
+
+			// throttle heavy placement work every 3rd tick (with mutex)
 			const tickCount = (tickRef.current = (tickRef.current + 1))
 			const doHeavy = tickCount % 3 === 0
 			if (doHeavy) {
+				if (debug) console.log('[ZLFN] heavy refine tick', tickCount, 'locked=', labelMutexRef.current)
+				if (labelMutexRef.current) { labelPendingRef.current = true; }
+				if (!labelMutexRef.current) {
+					labelMutexRef.current = true
 			const placedCenters: Array<{ x: number; y: number }> = []
 			linkLabelG
 				.attr('transform', (d: any) => {
@@ -2007,8 +2145,14 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					const labelLen = ((d.rule || d.label || '').toString().length || 6) * (6 / k)
 					const labelRadius = Math.max(10 / k, Math.min(80, labelLen / 2))
 					let tries = 0
-					let bestX = cx0 + nx * off
-					let bestY = cy0 + ny * off
+					const jitter = keyToJitter(d)
+					const spread = Number((d as any)._spreadIndex || 0)
+					const side = spread % 2 === 0 ? 1 : -1
+					const rank = Math.floor(spread / 2)
+					const extraN = rank * 10
+					const extraT = side * rank * 10
+					let bestX = cx0 + nx * (off + jitter * 6 + extraN) + (dx/len) * (jitter * 8 + extraT)
+					let bestY = cy0 + ny * (off + jitter * 6 + extraN) + (dy/len) * (jitter * 8 + extraT)
 					while (tries < 5) {
 						// avoid nodes
 						const tooNearNode = (distTo(bestX, bestY, sx, sy) < radFor(s) + labelRadius) || (distTo(bestX, bestY, tx, ty) < radFor(t) + labelRadius)
@@ -2025,6 +2169,56 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					placedCenters.push({ x: bestX, y: bestY })
 					return `translate(${bestX},${bestY}) rotate(${angle})`
 				})
+				// release and possibly run one queued refine pass
+				Promise.resolve().then(() => {
+					labelMutexRef.current = false
+					if (labelPendingRef.current) {
+						labelPendingRef.current = false
+						if (debug) console.log('[ZLFN] queued refine run')
+						const againCenters: Array<{ x: number; y: number }> = []
+						linkLabelG.attr('transform', (d: any) => {
+							const s = d.source as any, t = d.target as any
+							const sx = s.x, sy = s.y, tx = t.x, ty = t.y
+							const cx0 = (sx + tx) / 2
+							const cy0 = (sy + ty) / 2 - 4
+							let angle = (Math.atan2(ty - sy, tx - sx) * 180) / Math.PI
+							if (angle > 90) angle -= 180
+							if (angle < -90) angle += 180
+							const dx = tx - sx, dy = ty - sy
+							const len = Math.hypot(dx, dy) || 1
+							const nx = -dy / len, ny = dx / len
+							const distTo = (px: number, py: number, qx: number, qy: number) => Math.hypot(px - qx, py - qy)
+							const radFor = (nd: any) => {
+								if (nd.size && 'radius' in nd.size) return nd.size.radius
+								const w = (nd.size?.width ?? 100) / 2
+								const h = (nd.size?.height ?? 30) / 2
+								return Math.hypot(w, h)
+							}
+							const nearS = distTo(cx0, cy0, sx, sy) < radFor(s) + 12
+							const nearT = distTo(cx0, cy0, tx, ty) < radFor(t) + 12
+							let off = (nearS || nearT) ? 12 : 6
+							const k = transformRef.current.k || 1
+							const labelLen = ((d.rule || d.label || '').toString().length || 6) * (6 / k)
+							const labelRadius = Math.max(10 / k, Math.min(80, labelLen / 2))
+							let tries = 0
+							let bestX = cx0 + nx * off
+							let bestY = cy0 + ny * off
+							while (tries < 5) {
+								const tooNearNode = (distTo(bestX, bestY, sx, sy) < radFor(s) + labelRadius) || (distTo(bestX, bestY, tx, ty) < radFor(t) + labelRadius)
+								const tooNearLabel = againCenters.some(c => distTo(bestX, bestY, c.x, c.y) < (labelRadius + 14 / k))
+								if (!tooNearNode && !tooNearLabel) break
+								off += 8
+								const side = (tries % 2 === 0) ? 1 : -1
+								bestX = cx0 + nx * off * side
+								bestY = cy0 + ny * off * side
+								tries++
+							}
+							againCenters.push({ x: bestX, y: bestY })
+							return `translate(${bestX},${bestY}) rotate(${angle})`
+						})
+					}
+				})
+				}
 			}
 
 			linkLabelG.select('text').each(function () {
@@ -2619,7 +2813,8 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		g.selectAll<any, any>('g.nodes g.node').attr('display', (d: any) => reachable.has(d.id) ? null : 'none')
 		g.selectAll<any, any>('g.links line').attr('display', (d: any) => (reachable.has((d.source as any).id) && reachable.has((d.target as any).id)) ? null : 'none')
 		g.selectAll<any, any>('g.links g.link-label').attr('display', (d: any) => (reachable.has((d.source as any).id) && reachable.has((d.target as any).id)) ? null : 'none')
-		g.selectAll<any, any>('g.link-paths text.curved-label').attr('display', (d: any) => (reachable.has((d.source as any).id) && reachable.has((d.target as any).id)) ? null : 'none')
+		// ensure legacy curved labels remain removed
+		g.selectAll<any, any>('g.link-paths text.curved-label').remove()
 	}, [hideNonPath, selectedNodeId, edges])
 
 	// persist clusters toggle
@@ -2822,50 +3017,6 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			recommendation: complexity > 200000 ? 'Consider data filtering or clustering' : 
 						   complexity > 100000 ? 'Large graph - optimizations enabled' : 'Normal performance expected'
 		}
-	}
-	
-	const generateLargeDatasetTest = (nodeCount: number, edgeCount: number) => {
-		const testNodes: ZlfnNode[] = []
-		const testEdges: ZlfnEdge[] = []
-		
-		// Generate nodes with realistic distribution
-		const nodeTypes = ['premise', 'conclusion', 'term', 'fallacy', 'core'] as const
-		const zones = ['premises', 'terms', 'conclusions', 'fallacies', 'arguments']
-		
-		for (let i = 0; i < nodeCount; i++) {
-			const nodeType = nodeTypes[Math.floor(Math.random() * nodeTypes.length)]
-			testNodes.push({
-				id: `test_${i}`,
-				label: `Node ${i}`,
-				type: nodeType,
-				zone: zones[Math.floor(Math.random() * zones.length)],
-				size: { radius: 15 + Math.random() * 10 },
-				complexity: Math.random() > 0.7 ? 'complex' : Math.random() > 0.4 ? 'moderate' : 'simple'
-			})
-		}
-		
-		// Generate edges with realistic rule distribution
-		const rules = ['Modus Ponens', 'Modus Tollens', 'Hypothetical Syllogism', 'Analogy', 'Induction', 'Statistical']
-		const edgeTypes = ['implication', 'counterexample', 'bidirectional', 'semantic'] as const
-		
-		for (let i = 0; i < edgeCount; i++) {
-			const sourceIdx = Math.floor(Math.random() * nodeCount)
-			let targetIdx = Math.floor(Math.random() * nodeCount)
-			while (targetIdx === sourceIdx) {
-				targetIdx = Math.floor(Math.random() * nodeCount)
-			}
-			
-			testEdges.push({
-				from: testNodes[sourceIdx].id,
-				to: testNodes[targetIdx].id,
-				type: edgeTypes[Math.floor(Math.random() * edgeTypes.length)],
-				weight: 60 + Math.random() * 40,
-				rule: rules[Math.floor(Math.random() * rules.length)],
-				style: Math.random() > 0.7 ? 'dashed' : Math.random() > 0.4 ? 'dotted' : 'solid'
-			})
-		}
-		
-		return { nodes: testNodes, edges: testEdges }
 	}
 	
 	// Adaptive rendering for performance
@@ -3130,6 +3281,7 @@ Controls:
 
 	useEffect(() => {
 		if (!gRef.current) return
+		if (suppressInternalNoteMarkers) return
 		const g = d3.select(gRef.current)
 		const nodesSel = g.selectAll<SVGGElement, any>('g.nodes g.node')
 
@@ -3137,15 +3289,22 @@ Controls:
 			// Add note markers if missing
 			nodesSel.each(function () {
 				const node = d3.select(this)
+				const nodeDatum: any = node.datum()
 				if (node.select('g.note-marker').empty()) {
 					const marker = node.append('g').attr('class', 'note-marker').style('cursor', 'pointer')
-					marker.append('circle').attr('cx', 22).attr('cy', -22).attr('r', 7).attr('fill', '#ffc107').attr('stroke', '#ff8f00').attr('stroke-width', 1.5)
-					marker.append('text').attr('x', 22).attr('y', -19).attr('text-anchor', 'middle').attr('font-size', 9).attr('fill', '#000').text('📝')
+					// Use local transform so it follows the node group translation
+					const offsetX = 18
+					const offsetY = -18
+					const nx = (nodeDatum?.x ?? 0) + offsetX
+					const ny = (nodeDatum?.y ?? 0) + offsetY
+					marker.attr('transform', `translate(${nx}, ${ny})`)
+					marker.append('title').text('Edit note')
+					marker.append('circle').attr('r', 7).attr('fill', '#ffc107').attr('stroke', '#ff8f00').attr('stroke-width', 1.5)
+					marker.append('text').attr('y', 3).attr('text-anchor', 'middle').attr('font-size', 9).attr('fill', '#000').text('📝')
 					marker.on('click', (event: any) => {
 						event.stopPropagation()
-						const datum: any = d3.select(this as any).datum()
-						if (datum && typeof datum.id === 'string' && onNoteRequest) {
-							onNoteRequest(datum.id)
+						if (nodeDatum && typeof nodeDatum.id === 'string' && onNoteRequest) {
+							onNoteRequest(nodeDatum.id)
 						} else {
 							onInfo?.('Note marker clicked')
 						}
@@ -3156,7 +3315,38 @@ Controls:
 			// Remove note markers
 			nodesSel.selectAll('g.note-marker').remove()
 		}
-	}, [notesEnabled, gRef])
+	}, [notesEnabled, gRef, onNoteRequest, onInfo, suppressInternalNoteMarkers])
+
+	useEffect(() => {
+		// keep external ref in sync
+		if (externalSvgRef) {
+			externalSvgRef.current = svgRef.current
+		}
+	}, [externalSvgRef, svgRef.current])
+
+	// presence rendering (lightweight)
+	useEffect(() => {
+		if (!gRef.current) return
+		const g = d3.select(gRef.current)
+		const nodesSel = g.selectAll<SVGGElement, any>('g.nodes g.node')
+		// remove old presence
+		nodesSel.selectAll('g.presence').remove()
+		// placeholder: no actual context wired here, keep structure for future
+		// attach small circle avatar placeholder at top-left
+		nodesSel.each(function(){
+			const node = d3.select(this)
+			const p = node.append('g').attr('class','presence')
+			p.append('circle').attr('cx', -18).attr('cy', -18).attr('r', 7).attr('fill', 'rgba(64,196,255,0.9)')
+			p.append('text').attr('x', -18).attr('y', -16).attr('text-anchor','middle').attr('font-size', 8).attr('fill', '#001018').text('U')
+		})
+	}, [gRef])
+
+	// top banner placeholder for collaboration
+	const collabBanner = (
+		<Box sx={{ position: 'absolute', top: 0, right: 0, p: 0.5, px: 1, bgcolor: 'rgba(64,196,255,0.12)', border: '1px solid rgba(64,196,255,0.25)', borderRadius: 1, color: '#8ad7ff', fontSize: 11, display: 'none' }}>
+			Collaboration Active
+		</Box>
+	)
 
 	return (
 		<div ref={elementRef} style={{ width: '100%', height: 560, position: 'relative' }}>
@@ -3205,6 +3395,43 @@ Controls:
 					>
 						<SearchIcon />
 					</IconButton>
+					<IconButton size="small" onClick={async ()=>{ try { await navigator.clipboard.writeText(JSON.stringify({ nodes, edges }, null, 2)); onInfo?.('Copied graph JSON') } catch {} }} title="Copy Graph JSON">
+						<ContentCopyIcon />
+					</IconButton>
+					<IconButton size="small" onClick={() => onExportFull?.()} title="Export Object">
+						<DownloadIcon />
+					</IconButton>
+					<Button size="small" variant="outlined" component="label" title="Import Object">
+						Import
+						<input hidden type="file" accept="application/json" onChange={(e)=>{ const f=e.target.files?.[0]; if(f) onImportFull?.(f) }} />
+					</Button>
+					<IconButton size="small" onClick={() => {
+						const overlay = document.createElement('div')
+						overlay.style.position = 'fixed'
+						overlay.style.right = '12px'
+						overlay.style.top = '64px'
+						overlay.style.zIndex = '9999'
+						overlay.style.background = 'rgba(25,25,35,0.98)'
+						overlay.style.border = '1px solid rgba(255,255,255,0.15)'
+						overlay.style.borderRadius = '8px'
+						overlay.style.padding = '12px'
+						overlay.style.color = '#e0e0e0'
+						overlay.style.fontSize = '12px'
+						overlay.innerHTML = `
+							<div style="font-weight:600;color:#40c4ff;margin-bottom:8px">Shortcuts</div>
+							<div>n: Toggle Notes</div>
+							<div>f: Fit</div>
+							<div>c: Center on selection</div>
+							<div>[/]: Cycle argument</div>
+							<div>Enter: Center on selected node</div>
+							<div style="margin-top:8px;color:#8ad7ff">Esc: Close</div>
+						`
+						document.body.appendChild(overlay)
+						const onEsc = (ev: KeyboardEvent) => { if (ev.key === 'Escape') { overlay.remove(); window.removeEventListener('keydown', onEsc) } }
+						window.addEventListener('keydown', onEsc)
+					}} title="Shortcuts">
+						<HelpOutlineIcon />
+					</IconButton>
 					{/* Notes Toggle (always visible in toolbar) */}
 					{typeof onNotesToggle === 'function' && (
 						<IconButton
@@ -3227,11 +3454,11 @@ Controls:
 						/>
 					)}
 
-					{/* Mode Indicators */}
+					{/* Mode Indicators and Quick Actions */}
 					<Stack direction="row" spacing={0.5}>
-						{Object.entries(modes).filter(([,v]) => !!v).map(([k]) => (
-							<Chip key={k} size="small" label={k} color="primary" variant="outlined" />
-						))}
+						{typeof collabCount === 'number' && (
+							<Chip size="small" label={`Collab: ${collabCount}`} variant="outlined" sx={{ ml: 1 }} />
+						)}
 					</Stack>
 
 					{/* Expand Toggle */}
@@ -3475,50 +3702,49 @@ Controls:
 				/>
 			)}
 			<Menu anchorEl={menuAnchorEl} open={menuOpen} onClose={closeMenu} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} transformOrigin={{ vertical: 'top', horizontal: 'left' }}>
+				{/* Legend */}
 				<MenuItem disabled>Legend</MenuItem>
-				<Divider />
 				<MenuItem disabled>Zones: Premises • Terms • Conclusions • Fallacies</MenuItem>
 				<MenuItem disabled>Edges: solid=semantic, dashed=dashed rule, dotted=weak</MenuItem>
 				<MenuItem disabled>Badges: color encodes rule; dot=weight</MenuItem>
-				<Divider />
+
+				{/* View & Visuals */}
 				<MenuItem onClick={() => { const next = !hierarchyMode; setHierarchyMode(next); try { localStorage.setItem('xv_hierarchy', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Hierarchy mode on' : 'Hierarchy mode off'); closeMenu() }}>Hierarchy Mode</MenuItem>
 				<MenuItem onClick={() => { setShowClusters(s=>!s); closeMenu() }}>{showClusters ? 'Hide Clusters' : 'Show Clusters'}</MenuItem>
 				<MenuItem onClick={() => { setShowRivers(s=>!s); closeMenu() }}>{showRivers ? 'Hide Rivers' : 'Show Rivers'}</MenuItem>
-				<Divider />
 				<MenuItem onClick={() => { setPathHighlight(s=>{ const next = !s; onInfo?.(next ? 'Path highlight on' : 'Path highlight off'); return next }); closeMenu() }}>{pathHighlight ? 'Disable Path Highlight' : 'Enable Path Highlight'}</MenuItem>
 				<MenuItem onClick={() => { setHideNonPath(s=>!s); onInfo?.('Toggled Isolate Path'); closeMenu() }}>{hideNonPath ? 'Show All Paths' : 'Isolate Path'}</MenuItem>
-				<Divider />
 				<MenuItem onClick={() => { const next = !showInformalZone; setShowInformalZone(next); closeMenu() }}>{showInformalZone ? 'Hide Informal Zone' : 'Show Informal Zone'}</MenuItem>
 				<MenuItem onClick={() => { const next = !showTemporalZone; setShowTemporalZone(next); closeMenu() }}>{showTemporalZone ? 'Hide Temporal Zone' : 'Show Temporal Zone'}</MenuItem>
+				<MenuItem onClick={() => { const next = !showMiniMap; setShowMiniMap(next); try { localStorage.setItem('xv_minimap', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Minimap on' : 'Minimap off'); closeMenu() }}>{showMiniMap ? 'Hide Minimap' : 'Show Minimap'}</MenuItem>
 				<Divider />
+
+				{/* Layout */}
 				<MenuItem onClick={() => { saveLayout(); onInfo?.('Layout saved'); closeMenu() }}>Save Layout</MenuItem>
-				<MenuItem onClick={() => { const next = !dynamicFit; setDynamicFit(next); try { localStorage.setItem('xv_dynamic_fit', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Dynamic fit on' : 'Dynamic fit off'); closeMenu() }}>{dynamicFit ? 'Disable Dynamic Fit' : 'Enable Dynamic Fit'}</MenuItem>
-				<MenuItem onClick={() => { exportSvg(); closeMenu() }}>Export SVG</MenuItem>
 				<MenuItem onClick={() => { exportLayoutJson(); closeMenu() }}>Export Layout JSON</MenuItem>
-				<MenuItem onClick={() => { exportPng(); closeMenu() }}>Export PNG</MenuItem>
 				<MenuItem onClick={() => { clearLayout(); closeMenu() }}>Clear Saved Layout</MenuItem>
+				<MenuItem onClick={() => { const next = !dynamicFit; setDynamicFit(next); try { localStorage.setItem('xv_dynamic_fit', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Dynamic fit on' : 'Dynamic fit off'); closeMenu() }}>{dynamicFit ? 'Disable Dynamic Fit' : 'Enable Dynamic Fit'}</MenuItem>
+				<Divider />
+
+				{/* Import/Export Full */}
+				<MenuItem onClick={() => { onExportFull?.(); closeMenu() }}>Export Full Object</MenuItem>
+				<MenuItem>
+					<label style={{ cursor: 'pointer' }}>
+						Import Full Object
+						<input hidden type="file" accept="application/json" onChange={(e)=>{ const f=e.target.files?.[0]; if (f) onImportFull?.(f); closeMenu() }} />
+					</label>
+				</MenuItem>
+				<Divider />
+
+				{/* Utilities */}
+				<MenuItem onClick={() => { exportSvg(); closeMenu() }}>Export SVG</MenuItem>
+				<MenuItem onClick={() => { exportPng(); closeMenu() }}>Export PNG</MenuItem>
+				<MenuItem onClick={async () => { try { await navigator.clipboard.writeText(JSON.stringify({ nodes, edges }, null, 2)); onInfo?.('Copied graph JSON') } catch {}; closeMenu() }}>Copy Graph JSON</MenuItem>
 				<MenuItem onClick={() => { resetZoom(); closeMenu() }}>Reset View</MenuItem>
 				<MenuItem onClick={() => { copySelectedDetails(); closeMenu() }} disabled={!selectedNodeId}>Copy Selected Details</MenuItem>
-				<MenuItem onClick={() => { const next = !showMiniMap; setShowMiniMap(next); try { localStorage.setItem('xv_minimap', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Minimap on' : 'Minimap off'); closeMenu() }}>{showMiniMap ? 'Hide Minimap' : 'Show Minimap'}</MenuItem>
 				<MenuItem onClick={() => { const next = !showNodeSearch; setShowNodeSearch(next); if (next) setTimeout(() => nodeSearchRef.current?.focus(), 100); onInfo?.(next ? 'Node search on' : 'Node search off'); closeMenu() }}>{showNodeSearch ? 'Hide Node Search' : 'Show Node Search'}</MenuItem>
 				<MenuItem onClick={() => { setShowHelp(v=>!v); closeMenu() }}>{showHelp ? 'Hide Shortcuts' : 'Show Shortcuts'}</MenuItem>
 				<MenuItem onClick={() => { const next = !showLegend; setShowLegend(next); try { localStorage.setItem('xv_legend', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Legend shown' : 'Legend hidden'); closeMenu() }}>{showLegend ? 'Hide Legend' : 'Show Legend'}</MenuItem>
-				<Divider />
-				<MenuItem onClick={() => { 
-					const testData = generateLargeDatasetTest(100, 200)
-					onInfo?.(`Generated test dataset: ${testData.nodes.length} nodes, ${testData.edges.length} edges`)
-					closeMenu()
-				}}>🧪 Generate Test Dataset (100 nodes)</MenuItem>
-				<MenuItem onClick={() => { 
-					const testData = generateLargeDatasetTest(500, 1000)
-					onInfo?.(`Generated large test dataset: ${testData.nodes.length} nodes, ${testData.edges.length} edges`)
-					closeMenu()
-				}}>🚀 Stress Test (500 nodes)</MenuItem>
-				<MenuItem onClick={() => { 
-					const perfData = validatePerformance(nodes.length, edges.length)
-					onInfo?.(`Performance: ${perfData.recommendation} (Complexity: ${perfData.complexity.toFixed(0)})`)
-					closeMenu()
-				}}>📊 Performance Analysis</MenuItem>
 			</Menu>
 			<input ref={fileInputRef} type="file" accept="application/json" style={{ display: 'none' }} onChange={async (e) => {
 				const f = e.target?.files?.[0]
@@ -3588,6 +3814,7 @@ Controls:
 					<div>Esc: Clear all • /: Filter rules</div>
 				</div>
 			)}
+			{collabBanner}
 		</div>
 	)
 }

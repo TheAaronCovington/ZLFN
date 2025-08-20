@@ -96,7 +96,7 @@ export function useZLFNNotes(options: UseZLFNNotesOptions): UseZLFNNotesReturn {
     }
   }, [notesState.isDirty, autoSaveEnabled, autoSaveDelay])
 
-  // Load notes from API
+  // Load notes from API with localStorage fallback
   const loadNotes = useCallback(async () => {
     if (!objectId) return
 
@@ -109,10 +109,23 @@ export function useZLFNNotes(options: UseZLFNNotesOptions): UseZLFNNotesReturn {
           notes: response.data?.notes || {}
         }))
       } else {
-        onError?.(response.error || 'Failed to load notes')
+        // Fallback to localStorage
+        try {
+          const raw = localStorage.getItem(`zlfn_notes_${objectId}`) || '{}'
+          const notes = JSON.parse(raw)
+          setNotesState(prev => ({ ...prev, notes }))
+        } catch {
+          onError?.(response.error || 'Failed to load notes')
+        }
       }
     } catch (error) {
-      onError?.(error instanceof Error ? error.message : 'Failed to save note')
+      try {
+        const raw = localStorage.getItem(`zlfn_notes_${objectId}`) || '{}'
+        const notes = JSON.parse(raw)
+        setNotesState(prev => ({ ...prev, notes }))
+      } catch {
+        onError?.(error instanceof Error ? error.message : 'Failed to load notes')
+      }
     } finally {
       setIsLoading(false)
     }
@@ -154,7 +167,7 @@ export function useZLFNNotes(options: UseZLFNNotesOptions): UseZLFNNotesReturn {
     pendingChangesRef.current.set(nodeId, content)
   }, [])
 
-  // Save specific note to API
+  // Save specific note to API with localStorage fallback
   const saveNote = useCallback(async (nodeId: string, content?: string): Promise<boolean> => {
     const noteContent = content ?? notesState.notes[nodeId] ?? ''
     
@@ -174,16 +187,36 @@ export function useZLFNNotes(options: UseZLFNNotesOptions): UseZLFNNotesReturn {
         onSuccess?.(`Note saved for node ${nodeId}`)
         return true
       } else {
-        onError?.(response.error || 'Failed to save note')
-        return false
+        // Fallback to localStorage
+        try {
+          const raw = localStorage.getItem(`zlfn_notes_${objectId}`) || '{}'
+          const notes = JSON.parse(raw)
+          notes[nodeId] = noteContent
+          localStorage.setItem(`zlfn_notes_${objectId}`, JSON.stringify(notes))
+          onSuccess?.(`Note saved locally for node ${nodeId}`)
+          return true
+        } catch {
+          onError?.(response.error || 'Failed to save note')
+          return false
+        }
       }
     } catch (error) {
-      onError?.(error instanceof Error ? error.message : 'Failed to save note')
-      return false
+      // Fallback to localStorage
+      try {
+        const raw = localStorage.getItem(`zlfn_notes_${objectId}`) || '{}'
+        const notes = JSON.parse(raw)
+        notes[nodeId] = noteContent
+        localStorage.setItem(`zlfn_notes_${objectId}`, JSON.stringify(notes))
+        onSuccess?.(`Note saved locally for node ${nodeId}`)
+        return true
+      } catch {
+        onError?.(error instanceof Error ? error.message : 'Failed to save note')
+        return false
+      }
     }
   }, [objectId, notesState.notes, onError, onSuccess])
 
-  // Delete note
+  // Delete note with localStorage fallback
   const deleteNote = useCallback(async (nodeId: string): Promise<boolean> => {
     try {
       const response = await api.deleteNote(objectId, nodeId)
@@ -207,12 +240,31 @@ export function useZLFNNotes(options: UseZLFNNotesOptions): UseZLFNNotesReturn {
         onSuccess?.(`Note deleted for node ${nodeId}`)
         return true
       } else {
-        onError?.(response.error || 'Failed to delete note')
-        return false
+        // Fallback to localStorage
+        try {
+          const raw = localStorage.getItem(`zlfn_notes_${objectId}`) || '{}'
+          const notes = JSON.parse(raw)
+          delete notes[nodeId]
+          localStorage.setItem(`zlfn_notes_${objectId}`, JSON.stringify(notes))
+          onSuccess?.(`Note deleted locally for node ${nodeId}`)
+          return true
+        } catch {
+          onError?.(response.error || 'Failed to delete note')
+          return false
+        }
       }
     } catch (error) {
-      onError?.(error instanceof Error ? error.message : 'Failed to delete note')
-      return false
+      try {
+        const raw = localStorage.getItem(`zlfn_notes_${objectId}`) || '{}'
+        const notes = JSON.parse(raw)
+        delete notes[nodeId]
+        localStorage.setItem(`zlfn_notes_${objectId}`, JSON.stringify(notes))
+        onSuccess?.(`Note deleted locally for node ${nodeId}`)
+        return true
+      } catch {
+        onError?.(error instanceof Error ? error.message : 'Failed to delete note')
+        return false
+      }
     }
   }, [objectId, onError, onSuccess])
 

@@ -40,24 +40,30 @@ export function useD3Notes({
   // Create tooltip container
   useEffect(() => {
     if (!tooltipRef.current) {
-      tooltipRef.current = document.createElement('div')
-      tooltipRef.current.style.position = 'absolute'
-      tooltipRef.current.style.pointerEvents = 'none'
-      tooltipRef.current.style.zIndex = '9999'
-      tooltipRef.current.style.visibility = 'hidden'
-      document.body.appendChild(tooltipRef.current)
-      
-      tooltipRootRef.current = createRoot(tooltipRef.current)
+      const el = document.createElement('div')
+      el.style.position = 'absolute'
+      el.style.pointerEvents = 'none'
+      el.style.zIndex = '9999'
+      el.style.visibility = 'hidden'
+      document.body.appendChild(el)
+      tooltipRef.current = el
+      // defer root creation until next microtask to avoid concurrent unmount warnings
+      Promise.resolve().then(() => {
+        if (tooltipRef.current && !tooltipRootRef.current) {
+          tooltipRootRef.current = createRoot(tooltipRef.current)
+        }
+      })
     }
 
     return () => {
-      if (tooltipRef.current) {
-        document.body.removeChild(tooltipRef.current)
-        tooltipRef.current = null
-      }
+      // unmount root first, then detach element to avoid "synchronously unmount" warnings
       if (tooltipRootRef.current) {
         tooltipRootRef.current.unmount()
         tooltipRootRef.current = null
+      }
+      if (tooltipRef.current) {
+        document.body.removeChild(tooltipRef.current)
+        tooltipRef.current = null
       }
     }
   }, [])
@@ -71,28 +77,44 @@ export function useD3Notes({
     // Remove existing note indicators
     svg.selectAll('.note-indicator').remove()
 
-    // Add note indicators for each node
+    // Add note indicators for each node (attached to the node group so they inherit node transforms)
     nodes.forEach(node => {
       const nodeElement = svg.select(`#node-${node.id}`)
       if (nodeElement.empty()) return
 
       const nodeData = nodeElement.datum() as any
-      if (!nodeData || typeof nodeData.x !== 'number' || typeof nodeData.y !== 'number') return
+      if (!nodeData) return
 
       const hasNoteValue = hasNote(node.id)
+
+      // Compute offset based on node size (circle vs rect)
+      const computeOffset = (nd: any): [number, number] => {
+        const padding = 6
+        if (nd?.size && typeof nd.size === 'object') {
+          if ('radius' in nd.size) {
+            const r = Number(nd.size.radius || 16)
+            return [r + padding, -r - padding]
+          }
+          const w = Number(nd.size.width || 100)
+          const h = Number(nd.size.height || 30)
+          return [w / 2 + padding, -h / 2 - padding]
+        }
+        // Fallback
+        return [24, -24]
+      }
+      const [offX, offY] = computeOffset(nodeData)
       
-      // Create note indicator group
-      const indicator = svg.append('g')
+      // Append indicator within the node group, similar to facet icons
+      const indicator = nodeElement
+        .append('g')
         .attr('class', 'note-indicator')
         .attr('data-node-id', node.id)
-        .attr('transform', `translate(${nodeData.x}, ${nodeData.y})`)
+        .attr('transform', `translate(${offX},${offY})`)
         .style('cursor', 'pointer')
 
       // Note icon background
       indicator.append('circle')
-        .attr('cx', 25)
-        .attr('cy', -25)
-        .attr('r', 8)
+        .attr('r', 6)
         .attr('fill', hasNoteValue ? '#ffc107' : 'rgba(255, 255, 255, 0.1)')
         .attr('stroke', hasNoteValue ? '#ff8f00' : 'rgba(255, 255, 255, 0.3)')
         .attr('stroke-width', 1.5)
@@ -100,18 +122,16 @@ export function useD3Notes({
 
       // Note icon
       indicator.append('text')
-        .attr('x', 25)
-        .attr('y', -21)
+        .attr('y', 2.5)
         .attr('text-anchor', 'middle')
-        .attr('font-family', 'Material Icons')
-        .attr('font-size', '10px')
+        .attr('font-size', '8px')
         .attr('fill', hasNoteValue ? '#000' : '#666')
         .text('📝')
 
       // Add interaction handlers
       indicator
         .on('mouseenter', function(event) {
-          showTooltip(event, node)
+          showTooltip(event as any, node)
         })
         .on('mouseleave', function() {
           hideTooltip()
@@ -122,39 +142,40 @@ export function useD3Notes({
           hideTooltip()
         })
 
-      // Store indicator position for updates
+      // Store indicator position for updates (not strictly necessary when attached to node group)
       noteIndicatorsRef.current.push({
         nodeId: node.id,
-        x: nodeData.x + 25,
-        y: nodeData.y - 25,
+        x: (nodeData.x ?? 0) + offX,
+        y: (nodeData.y ?? 0) + offY,
         hasNote: hasNoteValue
       })
     })
   }, [svgRef, nodes, hasNote, onNoteEdit])
 
-  // Update note indicator positions
+  // Update note indicator positions: since attached to node group with local transform, recompute offset to adapt to different sizes
   const updateNoteIndicators = useCallback(() => {
     if (!svgRef.current) return
-
     const svg = d3.select(svgRef.current)
-    
     nodes.forEach(node => {
       const nodeElement = svg.select(`#node-${node.id}`)
-      const indicator = svg.select(`.note-indicator[data-node-id="${node.id}"]`)
-      
-      if (!nodeElement.empty() && !indicator.empty()) {
-        const nodeData = nodeElement.datum() as any
-        if (nodeData && typeof nodeData.x === 'number' && typeof nodeData.y === 'number') {
-          indicator.attr('transform', `translate(${nodeData.x}, ${nodeData.y})`)
-          
-          // Update stored position
-          const storedIndicator = noteIndicatorsRef.current.find(i => i.nodeId === node.id)
-          if (storedIndicator) {
-            storedIndicator.x = nodeData.x + 25
-            storedIndicator.y = nodeData.y - 25
-          }
+      const indicator = nodeElement.select<SVGGElement>(`.note-indicator[data-node-id="${node.id}"]`)
+      if (indicator.empty()) return
+      const nd: any = nodeElement.datum() || {}
+      const padding = 6
+      let offX = 24, offY = -24
+      if (nd?.size && typeof nd.size === 'object') {
+        if ('radius' in nd.size) {
+          const r = Number(nd.size.radius || 16)
+          offX = r + padding
+          offY = -r - padding
+        } else {
+          const w = Number(nd.size.width || 100)
+          const h = Number(nd.size.height || 30)
+          offX = w / 2 + padding
+          offY = -h / 2 - padding
         }
       }
+      indicator.attr('transform', `translate(${offX},${offY})`)
     })
   }, [svgRef, nodes])
 
@@ -166,21 +187,13 @@ export function useD3Notes({
     const indicator = svg.select(`.note-indicator[data-node-id="${nodeId}"]`)
     
     if (!indicator.empty()) {
-      // Update circle appearance
       indicator.select('circle')
         .attr('fill', hasNoteValue ? '#ffc107' : 'rgba(255, 255, 255, 0.1)')
         .attr('stroke', hasNoteValue ? '#ff8f00' : 'rgba(255, 255, 255, 0.3)')
         .style('filter', hasNoteValue ? 'drop-shadow(0 0 4px rgba(255, 193, 7, 0.6))' : 'none')
-
-      // Update icon color
-      indicator.select('text')
-        .attr('fill', hasNoteValue ? '#000' : '#666')
-
-      // Update stored state
+      indicator.select('text').attr('fill', hasNoteValue ? '#000' : '#666')
       const storedIndicator = noteIndicatorsRef.current.find(i => i.nodeId === nodeId)
-      if (storedIndicator) {
-        storedIndicator.hasNote = hasNoteValue
-      }
+      if (storedIndicator) storedIndicator.hasNote = hasNoteValue
     }
   }, [svgRef])
 

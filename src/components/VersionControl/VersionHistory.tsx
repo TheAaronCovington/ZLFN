@@ -196,7 +196,7 @@ export function VersionHistory({
                         <Button
                           size="small"
                           startIcon={<DiffIcon />}
-                          onClick={() => onViewDiff((version as any)?.id || '')}
+                          onClick={() => onViewDiff(versionKey)}
                           variant="outlined"
                           color="info"
                         >
