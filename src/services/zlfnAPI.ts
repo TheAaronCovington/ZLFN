@@ -408,5 +408,4 @@ export const api = {
     zlfnAPI.downloadFile(filename, content, contentType)
 }
 
-// Export for backward compatibility
-export default api
+

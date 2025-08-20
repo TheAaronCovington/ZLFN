@@ -7,6 +7,8 @@ import React from 'react'
 import { ZlfnGraph, type ZlfnGraphProps } from './ZlfnGraph'
 import NotesDialog from '../Notes/NotesDialog'
 import useD3Notes from '../../hooks/useD3Notes'
+import { useResponsiveLayout } from '../../hooks/useResponsiveLayout'
+import { MobileZlfnGraph } from '../Mobile'
 import { api } from '../../services/zlfnAPI'
 import * as d3 from 'd3'
 
@@ -27,6 +29,7 @@ export function ZlfnGraphWithNotes({
   const [collabCount] = React.useState<number>(0)
 
   const svgRef = React.useRef<SVGSVGElement | null>(null)
+  const { isMobile, isTablet } = useResponsiveLayout()
 
   const handleNotesToggle = React.useCallback(() => setNotesEnabled(prev => !prev), [])
   const handleNoteRequest = React.useCallback((nodeId: string) => {
@@ -141,6 +144,28 @@ export function ZlfnGraphWithNotes({
     }
   }, [objectId])
 
+  // Use mobile-optimized version on mobile/tablet devices
+  if (isMobile || isTablet) {
+    return (
+      <React.Fragment>
+        <MobileZlfnGraph
+          objectId={objectId}
+          showNotesIndicators={showNotesIndicators}
+          nodes={nodes}
+          {...graphProps}
+        />
+        
+        <NotesDialog
+          open={notesOpen}
+          onClose={() => setNotesOpen(false)}
+          node={activeNodeId ? (nodes.find(n => n.id === activeNodeId) as any) || null : null}
+          objectId={objectId}
+        />
+      </React.Fragment>
+    )
+  }
+
+  // Desktop version
   return (
     <React.Fragment>
       <ZlfnGraph

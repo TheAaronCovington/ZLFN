@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as d3 from 'd3'
 import { useResizeObserver } from '../../hooks/useResizeObserver'
 import { useTouchGestures } from '../../hooks/useTouchGestures'
@@ -25,6 +25,10 @@ import { api } from '../../services/zlfnAPI'
 import BatchOperationsDialog from '../BatchOperations/BatchOperationsDialog'
 import { parseExpressionToAst } from '../../services/logic'
 import { renderZones } from '../../vis/layers/zones'
+import ExportDialog from '../Export/ExportDialog'
+import AdvancedSearch from '../Search/AdvancedSearch'
+import { NodeEditDialog } from '../NodeEditor'
+import type { MarkdownReference } from '../MarkdownReference'
 
 // AST-based evaluator (no eval)
 function evaluateExpressionWithAst(expression: string, variables: string[], values: boolean[]): boolean {
@@ -73,6 +77,7 @@ export type ZlfnNode = {
 	color?: string
 	size?: { width: number; height: number } | { radius: number }
 	label?: string
+	markdownRef?: string  // Reference to markdown document section
 }
 
 export type ZlfnEdge = {
@@ -120,9 +125,10 @@ export interface ZlfnGraphProps {
     collabCount?: number
     objectId?: string
     disableShortcuts?: boolean
+    onNodeUpdate?: (node: ZlfnNode) => void
 }
 
-export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, storageKey, onInfo, centerOnSelectionTrigger, centerOnNodeId, centerOnNodeTrigger, onEdgeSelect, onOpenTruthTable, onNotesToggle, notesEnabled, onNoteRequest, externalSvgRef, suppressInternalNoteMarkers, onExportFull, onImportFull, collabCount, objectId, disableShortcuts }) => {
+export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, storageKey, onInfo, centerOnSelectionTrigger, centerOnNodeId, centerOnNodeTrigger, onEdgeSelect, onOpenTruthTable, onNotesToggle, notesEnabled, onNoteRequest, externalSvgRef, suppressInternalNoteMarkers, onExportFull, onImportFull, collabCount, objectId, disableShortcuts, onNodeUpdate }) => {
   // Mobile optimization hooks
   const responsive = useResponsiveLayout();
   const mobileConfig = responsive.getMobileLayoutConfig();
@@ -173,6 +179,110 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	const [dynamicFit, setDynamicFit] = useState<boolean>(() => localStorage.getItem('xv_dynamic_fit') === '1')
 	const [snapEnabled, setSnapEnabled] = useState<boolean>(() => localStorage.getItem('xv_snap') !== '0')
 	const [batchDialogOpen, setBatchDialogOpen] = useState(false)
+	const [exportDialogOpen, setExportDialogOpen] = useState(false)
+	const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false)
+	const [nodeEditDialogOpen, setNodeEditDialogOpen] = useState(false)
+	const [editingNode, setEditingNode] = useState<ZlfnNode | null>(null)
+
+	// Export handler for the dialog
+	const handleExport = useCallback(async (options: any) => {
+		try {
+			// Use the existing export service or onExportFull callback
+			if (onExportFull) {
+				onExportFull()
+			} else {
+				// Fallback: download current graph as JSON
+				const graphData = {
+					nodes,
+					edges,
+					zones: zones || [],
+					metadata: {
+						exportedAt: new Date().toISOString(),
+						format: options.format,
+						includeNotes: options.includeNotes,
+						includeLayout: options.includeLayout
+					}
+				}
+				
+				const filename = `zlfn-graph-${Date.now()}.${options.format === 'json' ? 'json' : 'txt'}`
+				const content = JSON.stringify(graphData, null, 2)
+				
+				// Create download
+				const blob = new Blob([content], { type: 'application/json' })
+				const url = URL.createObjectURL(blob)
+				const link = document.createElement('a')
+				link.href = url
+				link.download = filename
+				document.body.appendChild(link)
+				link.click()
+				document.body.removeChild(link)
+				URL.revokeObjectURL(url)
+				
+				onInfo?.(`Exported as ${filename}`)
+			}
+		} catch (error) {
+			onInfo?.('Export failed')
+			console.error('Export error:', error)
+		}
+	}, [nodes, edges, zones, onExportFull, onInfo])
+
+	// Advanced search result handler
+	const handleSelectSearchResult = useCallback((_objectId: string, nodeId?: string) => {
+		try {
+			if (nodeId && svgRef.current && zoomRef.current) {
+				// Find the node in the DOM to get its position
+				const nodeEl = d3.select(gRef.current)
+					.selectAll<SVGGElement, any>('g.nodes g.node')
+					.data()
+					.find((d: any) => d.id === nodeId)
+				
+				if (nodeEl) {
+					// Center the view on this node using the same approach as other centering functions
+					const width = size.width || 800
+					const height = (size.height || 560) - 56
+					const transform = d3.zoomTransform(svgRef.current)
+					const k = transform.k
+					const centerX = width / 2
+					const centerY = height / 2
+					const newTransform = d3.zoomIdentity.translate(centerX - nodeEl.x * k, centerY - nodeEl.y * k).scale(k)
+					
+					d3.select(svgRef.current)
+						.transition()
+						.duration(750)
+						.call(zoomRef.current.transform, newTransform)
+					
+					onInfo?.(`Centered on: ${nodeEl.name || nodeEl.symbol || nodeEl.id}`)
+				}
+			}
+			setAdvancedSearchOpen(false)
+		} catch (error) {
+			console.error('Search result selection error:', error)
+		}
+	}, [size, onInfo])
+
+	// Node editing handlers
+	const handleNodeEdit = useCallback((node: ZlfnNode) => {
+		setEditingNode(node)
+		setNodeEditDialogOpen(true)
+	}, [])
+
+	const handleNodeSave = useCallback((updatedNode: ZlfnNode) => {
+		// In a real implementation, this would update the node in the data source
+		// For now, just update the local nodes array if onNodeUpdate is provided
+		if (onNodeUpdate) {
+			onNodeUpdate(updatedNode)
+		} else {
+			onInfo?.(`Node ${updatedNode.id} updated (changes not persisted)`)
+		}
+		setNodeEditDialogOpen(false)
+		setEditingNode(null)
+	}, [onNodeUpdate, onInfo])
+
+	const handleNavigateToReference = useCallback((reference: MarkdownReference) => {
+		// In a real implementation, this would navigate to the document viewer
+		// For now, just show an info message
+		onInfo?.(`Navigate to: ${reference.documentTitle} > ${reference.sectionPath}`)
+	}, [onInfo])
 	const [showMiniMap, setShowMiniMap] = useState<boolean>(() => localStorage.getItem('xv_minimap') !== '0')
 	const [showHelp, setShowHelp] = useState<boolean>(false)
 	const [nodeSearchTerm, setNodeSearchTerm] = useState<string>('')
@@ -1195,6 +1305,10 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			.attr('class', 'node')
 			.attr('id', (d: any) => `node-${d.id}`)
 			.style('cursor', 'pointer')
+			.on('contextmenu', (event: MouseEvent, d: any) => {
+				event.preventDefault()
+				handleNodeEdit(d)
+			})
 			.call(
 				d3
 					.drag<any, ZlfnNode>()
@@ -1366,6 +1480,31 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			.append('title').text('Open Timeline facet')
 		iconGroup.append('path').attr('d', 'M 32,-5 L 38,5 L 26,5 Z').attr('fill', '#ff8a80').attr('stroke', '#ff5252').attr('tabindex', 0).style('cursor', 'pointer')
 			.append('title').text('Open Counter facet')
+
+		// markdown reference indicator
+		const refGroup = nodeEnter.append('g').attr('class', 'markdown-ref').attr('transform', 'translate(20,-18)')
+		refGroup.append('circle')
+			.attr('r', 6)
+			.attr('cx', 0)
+			.attr('cy', 0)
+			.attr('fill', (d: any) => d.markdownRef ? 'rgba(0, 255, 255, 0.2)' : 'transparent')
+			.attr('stroke', (d: any) => d.markdownRef ? '#00ffff' : 'transparent')
+			.attr('stroke-width', 1)
+			.style('cursor', (d: any) => d.markdownRef ? 'pointer' : 'default')
+			.on('click', (event: MouseEvent, d: any) => {
+				if (d.markdownRef) {
+					event.stopPropagation()
+					// Show reference info or navigate
+					onInfo?.(`Markdown reference: ${d.markdownRef}`)
+				}
+			})
+		refGroup.append('path')
+			.attr('d', 'M-3,-3 L3,3 M-3,3 L3,-3')
+			.attr('stroke', (d: any) => d.markdownRef ? '#00ffff' : 'transparent')
+			.attr('stroke-width', 1.5)
+			.style('pointer-events', 'none')
+		refGroup.append('title')
+			.text((d: any) => d.markdownRef ? `Linked to: ${d.markdownRef}` : '')
 
 		function toggleFacetOverlay(this: any, type: 'venn'|'truth'|'timeline'|'counter', pinned?: boolean) {
 			const nodeGroup = (this as Element).closest('g.node') as SVGGElement | null
@@ -3540,7 +3679,10 @@ Controls:
 							<ContentCopyIcon />
 						</IconButton>
 					)}
-					<IconButton size="small" onClick={() => onExportFull?.()} title="Export Object">
+					<IconButton size="small" onClick={() => setAdvancedSearchOpen(true)} title="Advanced Search">
+						<SearchIcon />
+					</IconButton>
+					<IconButton size="small" onClick={() => setExportDialogOpen(true)} title="Export Object">
 						<DownloadIcon />
 					</IconButton>
 					<Button size="small" variant="outlined" component="label" title="Import Object">
@@ -3871,8 +4013,13 @@ Controls:
 				<MenuItem onClick={() => { resetZoom(); closeMenu() }}>Reset View</MenuItem>
 				<Divider />
 
+				{/* Search */}
+				<MenuItem onClick={() => { setAdvancedSearchOpen(true); closeMenu() }}>Advanced Search</MenuItem>
+
+				<Divider />
+
 				{/* Import / Export */}
-				<MenuItem onClick={() => { onExportFull?.(); closeMenu() }}>Export Full Object</MenuItem>
+				<MenuItem onClick={() => { setExportDialogOpen(true); closeMenu() }}>Export Object</MenuItem>
 				<MenuItem>
 					<label style={{ cursor: 'pointer' }}>
 						Import Object JSON<input hidden type="file" accept="application/json" onChange={(e)=>{ const f=e.target.files?.[0]; if (f) onImportFull?.(f); closeMenu() }} />
@@ -3972,6 +4119,33 @@ Controls:
 			<BatchOperationsDialog
 				open={batchDialogOpen}
 				onClose={() => setBatchDialogOpen(false)}
+			/>
+
+			{/* Export Dialog */}
+			<ExportDialog
+				open={exportDialogOpen}
+				onClose={() => setExportDialogOpen(false)}
+				onExport={handleExport}
+				objectTitle={`ZLFN Graph (${nodes.length} nodes, ${edges.length} edges)`}
+			/>
+
+			{/* Advanced Search Dialog */}
+			<AdvancedSearch
+				open={advancedSearchOpen}
+				onClose={() => setAdvancedSearchOpen(false)}
+				onSelectResult={handleSelectSearchResult}
+			/>
+
+			{/* Node Edit Dialog */}
+			<NodeEditDialog
+				open={nodeEditDialogOpen}
+				onClose={() => {
+					setNodeEditDialogOpen(false)
+					setEditingNode(null)
+				}}
+				node={editingNode}
+				onSave={handleNodeSave}
+				onNavigateToReference={handleNavigateToReference}
 			/>
 		</div>
 	)
