@@ -1,7 +1,7 @@
 import React from 'react'
 import { Box, Typography, Stack, TextField, Button, ToggleButton, ToggleButtonGroup, Snackbar, Alert, Dialog, DialogTitle, DialogContent, Autocomplete, Checkbox, FormControlLabel, FormGroup } from '@mui/material'
 import DocumentViewer from '../components/DocumentViewer/DocumentViewer'
-import ZlfnGraph from '../components/Visualizations/ZlfnGraph'
+import { ZlfnGraphWithNotes } from '../components/Visualizations/ZlfnGraphWithNotes'
 import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph'
 import VennDiagram from '../components/Visualizations/VennDiagram'
 import type { VennDiagramData, NecessarySufficientExample } from '../components/Visualizations/VennDiagram'
@@ -377,8 +377,12 @@ const LogicVisualizer: React.FC = () => {
 							)}
 						</NeonCard>
 						{(viewMode === 'graph' || viewMode === 'both') && (
-							<NeonCard title="ZLFN Graph">
-								<ZlfnGraph
+							<NeonCard 
+								title="ZLFN Graph" 
+								sx={{ position: 'relative', overflow: 'visible', height: '600px' }}
+								contentSx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1 }}
+							>
+								<ZlfnGraphWithNotes
 									nodes={nodes}
 									edges={edges}
 									storageKey={currentExpression}
@@ -387,6 +391,8 @@ const LogicVisualizer: React.FC = () => {
 									centerOnNodeTrigger={searchTrigger}
 									onEdgeSelect={setSelectedEdge}
 									onOpenTruthTable={(expr) => { const ta = parseExpressionToAst(expr); if (ta) { setTruthAst(ta); showInfo('Opened Truth Table for node expression') } }}
+									objectId="main-visualizer"
+									showNotesIndicators={true}
 								/>
 							</NeonCard>
 						)}

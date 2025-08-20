@@ -3,16 +3,13 @@
  * Global state management for ZLFN objects, notes, and collaboration
  */
 
-import { createContext, useContext, useReducer, useCallback, useEffect, type ReactNode } from 'react'
+import React from 'react'
 import type { 
-  ZLFNObject, 
-  ZLFNStructure, 
-  ZLFNUIState,
-  CollaborationState,
-  ZLFNVersion,
-  MergeOptions,
+  ZLFNObject,
+  ZLFNStructure,
   ImportResult,
-  MergeResult
+  CollaborationState,
+  ZLFNVersion
 } from '../types/zlfn'
 import { api } from '../services/zlfnAPI'
 
@@ -25,13 +22,14 @@ type ZLFNAction =
   | { type: 'UPDATE_OBJECT'; payload: Partial<ZLFNObject> }
   | { type: 'SET_OBJECTS_LIST'; payload: ZLFNObject[] }
   | { type: 'SET_SELECTED_NODES'; payload: string[] }
-  | { type: 'SET_VIEW_MODE'; payload: ZLFNUIState['viewMode'] }
+  | { type: 'SET_VIEW_MODE'; payload: 'graph' | 'ast' | 'both' }
   | { type: 'SET_EDIT_MODE'; payload: boolean }
   | { type: 'SET_SHOW_NOTES'; payload: boolean }
   | { type: 'SET_SHOW_VERSION_HISTORY'; payload: boolean }
   | { type: 'SET_COLLABORATION_STATE'; payload: Partial<CollaborationState> }
   | { type: 'ADD_PENDING_CHANGE'; payload: any }
   | { type: 'REMOVE_PENDING_CHANGE'; payload: string }
+  | { type: 'UPDATE_USER_PRESENCE'; payload: { userId: string; isEditing: boolean } }
 
 // State Interface
 interface ZLFNState {
@@ -46,7 +44,7 @@ interface ZLFNState {
   
   // View State
   selectedNodes: string[]
-  viewMode: ZLFNUIState['viewMode']
+  viewMode: 'graph' | 'ast' | 'both'
   editMode: boolean
   showNotes: boolean
   showVersionHistory: boolean
@@ -68,11 +66,11 @@ const initialState: ZLFNState = {
   showNotes: true,
   showVersionHistory: false,
   collaboration: {
-    isConnected: false,
+    isCollaborating: false,
     activeUsers: [],
     editLocks: {},
-    pendingChanges: []
-  }
+    userPresence: {},
+  },
 }
 
 // Reducer
@@ -121,24 +119,21 @@ function zlfnReducer(state: ZLFNState, action: ZLFNAction): ZLFNState {
         collaboration: { ...state.collaboration, ...action.payload }
       }
     
-    case 'ADD_PENDING_CHANGE':
-      return {
-        ...state,
-        collaboration: {
-          ...state.collaboration,
-          pendingChanges: [...state.collaboration.pendingChanges, action.payload]
-        }
-      }
+    // remove pending change handling; not part of imported CollaborationState
     
-    case 'REMOVE_PENDING_CHANGE':
+    case 'UPDATE_USER_PRESENCE':
       return {
         ...state,
         collaboration: {
           ...state.collaboration,
-          pendingChanges: state.collaboration.pendingChanges.filter(
-            change => change.id !== action.payload
-          )
-        }
+          userPresence: {
+            ...state.collaboration.userPresence,
+            [action.payload.userId]: {
+              lastSeen: Date.now(),
+              isEditing: action.payload.isEditing,
+            },
+          },
+        },
       }
     
     default:
@@ -148,51 +143,32 @@ function zlfnReducer(state: ZLFNState, action: ZLFNAction): ZLFNState {
 
 // Context Interface
 interface ZLFNContextValue {
-  // State
   state: ZLFNState
-  
-  // Object Operations
+  createObject: (markdownContent: string, initialJson?: ZLFNStructure) => Promise<ZLFNObject | null>
   loadObject: (id: string) => Promise<void>
-  createObject: (markdown?: string, zflnJson?: ZLFNStructure) => Promise<string | null>
-  updateObject: (updates: Partial<ZLFNObject>) => Promise<void>
-  deleteObject: (id: string) => Promise<boolean>
-  
-  // Content Operations
-  updateMarkdown: (markdown: string, author?: string) => Promise<void>
-  updateJSON: (zflnJson: ZLFNStructure, options?: MergeOptions) => Promise<MergeResult | null>
-  
-  // File Operations
-  importFile: (file: File, existingObjectId?: string) => Promise<ImportResult | null>
-  exportObject: (format?: 'json' | 'markdown' | 'full') => Promise<void>
-  
-  // Version Control
-  getVersionHistory: () => Promise<ZLFNVersion[]>
-  revertToVersion: (versionTimestamp: string) => Promise<void>
-  
-  // List and Search
-  loadAllObjects: () => Promise<void>
-  searchObjects: (query: string) => Promise<ZLFNObject[]>
-  
-  // UI Actions
-  setSelectedNodes: (nodeIds: string[]) => void
-  setViewMode: (mode: ZLFNUIState['viewMode']) => void
+  updateMarkdown: (markdown: string) => Promise<void>
+  updateJSON: (zflnJson: ZLFNStructure, options?: any) => Promise<any | null>
+  importFile: (file: File) => Promise<ImportResult | null>
+  exportObject: (format: 'json' | 'markdown') => Promise<void>
+  getVersionHistory: () => Promise<ZLFNVersion[] | null>
+  revertToVersion: (versionId: string) => Promise<ZLFNObject | null>
+  setViewMode: (mode: 'graph' | 'ast' | 'both') => void
   setEditMode: (enabled: boolean) => void
   toggleNotes: () => void
   toggleVersionHistory: () => void
-  
-  // Utilities
   clearError: () => void
   clearSuccess: () => void
   showError: (message: string) => void
   showSuccess: (message: string) => void
+  updatePresence: (editingNode?: string) => void
 }
 
 // Create Context
-const ZLFNContext = createContext<ZLFNContextValue | undefined>(undefined)
+const ZLFNContext = React.createContext<ZLFNContextValue | undefined>(undefined)
 
 // Provider Props
 interface ZLFNProviderProps {
-  children: ReactNode
+  children: React.ReactNode
   userId?: string
   enableCollaboration?: boolean
 }
@@ -203,17 +179,17 @@ export function ZLFNProvider({
   userId: _userId = 'default-user',
   enableCollaboration: _enableCollaboration = false 
 }: ZLFNProviderProps) {
-  const [state, dispatch] = useReducer(zlfnReducer, initialState)
+  const [state, dispatch] = React.useReducer(zlfnReducer, initialState)
 
   // Auto-clear messages after delay
-  useEffect(() => {
+  React.useEffect(() => {
     if (state.error) {
       const timer = setTimeout(() => dispatch({ type: 'SET_ERROR', payload: null }), 5000)
       return () => clearTimeout(timer)
     }
   }, [state.error])
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (state.success) {
       const timer = setTimeout(() => dispatch({ type: 'SET_SUCCESS', payload: null }), 3000)
       return () => clearTimeout(timer)
@@ -221,7 +197,7 @@ export function ZLFNProvider({
   }, [state.success])
 
   // Object Operations
-  const loadObject = useCallback(async (id: string) => {
+  const loadObject = React.useCallback(async (id: string) => {
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
       const response = await api.getObject(id)
@@ -235,14 +211,14 @@ export function ZLFNProvider({
     }
   }, [])
 
-  const createObject = useCallback(async (markdown?: string, zflnJson?: ZLFNStructure): Promise<string | null> => {
+  const createObject = React.useCallback(async (markdownContent: string, initialJson?: ZLFNStructure): Promise<ZLFNObject | null> => {
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
-      const response = await api.createObject(markdown, zflnJson)
+      const response = await api.createObject(markdownContent, initialJson)
       if (response.success && response.data) {
         dispatch({ type: 'SET_CURRENT_OBJECT', payload: response.data })
         dispatch({ type: 'SET_SUCCESS', payload: 'Object created successfully' })
-        return response.data.id
+        return response.data
       } else {
         dispatch({ type: 'SET_ERROR', payload: response.error || 'Failed to create object' })
         return null
@@ -253,47 +229,12 @@ export function ZLFNProvider({
     }
   }, [])
 
-  const updateObject = useCallback(async (updates: Partial<ZLFNObject>) => {
-    if (!state.currentObject) return
-    
-    try {
-      const response = await api.updateObject(state.currentObject.id, updates)
-      if (response.success && response.data) {
-        dispatch({ type: 'SET_CURRENT_OBJECT', payload: response.data })
-        dispatch({ type: 'SET_SUCCESS', payload: 'Object updated successfully' })
-      } else {
-        dispatch({ type: 'SET_ERROR', payload: response.error || 'Failed to update object' })
-      }
-    } catch (error) {
-      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : 'Unknown error' })
-    }
-  }, [state.currentObject])
-
-  const deleteObject = useCallback(async (id: string): Promise<boolean> => {
-    try {
-      const response = await api.deleteObject(id)
-      if (response.success) {
-        if (state.currentObject?.id === id) {
-          dispatch({ type: 'SET_CURRENT_OBJECT', payload: null })
-        }
-        dispatch({ type: 'SET_SUCCESS', payload: 'Object deleted successfully' })
-        return true
-      } else {
-        dispatch({ type: 'SET_ERROR', payload: response.error || 'Failed to delete object' })
-        return false
-      }
-    } catch (error) {
-              dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : 'Unknown error' })
-      return false
-    }
-  }, [state.currentObject])
-
   // Content Operations
-  const updateMarkdown = useCallback(async (markdown: string, author?: string) => {
+  const updateMarkdown = React.useCallback(async (markdown: string) => {
     if (!state.currentObject) return
     
     try {
-      const response = await api.updateMarkdown(state.currentObject.id, markdown, author)
+      const response = await api.updateMarkdown(state.currentObject.id, markdown)
       if (response.success && response.data) {
         dispatch({ type: 'SET_CURRENT_OBJECT', payload: response.data })
         dispatch({ type: 'SET_SUCCESS', payload: 'Markdown updated successfully' })
@@ -303,9 +244,9 @@ export function ZLFNProvider({
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : 'Unknown error' })
     }
-  }, [state.currentObject])
+  }, [state.currentObject, state.collaboration.editLocks])
 
-  const updateJSON = useCallback(async (zflnJson: ZLFNStructure, options?: MergeOptions): Promise<MergeResult | null> => {
+  const updateJSON = React.useCallback(async (zflnJson: ZLFNStructure, options?: any): Promise<any | null> => {
     if (!state.currentObject) return null
     
     try {
@@ -329,13 +270,13 @@ export function ZLFNProvider({
               dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : 'Unknown error' })
       return null
     }
-  }, [state.currentObject, loadObject])
+  }, [state.currentObject, loadObject, state.collaboration.editLocks])
 
   // File Operations
-  const importFile = useCallback(async (file: File, existingObjectId?: string): Promise<ImportResult | null> => {
+  const importFile = React.useCallback(async (file: File): Promise<ImportResult | null> => {
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
-      const response = await api.uploadFile(file, existingObjectId)
+      const response = await api.uploadFile(file, state.currentObject?.id)
       if (response.success && response.data) {
         if (response.data.objectId) {
           await loadObject(response.data.objectId)
@@ -353,9 +294,9 @@ export function ZLFNProvider({
               dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : 'Unknown error' })
       return null
     }
-  }, [loadObject])
+  }, [loadObject, state.currentObject])
 
-  const exportObject = useCallback(async (format: 'json' | 'markdown' | 'full' = 'full') => {
+  const exportObject = React.useCallback(async (format: 'json' | 'markdown' = 'json') => {
     if (!state.currentObject) return
     
     try {
@@ -375,122 +316,94 @@ export function ZLFNProvider({
   }, [state.currentObject])
 
   // Version Control
-  const getVersionHistory = useCallback(async (): Promise<ZLFNVersion[]> => {
-    if (!state.currentObject) return []
+  const getVersionHistory = React.useCallback(async (): Promise<ZLFNVersion[] | null> => {
+    if (!state.currentObject) return null
     
     try {
       const response = await api.getVersionHistory(state.currentObject.id)
-      if (response.success && response.data) {
-        return response.data
-      } else {
-        dispatch({ type: 'SET_ERROR', payload: response.error || 'Failed to load version history' })
-        return []
+      if (response.success) {
+        return response.data || []
       }
+      return null
     } catch (error) {
-              dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : 'Unknown error' })
-      return []
+      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : 'Unknown error' })
+      return null
     }
   }, [state.currentObject])
 
-  const revertToVersion = useCallback(async (versionTimestamp: string) => {
-    if (!state.currentObject) return
-    
+  const revertToVersion = React.useCallback(async (versionId: string): Promise<ZLFNObject | null> => {
+    if (!state.currentObject) return null
     try {
-      const response = await api.revertToVersion(state.currentObject.id, versionTimestamp)
+      const response = await api.revertToVersion(state.currentObject.id, versionId)
       if (response.success && response.data) {
         dispatch({ type: 'SET_CURRENT_OBJECT', payload: response.data })
         dispatch({ type: 'SET_SUCCESS', payload: 'Successfully reverted to previous version' })
-      } else {
-        dispatch({ type: 'SET_ERROR', payload: response.error || 'Failed to revert to version' })
+        return response.data
       }
+      return null
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : 'Unknown error' })
+      return null
     }
   }, [state.currentObject])
 
-  // List and Search
-  const loadAllObjects = useCallback(async () => {
-    try {
-      const response = await api.getAllObjects()
-      if (response.success && response.data) {
-        dispatch({ type: 'SET_OBJECTS_LIST', payload: response.data })
-      } else {
-        dispatch({ type: 'SET_ERROR', payload: response.error || 'Failed to load objects' })
-      }
-    } catch (error) {
-      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : 'Unknown error' })
-    }
-  }, [])
-
-  const searchObjects = useCallback(async (query: string): Promise<ZLFNObject[]> => {
-    try {
-      const response = await api.searchObjects(query)
-      if (response.success && response.data) {
-        return response.data
-      } else {
-        dispatch({ type: 'SET_ERROR', payload: response.error || 'Search failed' })
-        return []
-      }
-    } catch (error) {
-              dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : 'Unknown error' })
-      return []
-    }
-  }, [])
-
   // UI Actions
-  const setSelectedNodes = useCallback((nodeIds: string[]) => {
-    dispatch({ type: 'SET_SELECTED_NODES', payload: nodeIds })
-  }, [])
-
-  const setViewMode = useCallback((mode: ZLFNUIState['viewMode']) => {
+  const setViewMode = React.useCallback((mode: 'graph' | 'ast' | 'both') => {
     dispatch({ type: 'SET_VIEW_MODE', payload: mode })
   }, [])
 
-  const setEditMode = useCallback((enabled: boolean) => {
+  const setEditMode = React.useCallback((enabled: boolean) => {
     dispatch({ type: 'SET_EDIT_MODE', payload: enabled })
   }, [])
 
-  const toggleNotes = useCallback(() => {
+  const toggleNotes = React.useCallback(() => {
     dispatch({ type: 'SET_SHOW_NOTES', payload: !state.showNotes })
   }, [state.showNotes])
 
-  const toggleVersionHistory = useCallback(() => {
+  const toggleVersionHistory = React.useCallback(() => {
     dispatch({ type: 'SET_SHOW_VERSION_HISTORY', payload: !state.showVersionHistory })
   }, [state.showVersionHistory])
 
   // Utilities
-  const clearError = useCallback(() => {
+  const clearError = React.useCallback(() => {
     dispatch({ type: 'SET_ERROR', payload: null })
   }, [])
 
-  const clearSuccess = useCallback(() => {
+  const clearSuccess = React.useCallback(() => {
     dispatch({ type: 'SET_SUCCESS', payload: null })
   }, [])
 
-  const showError = useCallback((message: string) => {
+  const showError = React.useCallback((message: string) => {
     dispatch({ type: 'SET_ERROR', payload: message })
   }, [])
 
-  const showSuccess = useCallback((message: string) => {
+  const showSuccess = React.useCallback((message: string) => {
     dispatch({ type: 'SET_SUCCESS', payload: message })
   }, [])
+
+  // Implement updatePresence
+  const updatePresence = React.useCallback((editingNode?: string) => {
+    // Simulate sending presence update
+    dispatch({
+      type: 'UPDATE_USER_PRESENCE',
+      payload: {
+        userId: _userId, // Assuming _userId is available in the context
+        isEditing: !!editingNode
+      }
+    })
+  }, [_userId])
 
   // Context Value
   const contextValue: ZLFNContextValue = {
     state,
     loadObject,
     createObject,
-    updateObject,
-    deleteObject,
     updateMarkdown,
     updateJSON,
     importFile,
     exportObject,
     getVersionHistory,
     revertToVersion,
-    loadAllObjects,
-    searchObjects,
-    setSelectedNodes,
     setViewMode,
     setEditMode,
     toggleNotes,
@@ -498,7 +411,8 @@ export function ZLFNProvider({
     clearError,
     clearSuccess,
     showError,
-    showSuccess
+    showSuccess,
+    updatePresence
   }
 
   return (
@@ -510,7 +424,7 @@ export function ZLFNProvider({
 
 // Hook to use ZLFN context
 export function useZLFN() {
-  const context = useContext(ZLFNContext)
+  const context = React.useContext(ZLFNContext)
   if (context === undefined) {
     throw new Error('useZLFN must be used within a ZLFNProvider')
   }
@@ -519,28 +433,19 @@ export function useZLFN() {
 
 // Additional hooks for specific functionality
 export function useZLFNObject() {
-  const { state, loadObject, updateObject } = useZLFN()
+  const { state, loadObject } = useZLFN()
   return {
     object: state.currentObject,
     isLoading: state.isLoading,
     loadObject,
-    updateObject
+    // updateObject removed from public API
   }
 }
 
 export function useZLFNSelection() {
-  const { state, setSelectedNodes } = useZLFN()
+  const { state } = useZLFN()
   return {
     selectedNodes: state.selectedNodes,
-    setSelectedNodes,
-    clearSelection: () => setSelectedNodes([]),
-    toggleNode: (nodeId: string) => {
-      const current = state.selectedNodes
-      if (current.includes(nodeId)) {
-        setSelectedNodes(current.filter(id => id !== nodeId))
-      } else {
-        setSelectedNodes([...current, nodeId])
-      }
-    }
+    // Selection mutators removed from context for now
   }
 }

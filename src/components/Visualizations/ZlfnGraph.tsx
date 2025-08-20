@@ -10,6 +10,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import PauseIcon from '@mui/icons-material/Pause'
 import SearchIcon from '@mui/icons-material/Search'
 import FilterListIcon from '@mui/icons-material/FilterList'
+import StickyNote2Icon from '@mui/icons-material/StickyNote2'
 import { evaluateInference, evaluateStates, getRuleStrength, isRuleFallacy, bayesianUpdate } from '../../services/inference'
 import { downloadJson } from '../../services/io'
 import { parseVennRule, computeShading } from '../../services/venn'
@@ -105,9 +106,12 @@ export interface ZlfnGraphProps {
     centerOnNodeTrigger?: number
 	onEdgeSelect?: (edge: ZlfnEdge | null) => void
 	onOpenTruthTable?: (expr: string) => void
+	onNotesToggle?: () => void
+	notesEnabled?: boolean
+	onNoteRequest?: (nodeId: string) => void
 }
 
-export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, storageKey, onInfo, centerOnSelectionTrigger, centerOnNodeId, centerOnNodeTrigger, onEdgeSelect, onOpenTruthTable }) => {
+export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, storageKey, onInfo, centerOnSelectionTrigger, centerOnNodeId, centerOnNodeTrigger, onEdgeSelect, onOpenTruthTable, onNotesToggle, notesEnabled, onNoteRequest }) => {
 	const { elementRef, size } = useResizeObserver<HTMLDivElement>()
 	const svgRef = useRef<SVGSVGElement | null>(null)
 	const gRef = useRef<SVGGElement | null>(null)
@@ -3124,6 +3128,36 @@ Controls:
 		}
 	}, [])
 
+	useEffect(() => {
+		if (!gRef.current) return
+		const g = d3.select(gRef.current)
+		const nodesSel = g.selectAll<SVGGElement, any>('g.nodes g.node')
+
+		if (notesEnabled) {
+			// Add note markers if missing
+			nodesSel.each(function () {
+				const node = d3.select(this)
+				if (node.select('g.note-marker').empty()) {
+					const marker = node.append('g').attr('class', 'note-marker').style('cursor', 'pointer')
+					marker.append('circle').attr('cx', 22).attr('cy', -22).attr('r', 7).attr('fill', '#ffc107').attr('stroke', '#ff8f00').attr('stroke-width', 1.5)
+					marker.append('text').attr('x', 22).attr('y', -19).attr('text-anchor', 'middle').attr('font-size', 9).attr('fill', '#000').text('📝')
+					marker.on('click', (event: any) => {
+						event.stopPropagation()
+						const datum: any = d3.select(this as any).datum()
+						if (datum && typeof datum.id === 'string' && onNoteRequest) {
+							onNoteRequest(datum.id)
+						} else {
+							onInfo?.('Note marker clicked')
+						}
+					})
+				}
+			})
+		} else {
+			// Remove note markers
+			nodesSel.selectAll('g.note-marker').remove()
+		}
+	}, [notesEnabled, gRef])
+
 	return (
 		<div ref={elementRef} style={{ width: '100%', height: 560, position: 'relative' }}>
 			{/* Compact Main Toolbar */}
@@ -3171,6 +3205,17 @@ Controls:
 					>
 						<SearchIcon />
 					</IconButton>
+					{/* Notes Toggle (always visible in toolbar) */}
+					{typeof onNotesToggle === 'function' && (
+						<IconButton
+							size="small"
+							onClick={onNotesToggle}
+							color={notesEnabled ? 'warning' : 'default'}
+							title="Toggle Notes"
+						>
+							<StickyNote2Icon />
+						</IconButton>
+					)}
 					{showNodeSearch && (
 						<TextField 
 							size="small" 
@@ -3229,6 +3274,15 @@ Controls:
 								>
 									Highlight
 								</Button>
+								{typeof onNotesToggle === 'function' && (
+									<Button 
+										variant={notesEnabled ? 'contained' : 'outlined'}
+										color={notesEnabled ? 'warning' : 'inherit'}
+										onClick={onNotesToggle}
+									>
+										Notes
+									</Button>
+								)}
 							</ButtonGroup>
 
 							{/* Layout Controls */}

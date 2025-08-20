@@ -1,5 +1,5 @@
 import React from 'react'
-import ZlfnGraph from '../components/Visualizations/ZlfnGraph'
+import { ZlfnGraphWithNotes } from '../components/Visualizations/ZlfnGraphWithNotes'
 import type { ZlfnEdge, ZlfnNode } from '../components/Visualizations/ZlfnGraph'
 import { useLogicShared } from '../context/LogicSharedContext'
 import { Button, Stack, Typography } from '@mui/material'
@@ -31,8 +31,8 @@ const VizZlfn: React.FC = () => {
 				</Button>
 				<Button size="small" variant="outlined" onClick={resetStates}>Reset States</Button>
 			</Stack>
-			<NeonCard>
-				<ZlfnGraph nodes={nodes} edges={edges} />
+			<NeonCard sx={{ position: 'relative', overflow: 'visible' }} contentSx={{ p: 0, '&:last-child': { pb: 0 } }}>
+				<ZlfnGraphWithNotes nodes={nodes} edges={edges} storageKey="/vis/zlfn" objectId="/vis/zlfn" showNotesIndicators={true} />
 			</NeonCard>
 		</div>
 	)

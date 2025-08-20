@@ -93,7 +93,7 @@ export function FileManager({
     
     try {
       // Process the merge with the selected options
-      const result = await importFile(pendingMerge.file, objectId)
+      const result = await importFile(pendingMerge.file)
       
       if (result) {
         setUploadResults([result])

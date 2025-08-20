@@ -35,12 +35,13 @@ export interface ZLFNZone {
 }
 
 export interface ZLFNDependency {
-  sourceId: string
-  targetId: string
-  type: 'supports' | 'opposes' | 'clarifies' | 'implies' | 'contradicts' | 'equivalent'
-  weight: number
+  id: string
+  source: string
+  target: string
   rule: string
   context: string
+  weight?: number
+  type?: string
   priority: number
   bidirectional?: boolean
   metadata?: {
@@ -277,10 +278,13 @@ export interface NotesState {
 
 // Real-time Collaboration Types
 export interface CollaborationState {
-  isConnected: boolean
+  isCollaborating: boolean
   activeUsers: CollaborationUser[]
-  editLocks: Record<string, EditLock>
-  pendingChanges: PendingChange[]
+  userPresence: Record<string, {
+    lastSeen: number
+    isEditing: boolean
+  }>
+  editLocks: Record<string, { userId: string; expires: number }>
 }
 
 export interface CollaborationUser {

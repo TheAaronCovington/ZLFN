@@ -179,7 +179,7 @@ export function FileUploadZone({
         }, 100)
 
         // Upload file
-        const result = await importFile(uploadFile.file, existingObjectId)
+        const result = await importFile(uploadFile.file)
         
         clearInterval(progressInterval)
         
