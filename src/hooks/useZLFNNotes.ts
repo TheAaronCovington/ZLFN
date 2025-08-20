@@ -36,6 +36,8 @@ interface UseZLFNNotesReturn {
   getNoteContent: (nodeId: string) => string
   hasNote: (nodeId: string) => boolean
   getNotesCount: () => number
+  // Raw notes (read-only)
+  notesMap?: Record<string, string>
   canUndo: () => boolean
   canRedo: () => boolean
   
@@ -379,14 +381,14 @@ export function useZLFNNotes(options: UseZLFNNotesOptions): UseZLFNNotesReturn {
     return Object.values(notesState.notes).filter(note => note.trim()).length
   }, [notesState.notes])
 
-  const canUndo = useCallback(() => {
+  const canUndo = useCallback((): boolean => {
     const nodeId = notesState.selectedNoteId
     if (!nodeId) return false
     const h = historyRef.current.get(nodeId)
     return !!h && h.index > 0
   }, [notesState.selectedNoteId])
 
-  const canRedo = useCallback(() => {
+  const canRedo = useCallback((): boolean => {
     const nodeId = notesState.selectedNoteId
     if (!nodeId) return false
     const h = historyRef.current.get(nodeId)
@@ -447,6 +449,8 @@ export function useZLFNNotes(options: UseZLFNNotesOptions): UseZLFNNotesReturn {
     getNoteContent,
     hasNote,
     getNotesCount,
+    // Expose raw notes map for consumers that need current values
+    notesMap: notesState.notes,
     canUndo,
     canRedo,
     

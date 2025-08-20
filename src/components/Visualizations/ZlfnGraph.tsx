@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import * as d3 from 'd3'
 import { useResizeObserver } from '../../hooks/useResizeObserver'
+import { useTouchGestures } from '../../hooks/useTouchGestures'
+import { useResponsiveLayout } from '../../hooks/useResponsiveLayout'
 import { Button, Stack, IconButton, TextField, Chip, Menu, MenuItem, Divider, ButtonGroup, Collapse, Paper, Box } from '@mui/material'
 import { Dialog as MuiDialog, DialogTitle as MuiDialogTitle, DialogContent as MuiDialogContent, DialogActions as MuiDialogActions } from '@mui/material'
 import { useLogicShared } from '../../context/LogicSharedContext'
@@ -15,44 +17,40 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import DownloadIcon from '@mui/icons-material/Download'
 import StickyNote2Icon from '@mui/icons-material/StickyNote2'
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
+import BatchPredictionIcon from '@mui/icons-material/BatchPrediction'
 import { evaluateInference, evaluateStates, getRuleStrength, isRuleFallacy, bayesianUpdate } from '../../services/inference'
 import { downloadJson } from '../../services/io'
 import { parseVennRule, computeShading } from '../../services/venn'
 import { api } from '../../services/zlfnAPI'
+import BatchOperationsDialog from '../BatchOperations/BatchOperationsDialog'
+import { parseExpressionToAst } from '../../services/logic'
 
-// Helper function for evaluating simple logical expressions in truth tables
-function evaluateSimpleExpression(expression: string, variables: string[], values: boolean[]): boolean {
-	const varMap: Record<string, boolean> = {}
-	variables.forEach((v, i) => { varMap[v] = values[i] })
-	
-	// Simple evaluation for basic operators
-	let expr = expression
-	
-	// Replace variables with their truth values
-	variables.forEach(v => {
-		const regex = new RegExp(`\\b${v}\\b`, 'g')
-		expr = expr.replace(regex, varMap[v] ? 'true' : 'false')
-	})
-	
-	// Replace logical operators
-	expr = expr.replace(/∧|&|\band\b/g, '&&')
-	expr = expr.replace(/∨|\|\bor\b/g, '||')
-	expr = expr.replace(/¬|\bnot\b/g, '!')
-	expr = expr.replace(/→/g, '? true :') // P → Q becomes P ? true : Q (approximation)
-	expr = expr.replace(/↔/g, '===') // Biconditional
-	
-	try {
-		// Very basic evaluation - in a real implementation, use a proper parser
-		return eval(expr) || false
-	} catch {
-		// Fallback to simple AND/OR detection
-		if (expression.includes('∧') || expression.includes('&')) {
-			return values.every(v => v)
-		} else if (expression.includes('∨') || expression.includes('|')) {
-			return values.some(v => v)
+// AST-based evaluator (no eval)
+function evaluateExpressionWithAst(expression: string, variables: string[], values: boolean[]): boolean {
+	const ast = parseExpressionToAst(expression)
+	const env: Record<string, boolean> = {}
+	variables.forEach((v, i) => { env[v] = values[i] })
+
+	function evalAst(node: any): boolean {
+		if (!node) return false
+		const label = node.label
+		const children = node.children || []
+		// treat non-operator leaf as propositional var
+		if (!children.length && !('∧∨⊻→↔¬∀∃'.includes(label))) {
+			return !!env[label]
 		}
-		return values[0] || false
+		if (label === '¬') return !evalAst(children[0])
+		if (label === '∧') return children.every((c: any) => evalAst(c))
+		if (label === '∨') return children.some((c: any) => evalAst(c))
+		if (label === '⊻') { const t = children.filter((c: any) => evalAst(c)).length; return t === 1 }
+		if (label === '→') { const a = evalAst(children[0]), b = evalAst(children[1]); return (!a) || b }
+		if (label === '↔') { const a = evalAst(children[0]), b = evalAst(children[1]); return a === b }
+		// quantifiers unsupported in truth-table view: evaluate body
+		if (label === '∀' || label === '∃') return evalAst(children[children.length-1])
+		return false
 	}
+
+	return evalAst(ast)
 }
 
 export type LayoutMode = 'radial' | 'hierarchical' | 'grid' | 'force' | 'temporal'
@@ -124,6 +122,9 @@ export interface ZlfnGraphProps {
 }
 
 export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, storageKey, onInfo, centerOnSelectionTrigger, centerOnNodeId, centerOnNodeTrigger, onEdgeSelect, onOpenTruthTable, onNotesToggle, notesEnabled, onNoteRequest, externalSvgRef, suppressInternalNoteMarkers, onExportFull, onImportFull, collabCount, objectId, disableShortcuts }) => {
+  // Mobile optimization hooks
+  const responsive = useResponsiveLayout();
+  const mobileConfig = responsive.getMobileLayoutConfig();
 	const { elementRef, size } = useResizeObserver<HTMLDivElement>()
 	const svgRef = useRef<SVGSVGElement | null>(null)
 	const gRef = useRef<SVGGElement | null>(null)
@@ -170,6 +171,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	const [showLegend, setShowLegend] = useState<boolean>(() => localStorage.getItem('xv_legend') === '1')
 	const [dynamicFit, setDynamicFit] = useState<boolean>(() => localStorage.getItem('xv_dynamic_fit') === '1')
 	const [snapEnabled, setSnapEnabled] = useState<boolean>(() => localStorage.getItem('xv_snap') !== '0')
+	const [batchDialogOpen, setBatchDialogOpen] = useState(false)
 	const [showMiniMap, setShowMiniMap] = useState<boolean>(() => localStorage.getItem('xv_minimap') !== '0')
 	const [showHelp, setShowHelp] = useState<boolean>(false)
 	const [nodeSearchTerm, setNodeSearchTerm] = useState<string>('')
@@ -178,6 +180,36 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	const [toolbarExpanded, setToolbarExpanded] = useState<boolean>(false)
 	const fileInputRef = useRef<HTMLInputElement | null>(null)
 	const nodeSearchRef = useRef<HTMLInputElement | null>(null)
+
+	// Layout history (undo/redo) — capture node positions
+	const historyRef = useRef<Array<Record<string,{x:number;y:number}>>>([])
+	const historyIndexRef = useRef<number>(-1)
+	const captureLayout = () => {
+		if (!gRef.current) return
+		const data: Record<string,{x:number;y:number}> = {}
+		d3.select(gRef.current).selectAll<any,any>('g.nodes g.node').each(function(d:any){ if(typeof d?.x==='number'&&typeof d?.y==='number'&&d?.id){ data[d.id]={x:d.x,y:d.y} }})
+		// Truncate forward
+		historyRef.current = historyRef.current.slice(0, historyIndexRef.current+1)
+		historyRef.current.push(data)
+		historyIndexRef.current = historyRef.current.length-1
+	}
+	const applyLayout = (snap: Record<string,{x:number;y:number}>) => {
+		if (!gRef.current) return
+		d3.select(gRef.current).selectAll<any,any>('g.nodes g.node').each(function(d:any){ const s=snap[d?.id]; if(s){ d.x=s.x; d.y=s.y; (d as any).fx=null; (d as any).fy=null }})
+		if (simulationRef.current) simulationRef.current.alpha(0.4).restart()
+	}
+	const undoLayout = () => {
+		if (historyIndexRef.current<=0) return
+		historyIndexRef.current -= 1
+		applyLayout(historyRef.current[historyIndexRef.current])
+		onInfo?.('Layout: undo')
+	}
+	const redoLayout = () => {
+		if (historyIndexRef.current>=historyRef.current.length-1) return
+		historyIndexRef.current += 1
+		applyLayout(historyRef.current[historyIndexRef.current])
+		onInfo?.('Layout: redo')
+	}
 
 	// Force clusters off (prevents duplicate-looking rule boxes from cluster labels)
 	useEffect(() => {
@@ -388,8 +420,19 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				if (storageKey) { try { if (nextArg) localStorage.setItem(`xv_argument_${storageKey}`, nextArg); else localStorage.removeItem(`xv_argument_${storageKey}`) } catch {} }
 				onInfo?.(nextArg ? `Focused ${nextArg}` : 'Overview')
 			}
+			if (e.ctrlKey && e.key.toLowerCase()==='z') { e.preventDefault(); undoLayout() }
+			if (e.ctrlKey && e.key.toLowerCase()==='y') { e.preventDefault(); redoLayout() }
 		}
 		window.addEventListener('keydown', onKey, { capture: true })
+		const onCenter = (ev: Event) => {
+			const detail = (ev as CustomEvent).detail as any
+			const targetId: string | undefined = detail?.nodeId
+			if (targetId) {
+				setSelectedNodeId(targetId)
+				queueMicrotask(() => centerOnSelection())
+			}
+		}
+		window.addEventListener('zlfn:center-node', onCenter as any)
 		return () => window.removeEventListener('keydown', onKey, { capture: true } as any)
 	}, [disableShortcuts, simulationMode, setSimulationMode, resetStates, onInfo, frozen, showEdgeLabels, onEdgeSelect, selectedArgumentId, argumentIds, storageKey, showLegend, dynamicFit, setSelectedNodeId, showNodeSearch, selectedNodeId, nodes, filteredSearchNodes, selectedSearchIndex])
 
@@ -530,6 +573,52 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 
 		// clear content
 		g.selectAll('*').remove()
+
+		// Mobile touch gesture support
+		if (responsive.isTouch) {
+			const touchGestures = useTouchGestures({
+				onPinch: (scale, _center) => {
+					if (!zoomRef.current) return;
+					const currentTransform = d3.zoomTransform(svgRef.current!);
+					const newScale = Math.max(0.1, Math.min(10, currentTransform.k * scale));
+					const newTransform = currentTransform.scale(newScale / currentTransform.k);
+					d3.select(svgRef.current!).call(zoomRef.current.transform, newTransform);
+				},
+				onPan: (delta, _center) => {
+					if (!zoomRef.current) return;
+					const currentTransform = d3.zoomTransform(svgRef.current!);
+					const newTransform = currentTransform.translate(
+						delta.x * mobileConfig.panSensitivity, 
+						delta.y * mobileConfig.panSensitivity
+					);
+					d3.select(svgRef.current!).call(zoomRef.current.transform, newTransform);
+				},
+				onDoubleTap: (_point) => {
+					fitToContents();
+				},
+				onLongPress: (point) => {
+					// Find node at touch point and show context menu
+					const transform = d3.zoomTransform(svgRef.current!);
+					const [x, y] = transform.invert([point.x, point.y]);
+					const touchedNode = (nodes as any[]).find(node => {
+						const dx = node.x - x;
+						const dy = node.y - y;
+						const radius = (node.width || node.height || 40) / 2;
+						return Math.sqrt(dx * dx + dy * dy) <= radius;
+					});
+					if (touchedNode) {
+						setSelectedNodeId(touchedNode.id);
+						onInfo?.(`Long press on ${touchedNode.name || touchedNode.id}`);
+					}
+				}
+			});
+
+			// Attach touch gestures to SVG
+			const cleanup = touchGestures.attachToElement(svgRef.current as any);
+			
+			// Store cleanup for later
+			(svgRef.current as any)._touchCleanup = cleanup;
+		}
 
 		// defs for arrowheads (typed in a way TS is happy with)
 		const defsSel = svg.select('defs')
@@ -1156,6 +1245,8 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 							(d as any).x = Math.round((d as any).x / 10) * 10;
 							(d as any).y = Math.round((d as any).y / 10) * 10;
 						}
+						// Capture layout snapshot after a drag ends
+						captureLayout()
 					})
 				)
 
@@ -1529,8 +1620,8 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 						truthValues.push(value)
 					}
 					
-					// Evaluate expression (simplified)
-					const result = evaluateSimpleExpression(expression.toString(), variables, truthValues)
+					// Evaluate expression using AST
+					const result = evaluateExpressionWithAst(expression.toString(), variables, truthValues)
 					
 					// Variable cells
 					variables.forEach((variable, col) => {
@@ -1611,7 +1702,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					const truthValues = variables.map((_, col) => 
 						Boolean(row & (1 << (variables.length - 1 - col)))
 					)
-					return evaluateSimpleExpression(expression.toString(), variables, truthValues)
+					return evaluateExpressionWithAst(expression.toString(), variables, truthValues)
 				})
 				
 				const isTautology = allResults.every(r => r)
@@ -3269,7 +3360,7 @@ Controls:
 		try { 
 			localStorage.setItem(`xv_layout_${storageKey}`, JSON.stringify(data)); 
 			onInfo?.('Layout saved')
-			if (objectId) { try { void api.createSnapshot(objectId, 'Saved layout', 'modified') } catch {} }
+			if (objectId) { try { void api.createSnapshot(objectId, 'Saved layout', 'modified', undefined, data) } catch {} }
 		} catch {}
 	}
 
@@ -3384,24 +3475,40 @@ Controls:
 	)
 
 	return (
-		<div ref={elementRef} style={{ width: '100%', height: 560, position: 'relative' }}>
-			{/* Compact Main Toolbar */}
+		<div ref={elementRef} style={{ 
+			width: '100%', 
+			height: responsive.isMobile ? '100vh' : 560, 
+			position: 'relative',
+			overflow: 'hidden'
+		}}>
+			{/* Responsive Main Toolbar */}
 			<Paper 
 				elevation={2} 
 				sx={{ 
 					position: 'absolute', 
-					top: 8, 
+					top: responsive.isMobile ? 'auto' : 8,
+					bottom: responsive.isMobile ? 8 : 'auto',
 					left: 8, 
+					right: responsive.isMobile ? 8 : 'auto',
 					zIndex: 2, 
 					borderRadius: 2,
 					overflow: 'hidden',
-					maxWidth: 'calc(100% - 180px)'
+					maxWidth: responsive.isMobile ? 'none' : 'calc(100% - 180px)',
+					transform: responsive.isMobile ? 'none' : undefined
 				}}
 			>
 				{/* Primary Controls Row */}
-				<Box sx={{ p: 1, display: 'flex', alignItems: 'center', gap: 1, backgroundColor: 'rgba(25,25,35,0.95)' }}>
+				<Box sx={{ 
+					p: responsive.isMobile ? 0.5 : 1, 
+					display: 'flex', 
+					alignItems: 'center', 
+					gap: responsive.isMobile ? 0.5 : 1, 
+					backgroundColor: 'rgba(25,25,35,0.95)',
+					flexWrap: responsive.isMobile ? 'wrap' : 'nowrap',
+					justifyContent: responsive.isMobile ? 'space-around' : 'flex-start'
+				}}>
 					{/* Core Controls */}
-					<ButtonGroup size="small" variant="outlined">
+					<ButtonGroup size={responsive.isMobile ? 'medium' : 'small'} variant="outlined">
 						<Button 
 							variant={simulationMode ? 'contained' : 'outlined'}
 							startIcon={simulationMode ? <PauseIcon /> : <PlayArrowIcon />}
@@ -3424,15 +3531,18 @@ Controls:
 					
 					{/* Quick Search */}
 					<IconButton 
-						size="small" 
+						size={responsive.isMobile ? 'medium' : 'small'} 
 						onClick={() => setShowNodeSearch(v => !v)}
 						color={showNodeSearch ? 'primary' : 'default'}
+						sx={{ minWidth: responsive.isMobile ? 44 : 'auto' }}
 					>
 						<SearchIcon />
 					</IconButton>
-					<IconButton size="small" onClick={async ()=>{ try { await navigator.clipboard.writeText(JSON.stringify({ nodes, edges }, null, 2)); onInfo?.('Copied graph JSON') } catch {} }} title="Copy Graph JSON">
-						<ContentCopyIcon />
-					</IconButton>
+					{!responsive.isMobile && (
+						<IconButton size="small" onClick={async ()=>{ try { await navigator.clipboard.writeText(JSON.stringify({ nodes, edges }, null, 2)); onInfo?.('Copied graph JSON') } catch {} }} title="Copy Graph JSON">
+							<ContentCopyIcon />
+						</IconButton>
+					)}
 					<IconButton size="small" onClick={() => onExportFull?.()} title="Export Object">
 						<DownloadIcon />
 					</IconButton>
@@ -3777,6 +3887,10 @@ Controls:
 				<Divider />
 
 				{/* Utilities */}
+				<MenuItem onClick={() => { setBatchDialogOpen(true); closeMenu() }}>
+					<BatchPredictionIcon sx={{ mr: 1 }} />
+					Batch Operations
+				</MenuItem>
 				<MenuItem onClick={() => { const next = !showNodeSearch; setShowNodeSearch(next); if (next) setTimeout(() => nodeSearchRef.current?.focus(), 100); onInfo?.(next ? 'Node search on' : 'Node search off'); closeMenu() }}>{showNodeSearch ? 'Hide Node Search' : 'Show Node Search'}</MenuItem>
 				<MenuItem onClick={() => { setShowHelp(v=>!v); closeMenu() }}>{showHelp ? 'Hide Shortcuts' : 'Show Shortcuts'}</MenuItem>
 				<MenuItem onClick={() => { const next = !showLegend; setShowLegend(next); try { localStorage.setItem('xv_legend', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Legend shown' : 'Legend hidden'); closeMenu() }}>{showLegend ? 'Hide Legend' : 'Show Legend'}</MenuItem>
@@ -3856,6 +3970,12 @@ Controls:
 				</MuiDialog>
 			)}
 			{collabBanner}
+			
+			{/* Batch Operations Dialog */}
+			<BatchOperationsDialog
+				open={batchDialogOpen}
+				onClose={() => setBatchDialogOpen(false)}
+			/>
 		</div>
 	)
 }

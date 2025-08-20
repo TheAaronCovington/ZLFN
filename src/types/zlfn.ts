@@ -155,6 +155,7 @@ export interface ZLFNVersion {
   changeType?: 'created' | 'modified' | 'merged' | 'imported' | 'reverted'
   parentVersion?: string
   conflictsResolved?: ConflictResolution[]
+  layout?: Record<string, { x: number; y: number }>
 }
 
 export interface ConflictResolution {

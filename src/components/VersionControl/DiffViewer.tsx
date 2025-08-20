@@ -14,6 +14,16 @@ interface DiffItem {
   newValue?: any
 }
 
+interface LayoutDiffItem {
+  type: 'added' | 'removed' | 'moved'
+  id: string
+  from?: { x: number; y: number }
+  to?: { x: number; y: number }
+  dx?: number
+  dy?: number
+  dist?: number
+}
+
 interface DiffViewerProps {
   objectId: string
   baseVersionId: string
@@ -27,6 +37,9 @@ export default function DiffViewer({ objectId, baseVersionId, compareVersionId, 
   const [diffs, setDiffs] = React.useState<DiffItem[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+  const [onlyNotes, setOnlyNotes] = React.useState(false)
+  const [onlyLayout, setOnlyLayout] = React.useState(false)
+  const [layoutDiffs, setLayoutDiffs] = React.useState<LayoutDiffItem[]>([])
 
   React.useEffect(() => {
     let cancelled = false
@@ -47,12 +60,37 @@ export default function DiffViewer({ objectId, baseVersionId, compareVersionId, 
           notes: versions[idx]?.notes || baseData.notes,
           metadata: { ...baseData.metadata, modified: versions[idx]?.timestamp || baseData.metadata.modified }
         })
-        const base = pick(Number.isNaN(baseIdx) ? 0 : baseIdx)
-        const cmp = pick(Number.isNaN(compareIdx) ? 0 : compareIdx)
+        const safeBaseIdx = Number.isNaN(baseIdx) ? 0 : baseIdx
+        const safeCmpIdx = Number.isNaN(compareIdx) ? 0 : compareIdx
+        const base = pick(safeBaseIdx)
+        const cmp = pick(safeCmpIdx)
         if (!cancelled) {
           setBaseObj(base)
           setCompareObj(cmp)
         }
+
+        // Compute layout diffs if versions carry layout snapshots
+        try {
+          const baseLayout = (versions?.[safeBaseIdx]?.layout || {}) as Record<string, { x: number; y: number }>
+          const cmpLayout = (versions?.[safeCmpIdx]?.layout || {}) as Record<string, { x: number; y: number }>
+          const ids = new Set<string>([...Object.keys(baseLayout), ...Object.keys(cmpLayout)])
+          const changes: LayoutDiffItem[] = []
+          ids.forEach((id) => {
+            const a = baseLayout[id]
+            const b = cmpLayout[id]
+            if (a && !b) {
+              changes.push({ type: 'removed', id, from: a })
+            } else if (!a && b) {
+              changes.push({ type: 'added', id, to: b })
+            } else if (a && b) {
+              const dx = b.x - a.x
+              const dy = b.y - a.y
+              const dist = Math.hypot(dx, dy)
+              if (dist > 0.5) changes.push({ type: 'moved', id, from: a, to: b, dx, dy, dist: Math.round(dist) })
+            }
+          })
+          if (!cancelled) setLayoutDiffs(changes)
+        } catch {}
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Unknown error')
       } finally {
@@ -120,6 +158,7 @@ export default function DiffViewer({ objectId, baseVersionId, compareVersionId, 
     noteDiffs.forEach(d => { (map[d.id] ||= []).push(d) })
     return map
   }, [noteDiffs])
+  const visibleDiffs = onlyNotes ? noteDiffs : diffs
 
   return (
     <Paper sx={{ p: 3, bgcolor: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(64, 196, 255, 0.3)' }}>
@@ -134,8 +173,42 @@ export default function DiffViewer({ objectId, baseVersionId, compareVersionId, 
         <Chip label={`${modified} modified`} color="warning" />
         <Chip label={`${diffs.length} total`} color="info" />
         <Chip label={`Notes: ${diffs.filter(d=> d.category==='note').length}`} color="warning" variant="outlined" />
+        <Chip label={`Layout: ${layoutDiffs.length}`} color="info" variant="outlined" />
+        <Button size="small" variant={onlyNotes ? 'contained' : 'outlined'} onClick={()=> { const next=!onlyNotes; setOnlyNotes(next); if(next) setOnlyLayout(false); try{localStorage.setItem(`zv_diff_only_notes_${objectId}`, next?'1':'0')}catch{}}}>Only notes</Button>
+        <Button size="small" variant={onlyLayout ? 'contained' : 'outlined'} onClick={()=> { const next=!onlyLayout; setOnlyLayout(next); if(next) setOnlyNotes(false); try{localStorage.setItem(`zv_diff_only_layout_${objectId}`, next?'1':'0')}catch{}}}>Only layout</Button>
       </Box>
 
+      <Divider sx={{ my: 2 }} />
+      {/* Layout changes summary */}
+      {!onlyNotes && (
+      <Box sx={{ mb: 2 }}>
+        <Typography variant="subtitle1" sx={{ color: '#8ad7ff', mb: 1 }}>Layout changes</Typography>
+        {layoutDiffs.length === 0 ? (
+          <Typography variant="body2" sx={{ color: '#b0bec5' }}>No layout changes captured.</Typography>
+        ) : (
+          <List>
+            {layoutDiffs.map((c, i) => (
+              <ListItem key={i} alignItems="flex-start" sx={{ border: '1px solid rgba(64,196,255,0.2)', borderRadius: 1, mb: 1 }}>
+                <ListItemText
+                  primary={<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Chip size="small" label={c.type} color={c.type==='added'?'success':c.type==='removed'?'error':'warning'} />
+                    <Typography variant="subtitle2" sx={{ color: '#e0f2ff' }}>Node {c.id}</Typography>
+                    <Button size="small" variant="outlined" onClick={() => {
+                      try { window.dispatchEvent(new CustomEvent('zlfn:center-node', { detail: { objectId, nodeId: c.id } })) } catch {}
+                    }}>Center in graph</Button>
+                  </Box>}
+                  secondary={<Box sx={{ mt: 1, fontFamily: 'monospace' }}>
+                    {c.type==='moved' && <div>Δx={Math.round(c.dx||0)}, Δy={Math.round(c.dy||0)}, dist={c.dist}</div>}
+                    {c.from && <div>from: ({Math.round(c.from.x)}, {Math.round(c.from.y)})</div>}
+                    {c.to && <div>to: ({Math.round(c.to.x)}, {Math.round(c.to.y)})</div>}
+                  </Box>}
+                />
+              </ListItem>
+            ))}
+          </List>
+        )}
+      </Box>
+      )}
       <Divider sx={{ my: 2 }} />
       {/* Notes-focused summary */}
       <Box sx={{ mb: 2 }}>
@@ -156,6 +229,12 @@ export default function DiffViewer({ objectId, baseVersionId, compareVersionId, 
                     primary={<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <Chip size="small" label={String(status)} color={color as any} />
                       <Typography variant="subtitle2" sx={{ color: '#e0f2ff' }}>Node {nodeId}</Typography>
+                      <Button size="small" variant="outlined" onClick={() => {
+                        try {
+                          const evt = new CustomEvent('zlfn:center-node', { detail: { objectId, nodeId } })
+                          window.dispatchEvent(evt)
+                        } catch {}
+                      }}>Center in graph</Button>
                     </Box>}
                     secondary={<Box sx={{ mt: 1, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
                       {status !== 'added' && (
@@ -179,11 +258,11 @@ export default function DiffViewer({ objectId, baseVersionId, compareVersionId, 
         )}
       </Box>
       <Divider sx={{ my: 2 }} />
-      {diffs.length === 0 ? (
+      {visibleDiffs.length === 0 ? (
         <Alert severity="success">No differences detected.</Alert>
       ) : (
         <List>
-          {diffs.map((d, i) => (
+          {visibleDiffs.map((d, i) => (
             <ListItem key={i} alignItems="flex-start">
               <ListItemText
                 primary={`${d.category} ${d.id} — ${d.details}`}

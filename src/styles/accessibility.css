@@ -1,0 +1,490 @@
+/* Accessibility Styles */
+
+/* Screen reader only content */
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* Skip links */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 6px;
+  background: #000;
+  color: #fff;
+  padding: 8px;
+  text-decoration: none;
+  border-radius: 4px;
+  z-index: 10000;
+  font-weight: bold;
+  transition: top 0.2s ease-in-out;
+}
+
+.skip-link:focus {
+  top: 6px;
+}
+
+/* Focus indicators */
+.keyboard-user *:focus {
+  outline: 2px solid #40c4ff !important;
+  outline-offset: 2px !important;
+  border-radius: 4px;
+}
+
+.keyboard-user button:focus,
+.keyboard-user [role="button"]:focus {
+  outline: 3px solid #40c4ff !important;
+  outline-offset: 2px !important;
+}
+
+.keyboard-user input:focus,
+.keyboard-user textarea:focus,
+.keyboard-user select:focus {
+  outline: 2px solid #40c4ff !important;
+  outline-offset: 1px !important;
+  box-shadow: 0 0 0 3px rgba(64, 196, 255, 0.3) !important;
+}
+
+/* High contrast mode */
+.high-contrast {
+  --primary-color: #ffffff;
+  --secondary-color: #000000;
+  --background-color: #000000;
+  --text-color: #ffffff;
+  --border-color: #ffffff;
+  --focus-color: #ffff00;
+  --error-color: #ff0000;
+  --success-color: #00ff00;
+  --warning-color: #ffff00;
+}
+
+.high-contrast * {
+  background-color: var(--background-color) !important;
+  color: var(--text-color) !important;
+  border-color: var(--border-color) !important;
+}
+
+.high-contrast button,
+.high-contrast [role="button"] {
+  background-color: var(--secondary-color) !important;
+  color: var(--primary-color) !important;
+  border: 2px solid var(--border-color) !important;
+}
+
+.high-contrast button:hover,
+.high-contrast [role="button"]:hover {
+  background-color: var(--primary-color) !important;
+  color: var(--secondary-color) !important;
+}
+
+.high-contrast *:focus {
+  outline: 3px solid var(--focus-color) !important;
+  outline-offset: 2px !important;
+}
+
+.high-contrast .MuiPaper-root {
+  background-color: var(--background-color) !important;
+  border: 2px solid var(--border-color) !important;
+}
+
+.high-contrast .MuiChip-root {
+  background-color: var(--secondary-color) !important;
+  color: var(--primary-color) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+.high-contrast svg {
+  fill: var(--text-color) !important;
+  stroke: var(--text-color) !important;
+}
+
+/* Reduced motion */
+.reduced-motion * {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+.reduced-motion .MuiCollapse-root {
+  transition: none !important;
+}
+
+.reduced-motion .MuiGrow-root {
+  transition: none !important;
+}
+
+.reduced-motion .MuiFade-root {
+  transition: none !important;
+}
+
+/* Focus trap styling */
+.focus-trap {
+  position: relative;
+}
+
+.focus-trap::before,
+.focus-trap::after {
+  content: '';
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(1px, 1px, 1px, 1px);
+}
+
+/* Accessible form styling */
+.form-field {
+  position: relative;
+  margin-bottom: 1rem;
+}
+
+.form-field label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+  color: #e0f2ff;
+}
+
+.form-field input,
+.form-field textarea,
+.form-field select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 2px solid #40c4ff;
+  border-radius: 4px;
+  background-color: rgba(25, 25, 35, 0.8);
+  color: #e0f2ff;
+  font-size: 1rem;
+  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.form-field input:focus,
+.form-field textarea:focus,
+.form-field select:focus {
+  outline: none;
+  border-color: #8ad7ff;
+  box-shadow: 0 0 0 3px rgba(64, 196, 255, 0.3);
+}
+
+.form-field input:invalid,
+.form-field textarea:invalid,
+.form-field select:invalid {
+  border-color: #ff4444;
+}
+
+.form-field .error-message {
+  color: #ff4444;
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.form-field .help-text {
+  color: #b0bec5;
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
+/* Accessible button styling */
+.accessible-button {
+  position: relative;
+  padding: 0.75rem 1.5rem;
+  border: 2px solid #40c4ff;
+  border-radius: 4px;
+  background-color: rgba(64, 196, 255, 0.1);
+  color: #40c4ff;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  min-height: 44px; /* Touch target size */
+  min-width: 44px;
+}
+
+.accessible-button:hover {
+  background-color: rgba(64, 196, 255, 0.2);
+  border-color: #8ad7ff;
+}
+
+.accessible-button:focus {
+  outline: 3px solid #40c4ff;
+  outline-offset: 2px;
+}
+
+.accessible-button:active {
+  background-color: rgba(64, 196, 255, 0.3);
+  transform: translateY(1px);
+}
+
+.accessible-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: rgba(64, 196, 255, 0.05);
+}
+
+.accessible-button.primary {
+  background-color: #40c4ff;
+  color: #1a1a2e;
+}
+
+.accessible-button.primary:hover {
+  background-color: #8ad7ff;
+}
+
+.accessible-button.danger {
+  border-color: #ff4444;
+  color: #ff4444;
+  background-color: rgba(255, 68, 68, 0.1);
+}
+
+.accessible-button.danger:hover {
+  background-color: rgba(255, 68, 68, 0.2);
+}
+
+/* Accessible table styling */
+.accessible-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+}
+
+.accessible-table th,
+.accessible-table td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(64, 196, 255, 0.2);
+}
+
+.accessible-table th {
+  background-color: rgba(64, 196, 255, 0.1);
+  font-weight: 600;
+  color: #40c4ff;
+}
+
+.accessible-table tr:hover {
+  background-color: rgba(64, 196, 255, 0.05);
+}
+
+.accessible-table tr:focus-within {
+  background-color: rgba(64, 196, 255, 0.1);
+  outline: 2px solid #40c4ff;
+}
+
+/* Accessible navigation */
+.accessible-nav {
+  display: flex;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  gap: 0.5rem;
+}
+
+.accessible-nav li {
+  position: relative;
+}
+
+.accessible-nav a {
+  display: block;
+  padding: 0.75rem 1rem;
+  color: #e0f2ff;
+  text-decoration: none;
+  border-radius: 4px;
+  transition: background-color 0.2s ease-in-out;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+.accessible-nav a:hover {
+  background-color: rgba(64, 196, 255, 0.1);
+}
+
+.accessible-nav a:focus {
+  outline: 2px solid #40c4ff;
+  outline-offset: 2px;
+}
+
+.accessible-nav a[aria-current="page"] {
+  background-color: rgba(64, 196, 255, 0.2);
+  color: #40c4ff;
+  font-weight: 600;
+}
+
+/* Accessible modal/dialog */
+.accessible-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.accessible-modal-content {
+  background-color: #1a1a2e;
+  border: 2px solid #40c4ff;
+  border-radius: 8px;
+  padding: 2rem;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+}
+
+.accessible-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(64, 196, 255, 0.2);
+}
+
+.accessible-modal-title {
+  color: #40c4ff;
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.accessible-modal-close {
+  background: none;
+  border: none;
+  color: #b0bec5;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 4px;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.accessible-modal-close:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.accessible-modal-close:focus {
+  outline: 2px solid #40c4ff;
+  outline-offset: 2px;
+}
+
+/* Accessible alerts */
+.accessible-alert {
+  padding: 1rem;
+  border-radius: 4px;
+  margin: 1rem 0;
+  border-left: 4px solid;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.accessible-alert.info {
+  background-color: rgba(64, 196, 255, 0.1);
+  border-color: #40c4ff;
+  color: #8ad7ff;
+}
+
+.accessible-alert.success {
+  background-color: rgba(76, 175, 80, 0.1);
+  border-color: #4caf50;
+  color: #81c784;
+}
+
+.accessible-alert.warning {
+  background-color: rgba(255, 193, 7, 0.1);
+  border-color: #ffc107;
+  color: #ffcc02;
+}
+
+.accessible-alert.error {
+  background-color: rgba(244, 67, 54, 0.1);
+  border-color: #f44336;
+  color: #ef5350;
+}
+
+.accessible-alert-icon {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.125rem;
+}
+
+.accessible-alert-content {
+  flex: 1;
+}
+
+.accessible-alert-title {
+  font-weight: 600;
+  margin: 0 0 0.25rem 0;
+}
+
+.accessible-alert-message {
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Touch targets for mobile */
+@media (max-width: 768px) {
+  .accessible-button,
+  .accessible-nav a,
+  .accessible-modal-close,
+  button,
+  [role="button"] {
+    min-height: 44px !important;
+    min-width: 44px !important;
+  }
+  
+  .form-field input,
+  .form-field textarea,
+  .form-field select {
+    min-height: 44px;
+    font-size: 16px; /* Prevent zoom on iOS */
+  }
+}
+
+/* Print styles */
+@media print {
+  .skip-link,
+  .accessible-button,
+  .accessible-nav,
+  .accessible-modal {
+    display: none !important;
+  }
+  
+  .accessible-alert {
+    border: 1px solid #000 !important;
+    background: none !important;
+    color: #000 !important;
+  }
+  
+  .accessible-table {
+    border: 1px solid #000 !important;
+  }
+  
+  .accessible-table th,
+  .accessible-table td {
+    border: 1px solid #000 !important;
+    background: none !important;
+    color: #000 !important;
+  }
+}

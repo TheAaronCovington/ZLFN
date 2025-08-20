@@ -378,7 +378,7 @@ export class ZLFNObjectManager {
   }
 
   // Create a snapshot/version without changing content (e.g., layout saved)
-  async createSnapshot(objectId: string, changeDescription: string, changeType: ZLFNVersion['changeType'] = 'modified', author?: string): Promise<ZLFNObject | null> {
+  async createSnapshot(objectId: string, changeDescription: string, changeType: ZLFNVersion['changeType'] = 'modified', author?: string, layout?: Record<string,{x:number;y:number}>): Promise<ZLFNObject | null> {
     const object = this.objects.get(objectId)
     if (!object) return null
 
@@ -389,7 +389,8 @@ export class ZLFNObjectManager {
       notes: object.notes,
       changeType,
       changeDescription,
-      author
+      author,
+      layout
     }
 
     if (object.versionHistory.length >= 20) {

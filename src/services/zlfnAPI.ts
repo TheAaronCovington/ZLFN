@@ -268,9 +268,9 @@ class ZLFNAPIService {
   }
 
   // Create a snapshot entry in version history (e.g., after layout save)
-  async createSnapshot(objectId: string, description: string, changeType?: ZLFNVersion['changeType'], author?: string): Promise<APIResponse<ZLFNObject>> {
+  async createSnapshot(objectId: string, description: string, changeType?: ZLFNVersion['changeType'], author?: string, layout?: Record<string,{x:number;y:number}>): Promise<APIResponse<ZLFNObject>> {
     try {
-      const object = await zlfnObjectManager.createSnapshot(objectId, description, changeType, author)
+      const object = await zlfnObjectManager.createSnapshot(objectId, description, changeType, author, layout)
       if (!object) {
         return { success: false, error: 'Object not found', metadata: this.createMetadata() }
       }
@@ -472,7 +472,7 @@ export const api = {
   // Version control
   getVersionHistory: (objectId: string) => zlfnAPI.getVersionHistory(objectId),
   revertToVersion: (objectId: string, versionTimestamp: string) => zlfnAPI.revertToVersion(objectId, versionTimestamp),
-  createSnapshot: (objectId: string, description: string, changeType?: ZLFNVersion['changeType'], author?: string) => zlfnAPI.createSnapshot(objectId, description, changeType, author),
+  createSnapshot: (objectId: string, description: string, changeType?: ZLFNVersion['changeType'], author?: string, layout?: Record<string,{x:number;y:number}>) => zlfnAPI.createSnapshot(objectId, description, changeType, author, layout),
   
   // Search and list
   getAllObjects: () => zlfnAPI.getAllObjects(),
