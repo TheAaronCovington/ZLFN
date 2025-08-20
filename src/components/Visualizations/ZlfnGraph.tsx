@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import * as d3 from 'd3'
 import { useResizeObserver } from '../../hooks/useResizeObserver'
 import { Button, Stack, IconButton, TextField, Chip, Menu, MenuItem, Divider, ButtonGroup, Collapse, Paper, Box } from '@mui/material'
+import { Dialog as MuiDialog, DialogTitle as MuiDialogTitle, DialogContent as MuiDialogContent, DialogActions as MuiDialogActions } from '@mui/material'
 import { useLogicShared } from '../../context/LogicSharedContext'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
@@ -17,6 +18,7 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
 import { evaluateInference, evaluateStates, getRuleStrength, isRuleFallacy, bayesianUpdate } from '../../services/inference'
 import { downloadJson } from '../../services/io'
 import { parseVennRule, computeShading } from '../../services/venn'
+import { api } from '../../services/zlfnAPI'
 
 // Helper function for evaluating simple logical expressions in truth tables
 function evaluateSimpleExpression(expression: string, variables: string[], values: boolean[]): boolean {
@@ -117,9 +119,11 @@ export interface ZlfnGraphProps {
     onExportFull?: () => void
     onImportFull?: (file: File) => void
     collabCount?: number
+    objectId?: string
+    disableShortcuts?: boolean
 }
 
-export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, storageKey, onInfo, centerOnSelectionTrigger, centerOnNodeId, centerOnNodeTrigger, onEdgeSelect, onOpenTruthTable, onNotesToggle, notesEnabled, onNoteRequest, externalSvgRef, suppressInternalNoteMarkers, onExportFull, onImportFull, collabCount }) => {
+export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, storageKey, onInfo, centerOnSelectionTrigger, centerOnNodeId, centerOnNodeTrigger, onEdgeSelect, onOpenTruthTable, onNotesToggle, notesEnabled, onNoteRequest, externalSvgRef, suppressInternalNoteMarkers, onExportFull, onImportFull, collabCount, objectId, disableShortcuts }) => {
 	const { elementRef, size } = useResizeObserver<HTMLDivElement>()
 	const svgRef = useRef<SVGSVGElement | null>(null)
 	const gRef = useRef<SVGGElement | null>(null)
@@ -160,13 +164,9 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	useEffect(() => { showRiversRef.current = showRivers }, [showRivers])
 	useEffect(() => {
 		try { localStorage.setItem(`xv_rivers_${storageKey||'default'}`, showRivers ? '1' : '0') } catch {}
-		// toggle visibility immediately
-		if (gRef.current) {
-			const g = d3.select(gRef.current)
-			g.select('g.flow-rivers').attr('display', showRivers ? null : 'none')
-		}
 	}, [showRivers, storageKey])
 	const [statusText, setStatusText] = useState<string>('')
+	const [notesCount, setNotesCount] = useState<number>(0)
 	const [showLegend, setShowLegend] = useState<boolean>(() => localStorage.getItem('xv_legend') === '1')
 	const [dynamicFit, setDynamicFit] = useState<boolean>(() => localStorage.getItem('xv_dynamic_fit') === '1')
 	const [snapEnabled, setSnapEnabled] = useState<boolean>(() => localStorage.getItem('xv_snap') !== '0')
@@ -202,12 +202,10 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				node,
 				edges: relEdges,
 				modes,
-				argument: selectedArgumentId,
-				zones: { informal: showInformalZone, temporal: showTemporalZone }
 			}
 			await navigator.clipboard.writeText(JSON.stringify(payload, null, 2))
-			onInfo?.('Copied selected node details')
-		} catch { onInfo?.('Copy failed') }
+			onInfo?.('Copied selection details')
+		} catch {}
 	}
 	// overflow menu for secondary controls
 	const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null)
@@ -262,8 +260,21 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	)
 
 	useEffect(() => {
+		if (disableShortcuts) return
 		const onKey = (e: KeyboardEvent) => {
-			if (e.target && (e.target as HTMLElement).tagName === 'INPUT') return
+			const active = (document.activeElement as HTMLElement | null) || (e.target as HTMLElement | null)
+			if (active) {
+				const tag = active.tagName
+				const inDialog = !!active.closest('[role="dialog"], .MuiDialog-root, .MuiModal-root, .MuiPopover-root, [data-notes-dialog="true"]')
+				const role = active.getAttribute?.('role')
+				const isEditable = (active as any).isContentEditable || role === 'textbox'
+				// Debug log for key handling context
+				try { console.debug('[ZLFN-KEY]', { key: e.key, tag, inDialog, isEditable, disableShortcuts, activeId: active.id || null }) } catch {}
+				if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || isEditable || inDialog) {
+					try { console.debug('[ZLFN-KEY] skip due to input/dialog'); } catch {}
+					return
+				}
+			}
 			if (e.key.toLowerCase() === 'f') { e.preventDefault(); fitToContents() }
 			if (e.key.toLowerCase() === 'c') { e.preventDefault(); centerOnSelection() }
 			if (e.key.toLowerCase() === 'p') { e.preventDefault(); centerOnPath() }
@@ -378,9 +389,9 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				onInfo?.(nextArg ? `Focused ${nextArg}` : 'Overview')
 			}
 		}
-		window.addEventListener('keydown', onKey)
-		return () => window.removeEventListener('keydown', onKey)
-	}, [simulationMode, setSimulationMode, resetStates, onInfo, frozen, showEdgeLabels, onEdgeSelect, selectedArgumentId, argumentIds, storageKey, showLegend, dynamicFit, setSelectedNodeId, showNodeSearch, selectedNodeId, nodes, filteredSearchNodes, selectedSearchIndex])
+		window.addEventListener('keydown', onKey, { capture: true })
+		return () => window.removeEventListener('keydown', onKey, { capture: true } as any)
+	}, [disableShortcuts, simulationMode, setSimulationMode, resetStates, onInfo, frozen, showEdgeLabels, onEdgeSelect, selectedArgumentId, argumentIds, storageKey, showLegend, dynamicFit, setSelectedNodeId, showNodeSearch, selectedNodeId, nodes, filteredSearchNodes, selectedSearchIndex])
 
 	// init persisted filter/toggles per expression
 	useEffect(() => {
@@ -2722,6 +2733,22 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		try { localStorage.setItem(`xv_pins_layout_${storageKey}`, JSON.stringify(Array.from(pinnedIds))) } catch {}
 	}, [pinnedIds, storageKey])
 
+	// Update a small notes count for toolbar via localStorage mirror
+	useEffect(() => {
+		const key = `${objectId || storageKey || 'default'}`
+		const tick = () => {
+			try {
+				const raw = localStorage.getItem(`zlfn_notes_${key}`) || '{}'
+				const map = JSON.parse(raw) as Record<string,string>
+				const count = Object.values(map).filter(v => (v||'').trim()).length
+				setNotesCount(count)
+			} catch {}
+		}
+		tick()
+		const id = window.setInterval(tick, 2000)
+		return () => window.clearInterval(id)
+	}, [objectId, storageKey])
+
 	// update selection styling + state/conflict visuals without full redraw
 	useEffect(() => {
 		if (!gRef.current) return
@@ -2824,8 +2851,8 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 
 	// persist rivers toggle
 	useEffect(() => {
-		try { localStorage.setItem('xv_rivers', showRivers ? '1' : '0') } catch {}
-	}, [showRivers])
+		try { localStorage.setItem(`xv_rivers_${storageKey||'default'}`, showRivers ? '1' : '0') } catch {}
+	}, [showRivers, storageKey])
 
 	// reflect rivers toggle without rebuild
 	useEffect(() => {
@@ -2992,6 +3019,10 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			setPinnedIds(new Set())
 			onInfo?.('Saved layout cleared')
 			if (simulationRef.current) simulationRef.current.alpha(0.7).restart()
+			// snapshot this action for version history
+			if (objectId) {
+				try { void api.createSnapshot(objectId, 'Cleared saved layout', 'modified') } catch {}
+			}
 		} catch {}
 	}
 
@@ -3235,7 +3266,11 @@ Controls:
 			.each(function (d: any) {
 				if (typeof d.x === 'number' && typeof d.y === 'number') data[d.id] = { x: d.x, y: d.y }
 			})
-		try { localStorage.setItem(`xv_layout_${storageKey}`, JSON.stringify(data)); onInfo?.('Layout saved') } catch {}
+		try { 
+			localStorage.setItem(`xv_layout_${storageKey}`, JSON.stringify(data)); 
+			onInfo?.('Layout saved')
+			if (objectId) { try { void api.createSnapshot(objectId, 'Saved layout', 'modified') } catch {} }
+		} catch {}
 	}
 
 	const toggleFreeze = () => {
@@ -3459,6 +3494,7 @@ Controls:
 						{typeof collabCount === 'number' && (
 							<Chip size="small" label={`Collab: ${collabCount}`} variant="outlined" sx={{ ml: 1 }} />
 						)}
+						<Chip size="small" label={`Notes: ${notesCount}`} color={notesCount>0 ? 'warning' : 'default'} variant={notesCount>0 ? 'filled' : 'outlined'} sx={{ ml: 1 }} />
 					</Stack>
 
 					{/* Expand Toggle */}
@@ -3466,6 +3502,7 @@ Controls:
 						size="small" 
 						onClick={() => setToolbarExpanded(v => !v)}
 						sx={{ ml: 'auto' }}
+						aria-label={toolbarExpanded ? 'Collapse toolbar' : 'Expand toolbar'}
 					>
 						{toolbarExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
 					</IconButton>
@@ -3603,7 +3640,7 @@ Controls:
 								Clear
 							</Button>
 
-							<IconButton size="small" onClick={openMenu}>
+							<IconButton size="small" onClick={openMenu} aria-label="More options">
 								<MoreVertIcon />
 							</IconButton>
 						</Stack>
@@ -3724,27 +3761,26 @@ Controls:
 				<MenuItem onClick={() => { exportLayoutJson(); closeMenu() }}>Export Layout JSON</MenuItem>
 				<MenuItem onClick={() => { clearLayout(); closeMenu() }}>Clear Saved Layout</MenuItem>
 				<MenuItem onClick={() => { const next = !dynamicFit; setDynamicFit(next); try { localStorage.setItem('xv_dynamic_fit', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Dynamic fit on' : 'Dynamic fit off'); closeMenu() }}>{dynamicFit ? 'Disable Dynamic Fit' : 'Enable Dynamic Fit'}</MenuItem>
+				<MenuItem onClick={() => { resetZoom(); closeMenu() }}>Reset View</MenuItem>
 				<Divider />
 
-				{/* Import/Export Full */}
+				{/* Import / Export */}
 				<MenuItem onClick={() => { onExportFull?.(); closeMenu() }}>Export Full Object</MenuItem>
 				<MenuItem>
 					<label style={{ cursor: 'pointer' }}>
-						Import Full Object
-						<input hidden type="file" accept="application/json" onChange={(e)=>{ const f=e.target.files?.[0]; if (f) onImportFull?.(f); closeMenu() }} />
+						Import Object JSON<input hidden type="file" accept="application/json" onChange={(e)=>{ const f=e.target.files?.[0]; if (f) onImportFull?.(f); closeMenu() }} />
 					</label>
 				</MenuItem>
-				<Divider />
-
-				{/* Utilities */}
 				<MenuItem onClick={() => { exportSvg(); closeMenu() }}>Export SVG</MenuItem>
 				<MenuItem onClick={() => { exportPng(); closeMenu() }}>Export PNG</MenuItem>
 				<MenuItem onClick={async () => { try { await navigator.clipboard.writeText(JSON.stringify({ nodes, edges }, null, 2)); onInfo?.('Copied graph JSON') } catch {}; closeMenu() }}>Copy Graph JSON</MenuItem>
-				<MenuItem onClick={() => { resetZoom(); closeMenu() }}>Reset View</MenuItem>
-				<MenuItem onClick={() => { copySelectedDetails(); closeMenu() }} disabled={!selectedNodeId}>Copy Selected Details</MenuItem>
+				<Divider />
+
+				{/* Utilities */}
 				<MenuItem onClick={() => { const next = !showNodeSearch; setShowNodeSearch(next); if (next) setTimeout(() => nodeSearchRef.current?.focus(), 100); onInfo?.(next ? 'Node search on' : 'Node search off'); closeMenu() }}>{showNodeSearch ? 'Hide Node Search' : 'Show Node Search'}</MenuItem>
 				<MenuItem onClick={() => { setShowHelp(v=>!v); closeMenu() }}>{showHelp ? 'Hide Shortcuts' : 'Show Shortcuts'}</MenuItem>
 				<MenuItem onClick={() => { const next = !showLegend; setShowLegend(next); try { localStorage.setItem('xv_legend', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Legend shown' : 'Legend hidden'); closeMenu() }}>{showLegend ? 'Hide Legend' : 'Show Legend'}</MenuItem>
+				<MenuItem onClick={() => { copySelectedDetails(); closeMenu() }} disabled={!selectedNodeId}>Copy Selected Details</MenuItem>
 			</Menu>
 			<input ref={fileInputRef} type="file" accept="application/json" style={{ display: 'none' }} onChange={async (e) => {
 				const f = e.target?.files?.[0]
@@ -3803,16 +3839,21 @@ Controls:
 				<svg ref={miniMapRef} width={160} height={110} style={{ position: 'absolute', right: 8, bottom: 8, background: 'rgba(20,20,30,0.6)', border: '1px solid rgba(64,196,255,0.25)', borderRadius: 6 }} />
 			)}
 			{showHelp && (
-				<div style={{ position: 'absolute', right: 8, top: 8, background: 'rgba(20,20,30,0.9)', border: '1px solid rgba(64,196,255,0.35)', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
-					<div><strong>Shortcuts</strong></div>
-					<div>f: Fit • c/z: Center • p: Center Path • s: Save layout</div>
-					<div>m: Simulation • r: Reset states • x: Freeze</div>
-					<div>t: Toggle labels • h: Path highlight • o: Export SVG</div>
-					<div>l: Legend • d: Dynamic fit • i: Isolate path</div>
-					<div>Tab/Shift+Tab: Navigate nodes • Enter: Center on selected</div>
-					<div>[ ]: Cycle arguments • Ctrl+F: Search nodes</div>
-					<div>Esc: Clear all • /: Filter rules</div>
-				</div>
+				<MuiDialog open={showHelp} onClose={() => setShowHelp(false)} aria-labelledby="shortcuts-title">
+					<MuiDialogTitle id="shortcuts-title">Keyboard Shortcuts</MuiDialogTitle>
+					<MuiDialogContent dividers>
+						<Box component="ul" sx={{ pl: 2, m: 0 }}>
+							<li>n: Toggle Notes</li>
+							<li>f: Fit • c/z: Center • Enter: Center on selected</li>
+							<li>[ ]: Cycle arguments • /: Filter rules • Ctrl+F: Search</li>
+							<li>t: Toggle labels • h: Highlight path • m: Simulation</li>
+							<li>l: Legend • d: Dynamic fit • i: Isolate path</li>
+						</Box>
+					</MuiDialogContent>
+					<MuiDialogActions>
+						<Button onClick={() => setShowHelp(false)}>Close</Button>
+					</MuiDialogActions>
+				</MuiDialog>
 			)}
 			{collabBanner}
 		</div>

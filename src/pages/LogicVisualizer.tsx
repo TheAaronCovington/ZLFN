@@ -119,7 +119,15 @@ const LogicVisualizer: React.FC = () => {
 
 	React.useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
-			if (e.target && (e.target as HTMLElement).tagName === 'INPUT') return
+			const active = (document.activeElement as HTMLElement | null) || (e.target as HTMLElement | null)
+			if (active) {
+				const tag = active.tagName
+				const inDialog = !!active.closest('[role="dialog"], .MuiDialog-root, .MuiModal-root, .MuiPopover-root, [data-notes-dialog="true"]')
+				const role = active.getAttribute?.('role')
+				const isEditable = (active as any).isContentEditable || role === 'textbox'
+				try { console.debug('[VIZ-KEY]', { key: e.key, tag, inDialog, isEditable }) } catch {}
+				if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || isEditable || inDialog) return
+			}
 			const k = e.key.toLowerCase()
 			if (k === 'g') { setViewMode('graph'); showInfo('View: Graph') }
 			if (k === 'a') { setViewMode('ast'); showInfo('View: AST') }

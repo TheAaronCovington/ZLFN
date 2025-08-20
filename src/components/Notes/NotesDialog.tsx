@@ -23,7 +23,8 @@ import {
   Close as CloseIcon,
   Save as SaveIcon,
   Delete as DeleteIcon,
-
+  Undo as UndoIcon,
+  Redo as RedoIcon,
   AutoMode as AutoModeIcon
 } from '@mui/icons-material'
 import { useZLFNNotes } from '../../hooks/useZLFNNotes'
@@ -67,12 +68,30 @@ export function NotesDialog({
       const noteContent = notesHook.getNoteContent(node.id)
       setLocalNote(noteContent)
       setHasUnsavedChanges(false)
+      try { console.debug('[NOTES] opened for node', node.id, 'contentLen=', noteContent.length) } catch {}
     }
-  }, [node, open, notesHook])
+  }, [open, node?.id])
+
+  // Global debug loggers while dialog is open
+  useEffect(() => {
+    if (!open) return
+    const kd = (e: KeyboardEvent) => { try { console.debug('[NOTES-WIN] keydown', e.key, { targetTag: (e.target as any)?.tagName }) } catch {} }
+    const ku = (e: KeyboardEvent) => { try { console.debug('[NOTES-WIN] keyup', e.key) } catch {} }
+    const kp = (e: KeyboardEvent) => { try { console.debug('[NOTES-WIN] keypress', (e as any).key) } catch {} }
+    window.addEventListener('keydown', kd, { capture: true })
+    window.addEventListener('keyup', ku, { capture: true })
+    window.addEventListener('keypress', kp, { capture: true })
+    return () => {
+      window.removeEventListener('keydown', kd, { capture: true } as any)
+      window.removeEventListener('keyup', ku, { capture: true } as any)
+      window.removeEventListener('keypress', kp, { capture: true } as any)
+    }
+  }, [open])
 
   // Handle text changes
   const handleNoteChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = event.target.value
+    try { console.debug('[NOTES] change len=', newValue.length) } catch {}
     setLocalNote(newValue)
     setHasUnsavedChanges(newValue !== notesHook.getNoteContent(node?.id || ''))
   }
@@ -84,6 +103,18 @@ export function NotesDialog({
     const success = await notesHook.saveNote(node.id, localNote)
     if (success) {
       setHasUnsavedChanges(false)
+      // Create a snapshot on successful note save for version history
+      try {
+        const { api } = await import('../../services/zlfnAPI')
+        await api.createSnapshot(objectId, `Saved note for ${node.id}`, 'modified')
+      } catch {}
+      // Force local mirror so tooltip shows immediately
+      try {
+        const raw = localStorage.getItem(`zlfn_notes_${objectId}`) || '{}'
+        const notes = JSON.parse(raw)
+        notes[node.id] = localNote
+        localStorage.setItem(`zlfn_notes_${objectId}`, JSON.stringify(notes))
+      } catch {}
     }
   }
 
@@ -113,10 +144,19 @@ export function NotesDialog({
 
   // Keyboard shortcuts
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    // Never let graph-level listeners consume keys from the editor
+    try { console.debug('[NOTES] keydown', { key: event.key, ctrl: event.ctrlKey||event.metaKey, targetTag: (event.target as any)?.tagName }) } catch {}
+    event.stopPropagation()
     if (event.ctrlKey || event.metaKey) {
-      if (event.key === 's') {
+      if (event.key.toLowerCase() === 's') {
         event.preventDefault()
         handleSave()
+      } else if (event.key === 'z') {
+        event.preventDefault()
+        notesHook.undo()
+      } else if (event.key.toLowerCase() === 'y') {
+        event.preventDefault()
+        notesHook.redo()
       } else if (event.key === 'Enter') {
         event.preventDefault()
         handleSave()
@@ -142,7 +182,8 @@ export function NotesDialog({
           backdropFilter: 'blur(10px)',
           border: '1px solid rgba(64, 196, 255, 0.3)',
           borderRadius: 2
-        }
+        },
+        'data-notes-dialog': true as any
       }}
     >
       <DialogTitle sx={{ 
@@ -181,6 +222,21 @@ export function NotesDialog({
               <AutoModeIcon sx={{ color: '#ffc107', fontSize: 20 }} />
             </Tooltip>
           )}
+
+          <Tooltip title="Undo (Ctrl+Z)">
+            <span>
+              <IconButton size="small" onClick={() => notesHook.undo()} disabled={!notesHook.canUndo()}>
+                <UndoIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title="Redo (Ctrl+Y)">
+            <span>
+              <IconButton size="small" onClick={() => notesHook.redo()} disabled={!notesHook.canRedo()}>
+                <RedoIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
           
           <IconButton onClick={handleClose} size="small">
             <CloseIcon />
@@ -188,7 +244,12 @@ export function NotesDialog({
         </Box>
       </DialogTitle>
 
-      <DialogContent sx={{ pt: 2 }}>
+      <DialogContent sx={{ pt: 2 }} onKeyDown={(e)=>{ e.stopPropagation() }}>
+        {/* Debug trap to assert focus is inside dialog */}
+        <Box sx={{ display: 'none' }} data-notes-debug={JSON.stringify({
+          activeTag: typeof document !== 'undefined' ? (document.activeElement as any)?.tagName : 'NA',
+          activeId: typeof document !== 'undefined' ? (document.activeElement as any)?.id || null : null
+        })} />
         {/* Node Information */}
         <Box sx={{ mb: 2, p: 2, bgcolor: 'rgba(64, 196, 255, 0.1)', borderRadius: 1 }}>
           <Typography variant="subtitle2" sx={{ color: '#40c4ff', mb: 1 }}>
@@ -216,14 +277,20 @@ export function NotesDialog({
 
         {/* Note Editor */}
         <TextField
+          id="notes-textarea"
           multiline
           rows={8}
           fullWidth
+          autoFocus
+          disabled={false}
           value={localNote}
           onChange={handleNoteChange}
           onKeyDown={handleKeyDown}
+          onKeyUp={(e)=> { try { console.debug('[NOTES] keyup', { key: (e as any).key }); } catch {} ; e.stopPropagation()}}
+          onKeyPress={(e)=> { try { console.debug('[NOTES] keypress', { key: (e as any).key }); } catch {} ; e.stopPropagation()}}
           placeholder={`Add your notes for node "${node.id}"...\n\nTip: Use Ctrl+S to save quickly`}
           variant="outlined"
+          inputProps={{ readOnly: false, 'data-notes-input': '1', tabIndex: 0 }}
           sx={{
             '& .MuiOutlinedInput-root': {
               bgcolor: 'rgba(255, 255, 255, 0.05)',

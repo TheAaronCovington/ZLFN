@@ -151,12 +151,17 @@ export function VersionHistory({
                       {new Date((version as any)?.timestamp || '').toLocaleString()}
                     </Typography>
 
-                    <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                    <Box sx={{ display: 'flex', gap: 1, mb: 1, flexWrap: 'wrap' }}>
                       <Chip 
                         label={`${changesCount} changes`} 
                         size="small" 
                         color="info" 
                         icon={<DiffIcon sx={{ fontSize: 12 }} />}
+                      />
+                      <Chip 
+                        label={`Notes: ${Object.values(((version as any)?.notes || {}) as Record<string, any>).filter((v:any)=> String(v||'').trim()).length}`} 
+                        size="small" 
+                        color={Object.values(((version as any)?.notes || {}) as Record<string, any>).some((v:any)=> String(v||'').trim()) ? 'warning' : 'default'}
                       />
                       <Chip 
                         label={(version as any)?.author || 'Anonymous'} 

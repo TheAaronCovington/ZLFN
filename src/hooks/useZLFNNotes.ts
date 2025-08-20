@@ -29,11 +29,15 @@ interface UseZLFNNotesReturn {
   updateNote: (nodeId: string, content: string) => void
   saveNote: (nodeId: string, content?: string) => Promise<boolean>
   deleteNote: (nodeId: string) => Promise<boolean>
+  undo: () => boolean
+  redo: () => boolean
   
   // Utilities
   getNoteContent: (nodeId: string) => string
   hasNote: (nodeId: string) => boolean
   getNotesCount: () => number
+  canUndo: () => boolean
+  canRedo: () => boolean
   
   // Auto-save control
   enableAutoSave: () => void
@@ -67,6 +71,8 @@ export function useZLFNNotes(options: UseZLFNNotesOptions): UseZLFNNotesReturn {
   // Refs for auto-save
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
   const pendingChangesRef = useRef<Map<string, string>>(new Map())
+  // History ring per node
+  const historyRef = useRef<Map<string, { entries: string[]; index: number }>>(new Map())
 
   // Load initial notes when objectId changes
   useEffect(() => {
@@ -104,10 +110,15 @@ export function useZLFNNotes(options: UseZLFNNotesOptions): UseZLFNNotesReturn {
     try {
       const response = await api.getObject(objectId)
       if (response.success && response.data) {
+        const incoming = response.data?.notes || {}
         setNotesState(prev => ({
           ...prev,
-          notes: response.data?.notes || {}
+          notes: incoming
         }))
+        // Mirror to localStorage to persist across reloads in mock mode
+        try {
+          localStorage.setItem(`zlfn_notes_${objectId}`, JSON.stringify(incoming))
+        } catch {}
       } else {
         // Fallback to localStorage
         try {
@@ -138,6 +149,12 @@ export function useZLFNNotes(options: UseZLFNNotesOptions): UseZLFNNotesReturn {
       selectedNoteId: nodeId,
       isEditing: true
     }))
+    // Initialize history with current value for this node
+    const current = notesState.notes[nodeId] || ''
+    const h = historyRef.current.get(nodeId)
+    if (!h) {
+      historyRef.current.set(nodeId, { entries: [current], index: 0 })
+    }
   }, [])
 
   // Close note editor
@@ -165,6 +182,21 @@ export function useZLFNNotes(options: UseZLFNNotesOptions): UseZLFNNotesReturn {
 
     // Track pending changes for auto-save
     pendingChangesRef.current.set(nodeId, content)
+
+    // Record history (avoid duplicate consecutive entries)
+    const h = historyRef.current.get(nodeId)
+    const current = h?.entries[h.index] ?? ''
+    if (!h) {
+      historyRef.current.set(nodeId, { entries: [content], index: 0 })
+    } else if (content !== current) {
+      // Truncate forward history then push
+      h.entries = h.entries.slice(0, h.index + 1)
+      h.entries.push(content)
+      // Limit history size per node
+      if (h.entries.length > 100) h.entries.shift()
+      h.index = h.entries.length - 1
+      historyRef.current.set(nodeId, h)
+    }
   }, [])
 
   // Save specific note to API with localStorage fallback
@@ -181,8 +213,16 @@ export function useZLFNNotes(options: UseZLFNNotesOptions): UseZLFNNotesReturn {
         // Update state to reflect save
         setNotesState(prev => ({
           ...prev,
+          notes: { ...prev.notes, [nodeId]: noteContent },
           isDirty: pendingChangesRef.current.size > 0
         }))
+        // Mirror to localStorage for tooltip and reload persistence
+        try {
+          const raw = localStorage.getItem(`zlfn_notes_${objectId}`) || '{}'
+          const notes = JSON.parse(raw)
+          notes[nodeId] = noteContent
+          localStorage.setItem(`zlfn_notes_${objectId}`, JSON.stringify(notes))
+        } catch {}
         
         onSuccess?.(`Note saved for node ${nodeId}`)
         return true
@@ -236,6 +276,13 @@ export function useZLFNNotes(options: UseZLFNNotesOptions): UseZLFNNotesReturn {
         
         // Remove from pending changes
         pendingChangesRef.current.delete(nodeId)
+        // Mirror deletion locally
+        try {
+          const raw = localStorage.getItem(`zlfn_notes_${objectId}`) || '{}'
+          const notes = JSON.parse(raw)
+          delete notes[nodeId]
+          localStorage.setItem(`zlfn_notes_${objectId}`, JSON.stringify(notes))
+        } catch {}
         
         onSuccess?.(`Note deleted for node ${nodeId}`)
         return true
@@ -267,6 +314,33 @@ export function useZLFNNotes(options: UseZLFNNotesOptions): UseZLFNNotesReturn {
       }
     }
   }, [objectId, onError, onSuccess])
+
+  // Undo/Redo operating on selected note id
+  const undo = useCallback((): boolean => {
+    const nodeId = notesState.selectedNoteId
+    if (!nodeId) return false
+    const h = historyRef.current.get(nodeId)
+    if (!h || h.index <= 0) return false
+    h.index -= 1
+    const previous = h.entries[h.index] || ''
+    historyRef.current.set(nodeId, h)
+    setNotesState(prev => ({ ...prev, notes: { ...prev.notes, [nodeId]: previous }, isDirty: true }))
+    pendingChangesRef.current.set(nodeId, previous)
+    return true
+  }, [notesState.selectedNoteId])
+
+  const redo = useCallback((): boolean => {
+    const nodeId = notesState.selectedNoteId
+    if (!nodeId) return false
+    const h = historyRef.current.get(nodeId)
+    if (!h || h.index >= h.entries.length - 1) return false
+    h.index += 1
+    const next = h.entries[h.index] || ''
+    historyRef.current.set(nodeId, h)
+    setNotesState(prev => ({ ...prev, notes: { ...prev.notes, [nodeId]: next }, isDirty: true }))
+    pendingChangesRef.current.set(nodeId, next)
+    return true
+  }, [notesState.selectedNoteId])
 
   // Save all pending changes
   const saveAllPendingChanges = useCallback(async () => {
@@ -304,6 +378,20 @@ export function useZLFNNotes(options: UseZLFNNotesOptions): UseZLFNNotesReturn {
   const getNotesCount = useCallback((): number => {
     return Object.values(notesState.notes).filter(note => note.trim()).length
   }, [notesState.notes])
+
+  const canUndo = useCallback(() => {
+    const nodeId = notesState.selectedNoteId
+    if (!nodeId) return false
+    const h = historyRef.current.get(nodeId)
+    return !!h && h.index > 0
+  }, [notesState.selectedNoteId])
+
+  const canRedo = useCallback(() => {
+    const nodeId = notesState.selectedNoteId
+    if (!nodeId) return false
+    const h = historyRef.current.get(nodeId)
+    return !!h && h.index < (h.entries.length - 1)
+  }, [notesState.selectedNoteId])
 
   // Auto-save control
   const enableAutoSave = useCallback(() => {
@@ -352,11 +440,15 @@ export function useZLFNNotes(options: UseZLFNNotesOptions): UseZLFNNotesReturn {
     updateNote,
     saveNote,
     deleteNote,
+    undo,
+    redo,
     
     // Utilities
     getNoteContent,
     hasNote,
     getNotesCount,
+    canUndo,
+    canRedo,
     
     // Auto-save control
     enableAutoSave,

@@ -45,6 +45,7 @@ export function ZlfnGraphWithNotes({
     },
     getNoteContent: (nodeId: string) => {
       try {
+        // Prefer in-memory notes (if available later), fall back to localStorage
         const raw = localStorage.getItem(`zlfn_notes_${objectId}`) || '{}'
         const map = JSON.parse(raw) as Record<string, string>
         return map[nodeId] || ''
@@ -58,6 +59,13 @@ export function ZlfnGraphWithNotes({
       } catch { return false }
     }
   })
+
+  // Ensure demo object exists so version features work
+  React.useEffect(() => {
+    let active = true
+    api.getObject(objectId).finally(() => void active)
+    return () => { active = false }
+  }, [objectId])
 
   React.useEffect(() => {
     let updateInterval: number | undefined
@@ -126,6 +134,8 @@ export function ZlfnGraphWithNotes({
   const handleImportFull = React.useCallback(async (file: File) => {
     try {
       await api.uploadFile(file, objectId)
+      // Snapshot after import for versioning context
+      try { await api.createSnapshot(objectId, 'Imported file', 'imported') } catch {}
     } catch (e) {
       console.error(e)
     }
@@ -144,6 +154,8 @@ export function ZlfnGraphWithNotes({
         onExportFull={handleExportFull}
         onImportFull={handleImportFull}
         collabCount={collabCount}
+        objectId={objectId}
+        disableShortcuts={notesOpen}
       />
       <NotesDialog
         open={notesOpen}

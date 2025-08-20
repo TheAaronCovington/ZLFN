@@ -3,6 +3,7 @@ import React from 'react'
 import { Alert, Box, Button, Chip, Divider, List, ListItem, ListItemText, Paper, Typography } from '@mui/material'
 import { api } from '../../services/zlfnAPI'
 import type { ZLFNObject } from '../../types/zlfn'
+import { useMemo } from 'react'
 
 interface DiffItem {
   type: 'added' | 'removed' | 'modified'
@@ -33,13 +34,11 @@ export default function DiffViewer({ objectId, baseVersionId, compareVersionId, 
       try {
         setLoading(true)
         setError(null)
-        const res = await api.getObject(objectId)
-        if (!res.success || !res.data) {
-          throw new Error(res.error || 'Failed to load object')
-        }
-        // For mock: we do not persist separate versions; simulate by using versionHistory indexes
-        const baseData = res.data as ZLFNObject
-        const versions = baseData.versionHistory || []
+        const objRes = await api.getObject(objectId)
+        if (!objRes.success || !objRes.data) throw new Error(objRes.error || 'Failed to load object')
+        const vhRes = await api.getVersionHistory(objectId)
+        const baseData = objRes.data as ZLFNObject
+        const versions = (vhRes.success && vhRes.data) ? vhRes.data : (baseData.versionHistory || [])
         const baseIdx = Number(baseVersionId)
         const compareIdx = Number(compareVersionId)
         const pick = (idx: number): ZLFNObject => ({
@@ -48,8 +47,8 @@ export default function DiffViewer({ objectId, baseVersionId, compareVersionId, 
           notes: versions[idx]?.notes || baseData.notes,
           metadata: { ...baseData.metadata, modified: versions[idx]?.timestamp || baseData.metadata.modified }
         })
-        const base = pick(isNaN(baseIdx) ? 0 : baseIdx)
-        const cmp = pick(isNaN(compareIdx) ? 0 : compareIdx)
+        const base = pick(Number.isNaN(baseIdx) ? 0 : baseIdx)
+        const cmp = pick(Number.isNaN(compareIdx) ? 0 : compareIdx)
         if (!cancelled) {
           setBaseObj(base)
           setCompareObj(cmp)
@@ -115,6 +114,12 @@ export default function DiffViewer({ objectId, baseVersionId, compareVersionId, 
   const added = diffs.filter(d => d.type === 'added').length
   const removed = diffs.filter(d => d.type === 'removed').length
   const modified = diffs.filter(d => d.type === 'modified').length
+  const noteDiffs = useMemo(() => diffs.filter(d => d.category === 'note'), [diffs])
+  const noteByNode = useMemo(() => {
+    const map: Record<string, DiffItem[]> = {}
+    noteDiffs.forEach(d => { (map[d.id] ||= []).push(d) })
+    return map
+  }, [noteDiffs])
 
   return (
     <Paper sx={{ p: 3, bgcolor: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(64, 196, 255, 0.3)' }}>
@@ -128,8 +133,51 @@ export default function DiffViewer({ objectId, baseVersionId, compareVersionId, 
         <Chip label={`${removed} removed`} color="error" />
         <Chip label={`${modified} modified`} color="warning" />
         <Chip label={`${diffs.length} total`} color="info" />
+        <Chip label={`Notes: ${diffs.filter(d=> d.category==='note').length}`} color="warning" variant="outlined" />
       </Box>
 
+      <Divider sx={{ my: 2 }} />
+      {/* Notes-focused summary */}
+      <Box sx={{ mb: 2 }}>
+        <Typography variant="subtitle1" sx={{ color: '#8ad7ff', mb: 1 }}>Notes changes</Typography>
+        {noteDiffs.length === 0 ? (
+          <Typography variant="body2" sx={{ color: '#b0bec5' }}>No note changes.</Typography>
+        ) : (
+          <List>
+            {Object.entries(noteByNode).map(([nodeId, items]) => {
+              const status = items[0]?.type
+              const color = status === 'added' ? 'success' : status === 'removed' ? 'error' : 'warning'
+              const sample = items[0]
+              const oldPreview = (sample.oldValue ?? '').toString().slice(0, 180)
+              const newPreview = (sample.newValue ?? '').toString().slice(0, 180)
+              return (
+                <ListItem key={nodeId} alignItems="flex-start" sx={{ border: '1px solid rgba(64,196,255,0.2)', borderRadius: 1, mb: 1 }}>
+                  <ListItemText
+                    primary={<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Chip size="small" label={String(status)} color={color as any} />
+                      <Typography variant="subtitle2" sx={{ color: '#e0f2ff' }}>Node {nodeId}</Typography>
+                    </Box>}
+                    secondary={<Box sx={{ mt: 1, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+                      {status !== 'added' && (
+                        <>
+                          <Typography variant="caption" sx={{ color: '#b0bec5' }}>Old:</Typography>
+                          <div>{oldPreview}</div>
+                        </>
+                      )}
+                      {status !== 'removed' && (
+                        <>
+                          <Typography variant="caption" sx={{ color: '#b0bec5' }}>New:</Typography>
+                          <div>{newPreview}</div>
+                        </>
+                      )}
+                    </Box>}
+                  />
+                </ListItem>
+              )
+            })}
+          </List>
+        )}
+      </Box>
       <Divider sx={{ my: 2 }} />
       {diffs.length === 0 ? (
         <Alert severity="success">No differences detected.</Alert>

@@ -21,7 +21,8 @@ class ZLFNAPIService {
   // Object Management APIs
   async getObject(id: string): Promise<APIResponse<ZLFNObject>> {
     try {
-      const object = await zlfnObjectManager.getObject(id)
+      // For demos, ensure the object exists so routes like "sample-object-1" work out of the box
+      const object = await zlfnObjectManager.getObject(id) || await zlfnObjectManager.ensureObject(id)
       
       if (!object) {
         return {
@@ -266,6 +267,19 @@ class ZLFNAPIService {
     }
   }
 
+  // Create a snapshot entry in version history (e.g., after layout save)
+  async createSnapshot(objectId: string, description: string, changeType?: ZLFNVersion['changeType'], author?: string): Promise<APIResponse<ZLFNObject>> {
+    try {
+      const object = await zlfnObjectManager.createSnapshot(objectId, description, changeType, author)
+      if (!object) {
+        return { success: false, error: 'Object not found', metadata: this.createMetadata() }
+      }
+      return { success: true, data: object, metadata: this.createMetadata() }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error', metadata: this.createMetadata() }
+    }
+  }
+
   // Export Operations
   async exportObject(objectId: string, format: 'json' | 'markdown' | 'full' = 'full'): Promise<APIResponse<string>> {
     try {
@@ -458,6 +472,7 @@ export const api = {
   // Version control
   getVersionHistory: (objectId: string) => zlfnAPI.getVersionHistory(objectId),
   revertToVersion: (objectId: string, versionTimestamp: string) => zlfnAPI.revertToVersion(objectId, versionTimestamp),
+  createSnapshot: (objectId: string, description: string, changeType?: ZLFNVersion['changeType'], author?: string) => zlfnAPI.createSnapshot(objectId, description, changeType, author),
   
   // Search and list
   getAllObjects: () => zlfnAPI.getAllObjects(),

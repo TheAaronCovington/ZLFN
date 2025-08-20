@@ -334,7 +334,18 @@ export function ZLFNProvider({
   const revertToVersion = React.useCallback(async (versionId: string): Promise<ZLFNObject | null> => {
     if (!state.currentObject) return null
     try {
-      const response = await api.revertToVersion(state.currentObject.id, versionId)
+      // Our VersionHistory passes a string key as id; resolve timestamp from current version list
+      let timestamp = versionId
+      try {
+        const list = await api.getVersionHistory(state.currentObject.id)
+        if (list.success && Array.isArray(list.data)) {
+          const idx = Number(versionId)
+          if (!Number.isNaN(idx) && list.data[idx]?.timestamp) {
+            timestamp = String(list.data[idx]?.timestamp)
+          }
+        }
+      } catch {}
+      const response = await api.revertToVersion(state.currentObject.id, timestamp)
       if (response.success && response.data) {
         dispatch({ type: 'SET_CURRENT_OBJECT', payload: response.data })
         dispatch({ type: 'SET_SUCCESS', payload: 'Successfully reverted to previous version' })

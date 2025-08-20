@@ -50,6 +50,26 @@ export class ZLFNObjectManager {
     return object
   }
 
+  // Ensure an object exists with a specific ID (for demos)
+  async ensureObject(id: string): Promise<ZLFNObject> {
+    const existing = this.objects.get(id)
+    if (existing) return existing
+
+    const object = createEmptyZLFNObject(id)
+    // Seed an initial version for this fixed id
+    const initialVersion: ZLFNVersion = {
+      timestamp: new Date().toISOString(),
+      markdown: object.markdown,
+      zflnJson: object.zflnJson,
+      notes: object.notes,
+      changeType: 'created',
+      changeDescription: 'Initial version (ensure)'
+    }
+    object.versionHistory.push(initialVersion)
+    this.objects.set(id, object)
+    return object
+  }
+
   async getObject(id: string): Promise<ZLFNObject | null> {
     return this.objects.get(id) || null
   }
@@ -355,6 +375,30 @@ export class ZLFNObjectManager {
       notes: version.notes,
       versionHistory: [...object.versionHistory, revertVersion]
     })
+  }
+
+  // Create a snapshot/version without changing content (e.g., layout saved)
+  async createSnapshot(objectId: string, changeDescription: string, changeType: ZLFNVersion['changeType'] = 'modified', author?: string): Promise<ZLFNObject | null> {
+    const object = this.objects.get(objectId)
+    if (!object) return null
+
+    const snapshot: ZLFNVersion = {
+      timestamp: new Date().toISOString(),
+      markdown: object.markdown,
+      zflnJson: object.zflnJson,
+      notes: object.notes,
+      changeType,
+      changeDescription,
+      author
+    }
+
+    if (object.versionHistory.length >= 20) {
+      object.versionHistory.shift()
+    }
+    object.versionHistory.push(snapshot)
+    object.metadata.modified = new Date().toISOString()
+    this.objects.set(objectId, object)
+    return object
   }
 
   // Conflict Detection and Resolution
