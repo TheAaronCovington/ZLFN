@@ -19,9 +19,9 @@ import StickyNote2Icon from '@mui/icons-material/StickyNote2'
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
 import BatchPredictionIcon from '@mui/icons-material/BatchPrediction'
 import SpeedIcon from '@mui/icons-material/Speed'
-import { evaluateInference, evaluateStates, getRuleStrength, isRuleFallacy, bayesianUpdate } from '../../services/inference'
+import { evaluateInference, evaluateStates } from '../../services/inference'
 import { downloadJson } from '../../services/io'
-import { parseVennRule, computeShading } from '../../services/venn'
+
 import { api } from '../../services/zlfnAPI'
 import BatchOperationsDialog from '../BatchOperations/BatchOperationsDialog'
 import { parseExpressionToAst } from '../../services/logic'
@@ -33,9 +33,11 @@ import type { MarkdownReference } from '../MarkdownReference'
 import { performanceOptimizer, type OptimizedGraphData } from '../../services/performanceOptimizer'
 import { usePerformanceMonitor } from '../../hooks/usePerformanceMonitor'
 import { PerformanceOverlay } from '../Performance'
+import { VennDiagramDialog, TruthTableDialog, TimelineDialog, CounterargumentsDialog } from '../Enhanced'
+// Enhanced dialog types imported above
 
-// AST-based evaluator (no eval)
-function evaluateExpressionWithAst(expression: string, variables: string[], values: boolean[]): boolean {
+// AST-based evaluator (no eval) - COMMENTED OUT
+/* function evaluateExpressionWithAst(expression: string, variables: string[], values: boolean[]): boolean {
 	const ast = parseExpressionToAst(expression)
 	const env: Record<string, boolean> = {}
 	variables.forEach((v, i) => { env[v] = values[i] })
@@ -60,7 +62,7 @@ function evaluateExpressionWithAst(expression: string, variables: string[], valu
 	}
 
 	return evalAst(ast)
-}
+} */
 
 export type LayoutMode = 'radial' | 'hierarchical' | 'grid' | 'force' | 'temporal'
 
@@ -191,6 +193,13 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	const [editingNode, setEditingNode] = useState<ZlfnNode | null>(null)
 	const [showPerformanceOverlay, setShowPerformanceOverlay] = useState<boolean>(() => localStorage.getItem('xv_perf_overlay') === '1')
 	const [optimizedData, setOptimizedData] = useState<OptimizedGraphData | null>(null)
+	
+	// Enhanced dialog states
+	const [vennDialogOpen, setVennDialogOpen] = useState(false)
+	const [truthTableDialogOpen, setTruthTableDialogOpen] = useState(false)
+	const [timelineDialogOpen, setTimelineDialogOpen] = useState(false)
+	const [counterargumentsDialogOpen, setCounterargumentsDialogOpen] = useState(false)
+	const [selectedNodeForDialog, setSelectedNodeForDialog] = useState<ZlfnNode | null>(null)
 
 	// Performance monitoring
 	const performanceMonitor = usePerformanceMonitor({
@@ -1600,7 +1609,9 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		refGroup.append('title')
 			.text((d: any) => d.markdownRef ? `Linked to: ${d.markdownRef}` : '')
 
-		function toggleFacetOverlay(this: any, type: 'venn'|'truth'|'timeline'|'counter', pinned?: boolean) {
+		// Note: All facet types now use enhanced dialogs instead of overlays
+		/* COMMENTED OUT - All facet types now use enhanced dialogs
+		function toggleFacetOverlay(this: any, type: 'venn'|'truth'|'timeline', pinned?: boolean) {
 			const nodeGroup = (this as Element).closest('g.node') as SVGGElement | null
 			const host = nodeGroup ? d3.select(nodeGroup) : d3.select(this.parentNode?.parentNode as SVGGElement)
 			const existing = host.select('g.facet-overlay')
@@ -2196,19 +2207,49 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			overlay.append('text').attr('x', 72).attr('y', -56).attr('fill', '#ff8080').attr('font-size', 12).style('cursor','pointer').text('×').on('click', () => overlay.remove())
 			overlay.raise()
 		}
-		iconGroup.select('circle').on('click', function(event: any){ event.stopPropagation(); toggleFacetOverlay.call(this, 'venn') })
+		*/
+		// Enhanced dialog handlers for facet icons
+		iconGroup.select('circle').on('click', function(event: any, d: any){ 
+			event.stopPropagation()
+			setSelectedNodeForDialog(d)
+			setVennDialogOpen(true)
+		})
 		iconGroup.select('rect').on('click', function(this: any, event: any, d: any){
 			event.stopPropagation()
-			// open page-level truth table for this node if symbol/label present
-			const expr = (d && (d.symbol || d.label)) as string | undefined
-			if (event.ctrlKey && expr && onOpenTruthTable) { onOpenTruthTable(expr) }
-			else { toggleFacetOverlay.call(this, 'truth', !!event.shiftKey) }
+			setSelectedNodeForDialog(d)
+			setTruthTableDialogOpen(true)
 		})
-		.on('keydown', function(this: any, event: any, d: any){ if (event.key === 'Enter') { event.preventDefault(); const expr = (d && (d.symbol || d.label)) as string | undefined; if (event.ctrlKey && expr && onOpenTruthTable) onOpenTruthTable(expr); else toggleFacetOverlay.call(this, 'truth', !!event.shiftKey) } })
-		iconGroup.select('line').on('click', function(event: any){ event.stopPropagation(); toggleFacetOverlay.call(this, 'timeline', !!event.shiftKey) })
-		.on('keydown', function(this: any, event: any){ if (event.key === 'Enter') { event.preventDefault(); toggleFacetOverlay.call(this, 'timeline', !!event.shiftKey) } })
-		iconGroup.select('path').on('click', function(event: any){ event.stopPropagation(); toggleFacetOverlay.call(this, 'counter', !!event.shiftKey) })
-		.on('keydown', function(this: any, event: any){ if (event.key === 'Enter') { event.preventDefault(); toggleFacetOverlay.call(this, 'counter', !!event.shiftKey) } })
+		.on('keydown', function(this: any, event: any, d: any){ 
+			if (event.key === 'Enter') { 
+				event.preventDefault()
+				setSelectedNodeForDialog(d)
+				setTruthTableDialogOpen(true)
+			} 
+		})
+		iconGroup.select('line').on('click', function(event: any, d: any){ 
+			event.stopPropagation()
+			setSelectedNodeForDialog(d)
+			setTimelineDialogOpen(true)
+		})
+		.on('keydown', function(this: any, event: any, d: any){ 
+			if (event.key === 'Enter') { 
+				event.preventDefault()
+				setSelectedNodeForDialog(d)
+				setTimelineDialogOpen(true)
+			} 
+		})
+		iconGroup.select('path').on('click', function(event: any, d: any){ 
+			event.stopPropagation()
+			setSelectedNodeForDialog(d)
+			setCounterargumentsDialogOpen(true)
+		})
+		.on('keydown', function(this: any, event: any, d: any){ 
+			if (event.key === 'Enter') { 
+				event.preventDefault()
+				setSelectedNodeForDialog(d)
+				setCounterargumentsDialogOpen(true)
+			} 
+		})
 
 		// Relevance gating: hide icons that are not applicable
 		iconGroup.each(function(d: any){
@@ -4266,6 +4307,70 @@ Controls:
 				onSave={handleNodeSave}
 				onNavigateToReference={handleNavigateToReference}
 			/>
+
+			{/* Enhanced Facet Dialogs */}
+			{selectedNodeForDialog && (
+				<>
+					<VennDiagramDialog
+						open={vennDialogOpen}
+						onClose={() => {
+							setVennDialogOpen(false)
+							setSelectedNodeForDialog(null)
+						}}
+						data={{
+							sets: [
+								{ 
+									label: selectedNodeForDialog.label || selectedNodeForDialog.id, 
+									items: [selectedNodeForDialog.label || selectedNodeForDialog.id], 
+									color: selectedNodeForDialog.color || '#40c4ff' 
+								},
+								{ 
+									label: 'Related', 
+									items: [], 
+									color: '#00e676' 
+								}
+							],
+							intersection: []
+						}}
+						examples={[
+							{ id: '1', title: 'Logical Relationship', necessary: selectedNodeForDialog.label || selectedNodeForDialog.id, sufficient: 'Conclusion' }
+						]}
+						expression={selectedNodeForDialog.symbol || selectedNodeForDialog.label}
+						nodeId={selectedNodeForDialog.id}
+					/>
+					
+					<TruthTableDialog
+						open={truthTableDialogOpen}
+						onClose={() => {
+							setTruthTableDialogOpen(false)
+							setSelectedNodeForDialog(null)
+						}}
+						ast={parseExpressionToAst(selectedNodeForDialog.symbol || selectedNodeForDialog.label || 'P') || { id: 'fallback', label: 'P', children: [] }}
+						expression={selectedNodeForDialog.symbol || selectedNodeForDialog.label}
+						nodeId={selectedNodeForDialog.id}
+					/>
+					
+					<TimelineDialog
+						open={timelineDialogOpen}
+						onClose={() => {
+							setTimelineDialogOpen(false)
+							setSelectedNodeForDialog(null)
+						}}
+						expression={selectedNodeForDialog.symbol || selectedNodeForDialog.label}
+						nodeId={selectedNodeForDialog.id}
+					/>
+					
+					<CounterargumentsDialog
+						open={counterargumentsDialogOpen}
+						onClose={() => {
+							setCounterargumentsDialogOpen(false)
+							setSelectedNodeForDialog(null)
+						}}
+						expression={selectedNodeForDialog.symbol || selectedNodeForDialog.label}
+						nodeId={selectedNodeForDialog.id}
+					/>
+				</>
+			)}
 
 			{/* Performance Overlay */}
 			{showPerformanceOverlay && (

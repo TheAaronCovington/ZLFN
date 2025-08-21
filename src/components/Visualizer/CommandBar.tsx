@@ -7,11 +7,14 @@ import {
   Autocomplete,
 
   Menu,
-  MenuItem,
   Tooltip,
   Box,
   Chip,
-  Stack
+  Stack,
+  Select,
+  MenuItem as MuiMenuItem,
+  InputLabel,
+  FormControl
 } from '@mui/material'
 import {
   Search as SearchIcon,
@@ -70,6 +73,10 @@ interface CommandBarProps {
   argumentIds?: string[]
   selectedArgumentId?: string | null
   onSelectArgument?: (id: string | null) => void
+
+  // View selector
+  viewMode?: 'graph' | 'tableau'
+  onChangeViewMode?: (mode: 'graph' | 'tableau') => void
 }
 
 export const CommandBar: React.FC<CommandBarProps> = ({
@@ -98,6 +105,7 @@ export const CommandBar: React.FC<CommandBarProps> = ({
   argumentIds = [],
   selectedArgumentId = null,
   onSelectArgument
+  , viewMode = 'graph', onChangeViewMode
 }) => {
   const [overflowAnchor, setOverflowAnchor] = React.useState<null | HTMLElement>(null)
 
@@ -183,6 +191,25 @@ export const CommandBar: React.FC<CommandBarProps> = ({
 
         {/* Layout Controls + Argument Filter inline */}
         <Stack direction="row" spacing={1} sx={{ mx: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* View selector */}
+          <FormControl size="small" sx={{ minWidth: 140, mr: 1 }}>
+            <InputLabel id="view-mode-label" sx={{ color: 'rgba(255,255,255,0.8)' }}>View</InputLabel>
+            <Select
+              labelId="view-mode-label"
+              value={viewMode}
+              label="View"
+              onChange={(e) => onChangeViewMode?.(e.target.value as any)}
+              sx={{
+                color: '#fff',
+                '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(64, 196, 255, 0.3)' },
+                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(64, 196, 255, 0.5)' },
+                '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#40c4ff' }
+              }}
+            >
+              <MuiMenuItem value="graph">ZLFN View</MuiMenuItem>
+              <MuiMenuItem value="tableau">Tableau View</MuiMenuItem>
+            </Select>
+          </FormControl>
           <Tooltip title="Fit Graph">
             <IconButton size="small" onClick={onFitGraph} sx={{ color: '#40c4ff' }}>
               <FitIcon />
@@ -282,35 +309,35 @@ export const CommandBar: React.FC<CommandBarProps> = ({
             }
           }}
         >
-          <MenuItem onClick={() => handleOverflowAction(onToggleControls)}>
+          <MuiMenuItem onClick={() => handleOverflowAction(onToggleControls)}>
             <ControlsIcon sx={{ mr: 1 }} />
             {controlsOpen ? 'Close Controls' : 'Open Controls'}
-          </MenuItem>
-          <MenuItem onClick={() => handleOverflowAction(onToggleInspector)}>
+          </MuiMenuItem>
+          <MuiMenuItem onClick={() => handleOverflowAction(onToggleInspector)}>
             <InspectorIcon sx={{ mr: 1 }} />
             {inspectorOpen ? 'Close Inspector' : 'Open Inspector'}
-          </MenuItem>
+          </MuiMenuItem>
           <Box sx={{ my: 0.5 }} />
-          <MenuItem onClick={() => handleOverflowAction(onExport)}>
+          <MuiMenuItem onClick={() => handleOverflowAction(onExport)}>
             <DownloadIcon sx={{ mr: 1 }} />
             Export
-          </MenuItem>
-          <MenuItem onClick={() => handleOverflowAction(onImport)}>
+          </MuiMenuItem>
+          <MuiMenuItem onClick={() => handleOverflowAction(onImport)}>
             <UploadIcon sx={{ mr: 1 }} />
             Import
-          </MenuItem>
-          <MenuItem onClick={() => handleOverflowAction(onTogglePerformance)}>
+          </MuiMenuItem>
+          <MuiMenuItem onClick={() => handleOverflowAction(onTogglePerformance)}>
             <SpeedIcon sx={{ mr: 1 }} />
             Performance Monitor
-          </MenuItem>
-          <MenuItem onClick={() => handleOverflowAction(onShowShortcuts)}>
+          </MuiMenuItem>
+          <MuiMenuItem onClick={() => handleOverflowAction(onShowShortcuts)}>
             <KeyboardIcon sx={{ mr: 1 }} />
             Keyboard Shortcuts
-          </MenuItem>
-          <MenuItem onClick={() => handleOverflowAction(onShowHelp)}>
+          </MuiMenuItem>
+          <MuiMenuItem onClick={() => handleOverflowAction(onShowHelp)}>
             <HelpIcon sx={{ mr: 1 }} />
             Help
-          </MenuItem>
+          </MuiMenuItem>
         </Menu>
       </Toolbar>
 

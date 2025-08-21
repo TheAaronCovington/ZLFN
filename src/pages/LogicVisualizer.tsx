@@ -1,6 +1,7 @@
 import React from 'react'
 import { Box, Snackbar, Alert, Dialog, DialogTitle, DialogContent } from '@mui/material'
 import { ZlfnGraphWithNotes } from '../components/Visualizations/ZlfnGraphWithNotes'
+import SemanticTableau from '../components/Visualizations/SemanticTableau'
 import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph'
 import type { VennDiagramData, NecessarySufficientExample } from '../components/Visualizations/VennDiagram'
 import { parseExpressionToAst, astToZlfnGraph, toNNF, toCNF, astToString, type AstNodeRec } from '../services/logic'
@@ -37,6 +38,12 @@ const LogicVisualizer: React.FC = () => {
 	)
 	const [shortcutsOpen, setShortcutsOpen] = React.useState(false)
 	const [advancedSearchOpen, setAdvancedSearchOpen] = React.useState(false)
+
+	// View mode: graph (ZLFN) | tableau (STN)
+	const [viewMode, setViewMode] = React.useState<'graph' | 'tableau'>(() => {
+		try { return (localStorage.getItem('xv_view_mode') as any) || 'graph' } catch { return 'graph' }
+	})
+	React.useEffect(() => { try { localStorage.setItem('xv_view_mode', viewMode) } catch {} }, [viewMode])
 
 	// Persist drawer states
 	React.useEffect(() => {
@@ -383,6 +390,8 @@ const LogicVisualizer: React.FC = () => {
 					const ev = new CustomEvent('zlfn:set-argument', { detail: { id } })
 					window.dispatchEvent(ev as any)
 				}}
+				viewMode={viewMode}
+				onChangeViewMode={(m) => setViewMode(m)}
 			/>
 
 			{/* Main Content Area */}
@@ -487,18 +496,22 @@ const LogicVisualizer: React.FC = () => {
 						position: 'relative',
 						overflow: 'hidden'
 					}}>
-						<ZlfnGraphWithNotes
-							nodes={nodes}
-							edges={edges}
-							storageKey={currentExpression}
-							onInfo={showInfo}
-							centerOnNodeId={searchId || undefined}
-							centerOnNodeTrigger={searchTrigger}
-							onEdgeSelect={handleEdgeSelect}
-							onOpenTruthTable={handleOpenTruthTable}
-							objectId="main-visualizer"
-							showNotesIndicators={true}
-						/>
+						{viewMode === 'graph' ? (
+							<ZlfnGraphWithNotes
+								nodes={nodes}
+								edges={edges}
+								storageKey={currentExpression}
+								onInfo={showInfo}
+								centerOnNodeId={searchId || undefined}
+								centerOnNodeTrigger={searchTrigger}
+								onEdgeSelect={handleEdgeSelect}
+								onOpenTruthTable={handleOpenTruthTable}
+								objectId="main-visualizer"
+								showNotesIndicators={true}
+							/>
+						) : (
+							<SemanticTableau expression={currentExpression} ast={ast} />
+						)}
 					</Box>
 				</Box>
 

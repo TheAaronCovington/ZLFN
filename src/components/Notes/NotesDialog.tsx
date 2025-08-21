@@ -78,24 +78,14 @@ export function NotesDialog({
       const noteContent = notesHook.getNoteContent(node.id)
       setLocalNote(noteContent)
       setHasUnsavedChanges(false)
-      try { console.debug('[NOTES] opened for node', node.id, 'contentLen=', noteContent.length) } catch {}
+
     }
   }, [open, node?.id])
 
   // Global debug loggers while dialog is open
   useEffect(() => {
     if (!open) return
-    const kd = (e: KeyboardEvent) => { try { console.debug('[NOTES-WIN] keydown', e.key, { targetTag: (e.target as any)?.tagName }) } catch {} }
-    const ku = (e: KeyboardEvent) => { try { console.debug('[NOTES-WIN] keyup', e.key) } catch {} }
-    const kp = (e: KeyboardEvent) => { try { console.debug('[NOTES-WIN] keypress', (e as any).key) } catch {} }
-    window.addEventListener('keydown', kd, { capture: true })
-    window.addEventListener('keyup', ku, { capture: true })
-    window.addEventListener('keypress', kp, { capture: true })
-    return () => {
-      window.removeEventListener('keydown', kd, { capture: true } as any)
-      window.removeEventListener('keyup', ku, { capture: true } as any)
-      window.removeEventListener('keypress', kp, { capture: true } as any)
-    }
+    // Removed excessive debug logging - no event listeners needed
   }, [open])
 
   // Persist markdown preview setting
@@ -108,14 +98,14 @@ export function NotesDialog({
   // Handle text changes (for regular TextField)
   const handleNoteChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = event.target.value
-    try { console.debug('[NOTES] change len=', newValue.length) } catch {}
+
     setLocalNote(newValue)
     setHasUnsavedChanges(newValue !== notesHook.getNoteContent(node?.id || ''))
   }
 
   // Handle text changes (for MarkdownPreview component)
   const handleMarkdownChange = (newValue: string) => {
-    try { console.debug('[NOTES] markdown change len=', newValue.length) } catch {}
+
     setLocalNote(newValue)
     setHasUnsavedChanges(newValue !== notesHook.getNoteContent(node?.id || ''))
   }
@@ -174,7 +164,7 @@ export function NotesDialog({
   // Keyboard shortcuts
   const handleKeyDown = (event: React.KeyboardEvent) => {
     // Never let graph-level listeners consume keys from the editor
-    try { console.debug('[NOTES] keydown', { key: event.key, ctrl: event.ctrlKey||event.metaKey, targetTag: (event.target as any)?.tagName }) } catch {}
+
     event.stopPropagation()
     if (event.ctrlKey || event.metaKey) {
       if (event.key.toLowerCase() === 's') {
@@ -336,8 +326,8 @@ export function NotesDialog({
             value={localNote}
             onChange={handleNoteChange}
             onKeyDown={handleKeyDown}
-            onKeyUp={(e)=> { try { console.debug('[NOTES] keyup', { key: (e as any).key }); } catch {} ; e.stopPropagation()}}
-            onKeyPress={(e)=> { try { console.debug('[NOTES] keypress', { key: (e as any).key }); } catch {} ; e.stopPropagation()}}
+            onKeyUp={(e)=> { e.stopPropagation()}}
+            onKeyPress={(e)=> { e.stopPropagation()}}
             placeholder={`Add your notes for node "${node.id}"...\n\nTip: Use Ctrl+S to save quickly\nClick the preview icon to enable markdown preview.`}
             variant="outlined"
             inputProps={{ readOnly: false, 'data-notes-input': '1', tabIndex: 0 }}
