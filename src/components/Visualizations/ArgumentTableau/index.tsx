@@ -4,7 +4,31 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react'
-import { Box, Typography, Select, MenuItem, FormControl, InputLabel, Stack } from '@mui/material'
+import { 
+  Box, 
+  Typography, 
+  Select, 
+  MenuItem, 
+  FormControl, 
+  InputLabel, 
+  Stack, 
+  Switch,
+  FormControlLabel,
+  IconButton,
+  Tooltip,
+  Menu,
+  ListItemIcon,
+  ListItemText,
+  Chip,
+  Alert
+} from '@mui/material'
+import {
+  Download as DownloadIcon,
+  Settings as SettingsIcon,
+  Analytics as AnalyticsIcon,
+  AccountTree as SchemeIcon,
+  Warning as WarningIcon
+} from '@mui/icons-material'
 import type { 
   ArgumentTableauProps, 
   ArgumentData, 
@@ -37,6 +61,17 @@ import {
   CounterargumentsDialog,
   RebuttalDialog
 } from '../../Enhanced'
+import { 
+  groupEdgesByScheme, 
+  applySchemeClustering
+} from './schemeCluster'
+import { 
+  calculateArgumentStrengths
+} from './strengthPropagation'
+import { 
+  exportATNAnalysis,
+  type ATNExportOptions 
+} from './exportService'
 
 /**
  * Sample argument data for initial development and testing
@@ -225,6 +260,12 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
     counter: { open: false, nodeData: null as ArgumentNode | null },
     rebuttal: { open: false, nodeData: null as ArgumentNode | null }
   })
+
+  // Advanced features state
+  const [showSchemeClustering, setShowSchemeClustering] = useState(true)
+  const [showStrengthAnalysis, setShowStrengthAnalysis] = useState(true)
+  const [exportMenuAnchor, setExportMenuAnchor] = useState<null | HTMLElement>(null)
+  const [settingsMenuAnchor, setSettingsMenuAnchor] = useState<null | HTMLElement>(null)
   // State management
   const [layoutMode, setLayoutMode] = useState<ATNLayoutMode>(() => {
     try {
@@ -283,6 +324,21 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
     return currentArgument.relationships
   }, [currentArgument])
 
+  // Advanced analysis computations
+  const strengthAnalysis = useMemo(() => {
+    if (!showStrengthAnalysis) return null
+    return calculateArgumentStrengths(currentArgument)
+  }, [currentArgument, showStrengthAnalysis])
+
+  const schemeClusters = useMemo(() => {
+    if (!showSchemeClustering) return []
+    return groupEdgesByScheme(currentArgument)
+  }, [currentArgument, showSchemeClustering])
+
+  const processedArgument = useMemo(() => {
+    return applySchemeClustering(currentArgument, showSchemeClustering)
+  }, [currentArgument, showSchemeClustering])
+
   // Handle layout mode change
   const handleLayoutModeChange = (newMode: ATNLayoutMode) => {
     setLayoutMode(newMode)
@@ -318,6 +374,41 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
       ...prev,
       [type]: { open: false, nodeData: null }
     }))
+  }
+
+  // Handle export
+  const handleExport = (format: 'json' | 'csv' | 'latex' | 'markdown') => {
+    const options: ATNExportOptions = {
+      includeMetadata: true,
+      includeStrengthAnalysis: showStrengthAnalysis,
+      includeConflictAnalysis: true,
+      includeSchemeAnalysis: showSchemeClustering,
+      format
+    }
+
+    exportATNAnalysis(
+      processedArgument,
+      strengthAnalysis || undefined,
+      schemeClusters,
+      format,
+      options
+    )
+
+    setExportMenuAnchor(null)
+  }
+
+  // Menu handlers
+  const handleExportMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setExportMenuAnchor(event.currentTarget)
+  }
+
+  const handleSettingsMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setSettingsMenuAnchor(event.currentTarget)
+  }
+
+  const handleMenuClose = () => {
+    setExportMenuAnchor(null)
+    setSettingsMenuAnchor(null)
   }
 
   // Render the visualization when layout mode or argument changes
@@ -454,8 +545,76 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
                 <MenuItem value="table">Table</MenuItem>
               </Select>
             </FormControl>
+
+            {/* Advanced Controls */}
+            <Tooltip title="Export Analysis">
+              <IconButton onClick={handleExportMenuOpen} sx={{ color: '#40c4ff' }}>
+                <DownloadIcon />
+              </IconButton>
+            </Tooltip>
+
+            <Tooltip title="Analysis Settings">
+              <IconButton onClick={handleSettingsMenuOpen} sx={{ color: '#40c4ff' }}>
+                <SettingsIcon />
+              </IconButton>
+            </Tooltip>
           </Stack>
         </Box>
+      )}
+
+      {/* Analysis Status */}
+      {!compact && strengthAnalysis && (
+        <Box sx={{ 
+          p: 1, 
+          backgroundColor: 'var(--ai-bg-secondary)',
+          borderBottom: '1px solid rgba(64,196,255,0.3)'
+        }}>
+          <Stack direction="row" spacing={2} alignItems="center">
+            <Chip
+              icon={<AnalyticsIcon />}
+              label={`Coherence: ${strengthAnalysis.overallCoherence}%`}
+              color={strengthAnalysis.overallCoherence >= 70 ? 'success' : strengthAnalysis.overallCoherence >= 40 ? 'warning' : 'error'}
+              size="small"
+            />
+            
+            {strengthAnalysis.conflicts.length > 0 && (
+              <Chip
+                icon={<WarningIcon />}
+                label={`${strengthAnalysis.conflicts.length} Conflicts`}
+                color="error"
+                size="small"
+              />
+            )}
+            
+            {schemeClusters.length > 0 && (
+              <Chip
+                icon={<SchemeIcon />}
+                label={`${schemeClusters.length} Schemes`}
+                color="info"
+                size="small"
+              />
+            )}
+          </Stack>
+        </Box>
+      )}
+
+      {/* Conflicts Alert */}
+      {!compact && strengthAnalysis && strengthAnalysis.conflicts.length > 0 && (
+        <Alert 
+          severity="warning" 
+          sx={{ m: 1 }}
+          action={
+            <Typography variant="caption">
+              Click nodes for details
+            </Typography>
+          }
+        >
+          <Typography variant="body2">
+            <strong>{strengthAnalysis.conflicts.length} conflicts detected:</strong>{' '}
+            {strengthAnalysis.conflicts.slice(0, 2).map(c => c.type.replace('_', ' ')).join(', ')}
+            {strengthAnalysis.conflicts.length > 2 && ` and ${strengthAnalysis.conflicts.length - 2} more`}
+          </Typography>
+        </Alert>
       )}
 
       {/* ATN Visualization Area */}
@@ -565,6 +724,98 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
         onClose={() => closeFacetDialog('rebuttal')}
         nodeData={facetDialogs.rebuttal.nodeData}
       />
+
+      {/* Export Menu */}
+      <Menu
+        anchorEl={exportMenuAnchor}
+        open={Boolean(exportMenuAnchor)}
+        onClose={handleMenuClose}
+        PaperProps={{
+          sx: {
+            backgroundColor: 'var(--ai-bg-secondary)',
+            border: '1px solid rgba(64,196,255,0.3)'
+          }
+        }}
+      >
+        <MenuItem onClick={() => handleExport('json')}>
+          <ListItemIcon>
+            <DownloadIcon sx={{ color: '#40c4ff' }} />
+          </ListItemIcon>
+          <ListItemText primary="Export as JSON" secondary="Complete analysis data" />
+        </MenuItem>
+        
+        <MenuItem onClick={() => handleExport('markdown')}>
+          <ListItemIcon>
+            <DownloadIcon sx={{ color: '#40c4ff' }} />
+          </ListItemIcon>
+          <ListItemText primary="Export as Markdown" secondary="Human-readable report" />
+        </MenuItem>
+        
+        <MenuItem onClick={() => handleExport('latex')}>
+          <ListItemIcon>
+            <DownloadIcon sx={{ color: '#40c4ff' }} />
+          </ListItemIcon>
+          <ListItemText primary="Export as LaTeX" secondary="Academic paper format" />
+        </MenuItem>
+        
+        <MenuItem onClick={() => handleExport('csv')}>
+          <ListItemIcon>
+            <DownloadIcon sx={{ color: '#40c4ff' }} />
+          </ListItemIcon>
+          <ListItemText primary="Export as CSV" secondary="Spreadsheet data" />
+        </MenuItem>
+      </Menu>
+
+      {/* Settings Menu */}
+      <Menu
+        anchorEl={settingsMenuAnchor}
+        open={Boolean(settingsMenuAnchor)}
+        onClose={handleMenuClose}
+        PaperProps={{
+          sx: {
+            backgroundColor: 'var(--ai-bg-secondary)',
+            border: '1px solid rgba(64,196,255,0.3)',
+            minWidth: 250
+          }
+        }}
+      >
+        <Box sx={{ p: 2 }}>
+          <Typography variant="subtitle2" sx={{ color: 'var(--ai-text-primary)', mb: 2 }}>
+            Analysis Settings
+          </Typography>
+          
+          <FormControlLabel
+            control={
+              <Switch
+                checked={showStrengthAnalysis}
+                onChange={(e) => setShowStrengthAnalysis(e.target.checked)}
+                color="primary"
+              />
+            }
+            label="Strength Analysis"
+            sx={{ 
+              color: 'var(--ai-text-primary)',
+              display: 'block',
+              mb: 1
+            }}
+          />
+          
+          <FormControlLabel
+            control={
+              <Switch
+                checked={showSchemeClustering}
+                onChange={(e) => setShowSchemeClustering(e.target.checked)}
+                color="primary"
+              />
+            }
+            label="Scheme Clustering"
+            sx={{ 
+              color: 'var(--ai-text-primary)',
+              display: 'block'
+            }}
+          />
+        </Box>
+      </Menu>
     </Box>
   )
 }

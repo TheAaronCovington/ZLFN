@@ -173,6 +173,30 @@
   - **Logic**: Converts ATN node data to comprehensive rebuttal analysis
   - **Dependencies**: EnhancedRebuttal, MUI Dialog components
 
+### ATN Advanced Features (Phase 4)
+- **`src/components/Visualizations/ArgumentTableau/schemeCluster.ts`** *(~400 lines)* ✅ **NEW IMPLEMENTATION**
+  - **Features**: Argumentation scheme clustering and visualization
+  - **Functions**: `groupEdgesByScheme`, `applySchemeClustering`, `renderSchemeClusterLegend`, `renderClusteredEdges`
+  - **Visualization**: Color-coded scheme groups, cluster backgrounds, enhanced edge rendering
+  - **Analysis**: Scheme priority calculation, cluster positioning, legend generation
+  - **Dependencies**: D3 selections, argument types, visual styling
+
+- **`src/components/Visualizations/ArgumentTableau/strengthPropagation.ts`** *(~350 lines)* ✅ **NEW IMPLEMENTATION**
+  - **Features**: Dynamic argument strength calculation and conflict detection
+  - **Functions**: `calculateArgumentStrengths`, `detectArgumentConflicts`, `getStrengthBasedStyling`
+  - **Analysis**: Iterative strength propagation, circular reasoning detection, consistency checking
+  - **Conflict Types**: Direct attacks, circular reasoning, inconsistent strengths
+  - **Logic**: Support/attack relationship modeling, coherence scoring, propagation paths
+  - **Dependencies**: Argument types, mathematical calculations
+
+- **`src/components/Visualizations/ArgumentTableau/exportService.ts`** *(~500 lines)* ✅ **NEW IMPLEMENTATION**
+  - **Features**: Comprehensive ATN analysis export in multiple formats
+  - **Formats**: JSON, CSV, LaTeX, Markdown with full analysis data
+  - **Functions**: `generateATNReport`, `exportToJSON/CSV/LaTeX/Markdown`, `downloadFile`
+  - **Analysis**: Strength summaries, conflict reports, scheme effectiveness, recommendations
+  - **Academic**: LaTeX formatting for academic papers, citation-ready exports
+  - **Dependencies**: File download API, text formatting utilities
+
 ### Enhanced Facet Dialogs
 - **`src/components/Enhanced/`**
   - **`EnhancedDialog.tsx`**: Base dialog wrapper with consistent styling
