@@ -1,16 +1,19 @@
-import React from 'react'
+import React, { useCallback } from 'react'
 import * as d3 from 'd3'
-import { Box, ToggleButton, ToggleButtonGroup, Tooltip, Button, LinearProgress, Snackbar, Alert, Select, MenuItem, FormControl, InputLabel, Chip, Slider, Typography, Switch, FormControlLabel } from '@mui/material'
+import { Box, LinearProgress, Snackbar, Alert } from '@mui/material'
 import { astToString, type AstNodeRec } from '../../services/logic'
 import { validateRule, type LogicMode } from '../../services/inference'
 import { downloadJson, readJsonFile, type ExportPayload } from '../../services/io'
 import { createFacetIcons } from '../../vis'
 import { VennDiagramDialog, TruthTableDialog, TimelineDialog, CounterargumentsDialog } from '../Enhanced'
+import { TableauComparison } from './TableauComparison'
+import { CompactTableauMenu } from './CompactTableauMenu'
 
 export interface SemanticTableauProps {
 	// Prefer reusing the current expression/AST from the visualizer
 	expression: string
 	ast: AstNodeRec | null
+	compact?: boolean // For use in comparison mode
 }
 
 type TableauNode = {
@@ -40,7 +43,7 @@ function astToTableau(ast: AstNodeRec): TableauNode {
 	return map(ast, 0)
 }
 
-export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, ast }) => {
+export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, ast, compact = false }) => {
 	const containerRef = React.useRef<HTMLDivElement | null>(null)
 	const svgRef = React.useRef<SVGSVGElement | null>(null)
 	const [layoutMode, setLayoutMode] = React.useState<'tree' | 'hierarchy'>('tree')
@@ -76,6 +79,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 	
 	// Node selection and path highlighting
 	const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null)
+	const [comparisonOpen, setComparisonOpen] = React.useState(false)
 	
 	// Proof validation
 	const [proofStatus, setProofStatus] = React.useState<{
@@ -270,6 +274,13 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 				}
 			}
 			
+			// Arrow key navigation
+			if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+				e.preventDefault()
+				navigateWithArrows(e.key as 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight')
+				return
+			}
+			
 			// STN-specific shortcuts
 			if (e.key.toLowerCase() === 'd' && selectedNodeId && root) {
 				e.preventDefault()
@@ -325,7 +336,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 		
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
-	}, [selectedNodeId, root, autoExpand, autoClose, exportTableau])
+	}, [selectedNodeId, root])
 	
 	// Helper to find path from selected node to root
 	function findPathToRoot(nodeId: string, currentNode: TableauNode, path: string[] = []): string[] | null {
@@ -364,6 +375,524 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 	const isPredicate = (n: AstNodeRec | undefined) => !!n && n.children && n.children.length > 0 && !['∧', '∨', '⊻', '→', '↔', '¬'].includes(n.label)
 	const serialize = (n: AstNodeRec | undefined): string => (n ? astToString(n) : '')
 	const complementOf = (s: string) => s.startsWith('¬') ? s.slice(1) : `¬${s}`
+	
+	// Proof reconstruction - generate natural language proof
+	const generateProofText = useCallback((tableauRoot: TableauNode): string => {
+		const steps: string[] = []
+		let stepNumber = 1
+		
+		function traverseForProof(node: TableauNode, depth: number = 0) {
+			const indent = '  '.repeat(depth)
+			
+			if (node.ast) {
+				const formula = astToString(node.ast)
+				
+				if (depth === 0) {
+					steps.push(`${stepNumber++}. Assume: ${formula}`)
+				} else {
+					// Determine the rule used
+					let rule = 'assumption'
+					if (node.ast && node.children && node.children.length > 0) {
+						if (isAlpha(node.ast)) rule = 'conjunction elimination'
+						else if (isBeta(node.ast)) rule = 'disjunction elimination'
+						else if (isImplication(node.ast)) rule = 'implication elimination'
+						else if (isBiconditional(node.ast)) rule = 'biconditional elimination'
+						else if (isDoubleNeg(node.ast)) rule = 'double negation elimination'
+						else if (isQuantifier(node.ast)) rule = 'quantifier instantiation'
+					}
+					
+					steps.push(`${indent}${stepNumber++}. From ${formula}, by ${rule}:`)
+				}
+				
+				// Handle children
+				if (node.children && node.children.length > 0) {
+					if (isBeta(node.ast)) {
+						steps.push(`${indent}  Case analysis:`)
+						node.children.forEach((child, i) => {
+							steps.push(`${indent}  Branch ${i + 1}:`)
+							traverseForProof(child, depth + 2)
+						})
+					} else {
+						node.children.forEach(child => traverseForProof(child, depth + 1))
+					}
+				}
+				
+				// Check for closure
+				if (node.type === 'closed') {
+					steps.push(`${indent}  ⊥ Contradiction found - branch closes`)
+				}
+			}
+		}
+		
+		traverseForProof(tableauRoot)
+		
+		// Add conclusion
+		const allBranchesClosed = checkAllBranchesClosed(tableauRoot)
+		if (allBranchesClosed) {
+			steps.push(`\n∴ All branches are closed. The original assumption leads to contradiction.`)
+			steps.push(`Therefore, the negation of the assumption is valid.`)
+		} else {
+			steps.push(`\nSome branches remain open. The tableau is incomplete or the formula is satisfiable.`)
+		}
+		
+		return steps.join('\n')
+	}, [])
+	
+	// Helper to check if all branches are closed
+	function checkAllBranchesClosed(node: TableauNode): boolean {
+		if (!node.children || node.children.length === 0) {
+			return node.type === 'closed'
+		}
+		return node.children.every(child => checkAllBranchesClosed(child))
+	}
+	
+	// LaTeX export for academic papers
+	const generateLatexTableau = useCallback((tableauRoot: TableauNode): string => {
+		const lines: string[] = []
+		
+		// LaTeX document header
+		lines.push('\\documentclass{article}')
+		lines.push('\\usepackage{amsmath}')
+		lines.push('\\usepackage{amsfonts}')
+		lines.push('\\usepackage{amssymb}')
+		lines.push('\\usepackage{proof}')
+		lines.push('\\usepackage{bussproofs}')
+		lines.push('\\usepackage{tikz}')
+		lines.push('\\usetikzlibrary{trees}')
+		lines.push('')
+		lines.push('\\begin{document}')
+		lines.push('')
+		lines.push(`\\title{Semantic Tableau for: $${latexifyFormula(astToString(tableauRoot.ast || { id: '', label: expression || '' }))}$}`)
+		lines.push('\\maketitle')
+		lines.push('')
+		
+		// Generate tableau using tikz
+		lines.push('\\begin{figure}[h]')
+		lines.push('\\centering')
+		lines.push('\\begin{tikzpicture}[')
+		lines.push('  level distance=1.5cm,')
+		lines.push('  level 1/.style={sibling distance=4cm},')
+		lines.push('  level 2/.style={sibling distance=2cm},')
+		lines.push('  level 3/.style={sibling distance=1cm}')
+		lines.push(']')
+		
+		// Generate tree structure
+		function generateLatexNode(node: TableauNode, depth: number = 0): string {
+			const formula = latexifyFormula(astToString(node.ast || { id: '', label: node.label }))
+			let nodeStr = `node {$${formula}$}`
+			
+			if (node.type === 'closed') {
+				nodeStr += ' [fill=red!20]'
+			} else if (node.type === 'root') {
+				nodeStr += ' [fill=blue!20]'
+			}
+			
+			if (node.children && node.children.length > 0) {
+				const childrenStr = node.children.map(child => 
+					`child { ${generateLatexNode(child, depth + 1)} }`
+				).join(' ')
+				nodeStr += ` ${childrenStr}`
+			}
+			
+			return nodeStr
+		}
+		
+		lines.push(`\\${generateLatexNode(tableauRoot)};`)
+		lines.push('\\end{tikzpicture}')
+		lines.push(`\\caption{Semantic tableau for $${latexifyFormula(expression || '')}$}`)
+		lines.push('\\end{figure}')
+		lines.push('')
+		
+		// Add proof steps
+		lines.push('\\section{Proof Steps}')
+		lines.push('\\begin{enumerate}')
+		
+		function addLatexProofSteps(node: TableauNode, stepNum: { value: number }) {
+			if (node.ast) {
+				const formula = latexifyFormula(astToString(node.ast))
+				lines.push(`\\item $${formula}$`)
+				
+				if (node.children && node.children.length > 0) {
+					if (isBeta(node.ast)) {
+						lines.push('\\begin{enumerate}')
+						node.children.forEach((child, i) => {
+							lines.push(`\\item[Branch ${i + 1}:]`)
+							addLatexProofSteps(child, stepNum)
+						})
+						lines.push('\\end{enumerate}')
+					} else {
+						node.children.forEach(child => addLatexProofSteps(child, stepNum))
+					}
+				}
+				
+				if (node.type === 'closed') {
+					lines.push('\\item[$\\bot$] Contradiction - branch closes')
+				}
+			}
+		}
+		
+		addLatexProofSteps(tableauRoot, { value: 1 })
+		lines.push('\\end{enumerate}')
+		
+		// Conclusion
+		const allClosed = checkAllBranchesClosed(tableauRoot)
+		lines.push('')
+		lines.push('\\section{Conclusion}')
+		if (allClosed) {
+			lines.push('All branches are closed, therefore the original formula is unsatisfiable.')
+		} else {
+			lines.push('Some branches remain open, therefore the formula is satisfiable.')
+		}
+		
+		lines.push('')
+		lines.push('\\end{document}')
+		
+		return lines.join('\n')
+	}, [expression])
+	
+	// Helper to convert logical formulas to LaTeX
+	function latexifyFormula(formula: string): string {
+		return formula
+			.replace(/¬/g, '\\neg ')
+			.replace(/∧/g, ' \\land ')
+			.replace(/∨/g, ' \\lor ')
+			.replace(/→/g, ' \\rightarrow ')
+			.replace(/↔/g, ' \\leftrightarrow ')
+			.replace(/∀/g, '\\forall ')
+			.replace(/∃/g, '\\exists ')
+			.replace(/⊻/g, ' \\oplus ')
+			.replace(/⊥/g, '\\bot')
+	}
+	
+	// PNG/SVG Export functionality
+	const exportTableauImage = useCallback((format: 'png' | 'svg') => {
+		const svgElement = svgRef.current
+		if (!svgElement) return
+		
+		// Clone the SVG to avoid modifying the original
+		const clonedSvg = svgElement.cloneNode(true) as SVGElement
+		
+		// Set a white background for better visibility in exports
+		const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+		rect.setAttribute('width', '100%')
+		rect.setAttribute('height', '100%')
+		rect.setAttribute('fill', '#1a1a1a') // Dark background
+		clonedSvg.insertBefore(rect, clonedSvg.firstChild)
+		
+		// Get the bounding box and set proper dimensions
+		const bbox = svgElement.getBBox()
+		const padding = 50
+		clonedSvg.setAttribute('width', String(bbox.width + padding * 2))
+		clonedSvg.setAttribute('height', String(bbox.height + padding * 2))
+		clonedSvg.setAttribute('viewBox', `${bbox.x - padding} ${bbox.y - padding} ${bbox.width + padding * 2} ${bbox.height + padding * 2}`)
+		
+		if (format === 'svg') {
+			// Direct SVG export
+			const svgData = new XMLSerializer().serializeToString(clonedSvg)
+			const blob = new Blob([svgData], { type: 'image/svg+xml' })
+			const url = URL.createObjectURL(blob)
+			const a = document.createElement('a')
+			a.href = url
+			a.download = `tableau-${expression?.replace(/[^a-zA-Z0-9]/g, '_') || 'proof'}.svg`
+			document.body.appendChild(a)
+			a.click()
+			document.body.removeChild(a)
+			URL.revokeObjectURL(url)
+		} else {
+			// PNG export via canvas
+			const canvas = document.createElement('canvas')
+			const ctx = canvas.getContext('2d')
+			if (!ctx) return
+			
+			const img = new Image()
+			const svgData = new XMLSerializer().serializeToString(clonedSvg)
+			const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' })
+			const url = URL.createObjectURL(svgBlob)
+			
+			img.onload = () => {
+				canvas.width = bbox.width + padding * 2
+				canvas.height = bbox.height + padding * 2
+				ctx.drawImage(img, 0, 0)
+				
+				canvas.toBlob((blob) => {
+					if (blob) {
+						const url = URL.createObjectURL(blob)
+						const a = document.createElement('a')
+						a.href = url
+						a.download = `tableau-${expression?.replace(/[^a-zA-Z0-9]/g, '_') || 'proof'}.png`
+						document.body.appendChild(a)
+						a.click()
+						document.body.removeChild(a)
+						URL.revokeObjectURL(url)
+					}
+				}, 'image/png')
+				
+				URL.revokeObjectURL(url)
+			}
+			
+			img.src = url
+		}
+	}, [expression])
+	
+	// Step-by-step proof documentation export
+	const exportProofSteps = useCallback(() => {
+		if (!root) return
+		
+		const steps: Array<{
+			step: number
+			action: string
+			formula: string
+			rule: string
+			justification: string
+			branchStatus: 'open' | 'closed' | 'continuing'
+		}> = []
+		
+		let stepCounter = 1
+		
+		function collectSteps(node: TableauNode, depth: number = 0, branchPath: string = '') {
+			if (!node.ast) return
+			
+			const formula = astToString(node.ast)
+			let rule = 'Assumption'
+			let action = 'Assume'
+			let justification = 'Initial assumption for proof by contradiction'
+			
+			if (depth > 0) {
+				// Determine rule and action based on node type
+				if (isAlpha(node.ast)) {
+					rule = 'Conjunction Elimination (α-rule)'
+					action = 'Decompose conjunction'
+					justification = 'From conjunction, both conjuncts must be true'
+				} else if (isBeta(node.ast)) {
+					rule = 'Disjunction Elimination (β-rule)'
+					action = 'Branch on disjunction'
+					justification = 'From disjunction, at least one disjunct must be true'
+				} else if (isImplication(node.ast)) {
+					rule = 'Implication Elimination'
+					action = 'Decompose implication'
+					justification = 'P → Q is equivalent to ¬P ∨ Q'
+				} else if (isBiconditional(node.ast)) {
+					rule = 'Biconditional Elimination'
+					action = 'Decompose biconditional'
+					justification = 'P ↔ Q is equivalent to (P → Q) ∧ (Q → P)'
+				} else if (isDoubleNeg(node.ast)) {
+					rule = 'Double Negation Elimination'
+					action = 'Remove double negation'
+					justification = '¬¬P is equivalent to P'
+				} else if (isQuantifier(node.ast)) {
+					rule = 'Quantifier Instantiation'
+					action = 'Instantiate quantifier'
+					justification = 'Apply quantifier rule with appropriate witness'
+				}
+			}
+			
+			const branchStatus: 'open' | 'closed' | 'continuing' = 
+				node.type === 'closed' ? 'closed' :
+				(!node.children || node.children.length === 0) ? 'open' :
+				'continuing'
+			
+			steps.push({
+				step: stepCounter++,
+				action,
+				formula,
+				rule,
+				justification,
+				branchStatus
+			})
+			
+			// Process children
+			if (node.children && node.children.length > 0) {
+				if (isBeta(node.ast)) {
+					// Beta rule creates branches
+					node.children.forEach((child, i) => {
+						const newBranchPath = branchPath ? `${branchPath}.${i + 1}` : `${i + 1}`
+						collectSteps(child, depth + 1, newBranchPath)
+					})
+				} else {
+					// Alpha rule continues on same branch
+					node.children.forEach(child => {
+						collectSteps(child, depth + 1, branchPath)
+					})
+				}
+			}
+		}
+		
+		collectSteps(root)
+		
+		// Generate different export formats
+		const formats = {
+			json: JSON.stringify(steps, null, 2),
+			csv: [
+				'Step,Action,Formula,Rule,Justification,Branch Status',
+				...steps.map(s => 
+					`${s.step},"${s.action}","${s.formula}","${s.rule}","${s.justification}","${s.branchStatus}"`
+				)
+			].join('\n'),
+			markdown: [
+				`# Tableau Proof Steps: ${expression}`,
+				'',
+				'| Step | Action | Formula | Rule | Justification | Status |',
+				'|------|--------|---------|------|---------------|--------|',
+				...steps.map(s => 
+					`| ${s.step} | ${s.action} | \`${s.formula}\` | ${s.rule} | ${s.justification} | ${s.branchStatus} |`
+				),
+				'',
+				`**Conclusion:** ${checkAllBranchesClosed(root) ? 'All branches closed - formula is unsatisfiable' : 'Some branches open - formula is satisfiable'}`
+			].join('\n'),
+			html: `
+				<!DOCTYPE html>
+				<html>
+				<head>
+					<title>Tableau Proof Steps - ${expression}</title>
+					<style>
+						body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+						.container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+						h1 { color: #333; border-bottom: 2px solid #007acc; padding-bottom: 10px; }
+						table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+						th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+						th { background: #007acc; color: white; font-weight: bold; }
+						tr:nth-child(even) { background: #f9f9f9; }
+						.formula { font-family: monospace; background: #f0f0f0; padding: 2px 4px; border-radius: 3px; }
+						.status-closed { color: #d32f2f; font-weight: bold; }
+						.status-open { color: #388e3c; font-weight: bold; }
+						.status-continuing { color: #1976d2; }
+						.conclusion { margin-top: 20px; padding: 15px; background: #e3f2fd; border-left: 4px solid #2196f3; }
+					</style>
+				</head>
+				<body>
+					<div class="container">
+						<h1>Tableau Proof Steps: ${expression}</h1>
+						<table>
+							<thead>
+								<tr>
+									<th>Step</th>
+									<th>Action</th>
+									<th>Formula</th>
+									<th>Rule</th>
+									<th>Justification</th>
+									<th>Status</th>
+								</tr>
+							</thead>
+							<tbody>
+								${steps.map(s => `
+									<tr>
+										<td>${s.step}</td>
+										<td>${s.action}</td>
+										<td class="formula">${s.formula}</td>
+										<td>${s.rule}</td>
+										<td>${s.justification}</td>
+										<td class="status-${s.branchStatus}">${s.branchStatus}</td>
+									</tr>
+								`).join('')}
+							</tbody>
+						</table>
+						<div class="conclusion">
+							<strong>Conclusion:</strong> ${checkAllBranchesClosed(root) ? 'All branches closed - formula is unsatisfiable' : 'Some branches open - formula is satisfiable'}
+						</div>
+					</div>
+				</body>
+				</html>
+			`
+		}
+		
+		// Create download menu
+		const formatMenu = document.createElement('div')
+		formatMenu.style.cssText = `
+			position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+			background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+			z-index: 10000; font-family: Arial, sans-serif;
+		`
+		formatMenu.innerHTML = `
+			<h3 style="margin-top: 0;">Export Proof Steps</h3>
+			<p>Choose format:</p>
+			<button id="export-json" style="margin: 5px; padding: 10px 15px; cursor: pointer;">📄 JSON</button>
+			<button id="export-csv" style="margin: 5px; padding: 10px 15px; cursor: pointer;">📊 CSV</button>
+			<button id="export-markdown" style="margin: 5px; padding: 10px 15px; cursor: pointer;">📝 Markdown</button>
+			<button id="export-html" style="margin: 5px; padding: 10px 15px; cursor: pointer;">🌐 HTML</button>
+			<br><br>
+			<button id="cancel-export" style="margin: 5px; padding: 10px 15px; cursor: pointer; background: #ccc;">Cancel</button>
+		`
+		
+		document.body.appendChild(formatMenu)
+		
+		const downloadFile = (content: string, filename: string, mimeType: string) => {
+			const blob = new Blob([content], { type: mimeType })
+			const url = URL.createObjectURL(blob)
+			const a = document.createElement('a')
+			a.href = url
+			a.download = filename
+			document.body.appendChild(a)
+			a.click()
+			document.body.removeChild(a)
+			URL.revokeObjectURL(url)
+			document.body.removeChild(formatMenu)
+		}
+		
+		const baseFilename = `tableau-steps-${expression?.replace(/[^a-zA-Z0-9]/g, '_') || 'proof'}`
+		
+		formatMenu.querySelector('#export-json')?.addEventListener('click', () => 
+			downloadFile(formats.json, `${baseFilename}.json`, 'application/json'))
+		formatMenu.querySelector('#export-csv')?.addEventListener('click', () => 
+			downloadFile(formats.csv, `${baseFilename}.csv`, 'text/csv'))
+		formatMenu.querySelector('#export-markdown')?.addEventListener('click', () => 
+			downloadFile(formats.markdown, `${baseFilename}.md`, 'text/markdown'))
+		formatMenu.querySelector('#export-html')?.addEventListener('click', () => 
+			downloadFile(formats.html, `${baseFilename}.html`, 'text/html'))
+		formatMenu.querySelector('#cancel-export')?.addEventListener('click', () => 
+			document.body.removeChild(formatMenu))
+		
+	}, [root, expression])
+	
+	// Arrow key navigation helper
+	const navigateWithArrows = useCallback((direction: 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight') => {
+		if (!root) return
+		
+		// Build node hierarchy for navigation
+		const hierarchy = d3.hierarchy(root)
+		const allNodes = hierarchy.descendants()
+		
+		if (!selectedNodeId) {
+			// No selection - select root
+			setSelectedNodeId(root.id)
+			return
+		}
+		
+		const currentNode = allNodes.find(n => n.data.id === selectedNodeId)
+		if (!currentNode) return
+		
+		let nextNode: d3.HierarchyNode<TableauNode> | undefined
+		
+		switch (direction) {
+			case 'ArrowUp':
+				// Navigate to parent
+				nextNode = currentNode.parent || undefined
+				break
+			case 'ArrowDown':
+				// Navigate to first child
+				nextNode = currentNode.children?.[0]
+				break
+			case 'ArrowLeft':
+				// Navigate to previous sibling
+				if (currentNode.parent) {
+					const siblings = currentNode.parent.children || []
+					const currentIndex = siblings.indexOf(currentNode)
+					nextNode = siblings[currentIndex - 1]
+				}
+				break
+			case 'ArrowRight':
+				// Navigate to next sibling
+				if (currentNode.parent) {
+					const siblings = currentNode.parent.children || []
+					const currentIndex = siblings.indexOf(currentNode)
+					nextNode = siblings[currentIndex + 1]
+				}
+				break
+		}
+		
+		if (nextNode) {
+			setSelectedNodeId(nextNode.data.id)
+		}
+	}, [root, selectedNodeId])
 	
 	// Helper to get rule badge for a node (enhanced with ZLFN advanced logic)
 	function getRuleBadge(node: TableauNode): { text: string; color: string; tooltip: string } | null {
@@ -904,7 +1433,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 		zoomRoot.attr('transform', previousTransform.toString())
 		svg.call(zoomBehavior.transform as any, previousTransform)
 
-		// Links (branches) - highlight path to selected node
+		// Enhanced Links (branches) - α/β visual distinction + path highlighting
 		g.selectAll('path.link')
 			.data(tree.links())
 			.enter()
@@ -914,12 +1443,55 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 			.attr('stroke', (d: any) => {
 				const sourceInPath = pathToRoot.includes(d.source.data.id)
 				const targetInPath = pathToRoot.includes(d.target.data.id)
-				return (sourceInPath && targetInPath) ? 'rgba(255,193,7,0.8)' : 'rgba(255,255,255,0.3)'
+				
+				// Path highlighting takes priority
+				if (sourceInPath && targetInPath) return 'rgba(255,193,7,0.8)'
+				
+				// Enhanced branch coloring based on rule type
+				const sourceNode = d.source.data
+				if (!sourceNode.ast) return 'rgba(255,255,255,0.3)'
+				
+				if (isAlpha(sourceNode.ast)) return 'rgba(33,150,243,0.6)' // Blue for α (conjunction)
+				if (isBeta(sourceNode.ast)) return 'rgba(255,152,0,0.6)' // Orange for β (disjunction)
+				if (isImplication(sourceNode.ast)) return 'rgba(156,39,176,0.6)' // Purple for implication
+				if (isBiconditional(sourceNode.ast)) return 'rgba(233,30,99,0.6)' // Pink for biconditional
+				if (isQuantifier(sourceNode.ast)) return 'rgba(103,58,183,0.6)' // Deep purple for quantifiers
+				if (isDoubleNeg(sourceNode.ast)) return 'rgba(76,175,80,0.6)' // Green for double negation
+				return 'rgba(255,255,255,0.3)' // Default gray
 			})
 			.attr('stroke-width', (d: any) => {
 				const sourceInPath = pathToRoot.includes(d.source.data.id)
 				const targetInPath = pathToRoot.includes(d.target.data.id)
-				return (sourceInPath && targetInPath) ? 2.5 : 1.5
+				
+				// Path highlighting
+				if (sourceInPath && targetInPath) return 3.0
+				
+				// Enhanced width based on rule type
+				const sourceNode = d.source.data
+				if (!sourceNode.ast) return 1.5
+				
+				if (isAlpha(sourceNode.ast)) return 2.2 // Thicker for α (single path)
+				if (isBeta(sourceNode.ast)) return 1.8 // Medium for β (splits)
+				if (isImplication(sourceNode.ast)) return 2.0 // Medium-thick for implication
+				return 1.5 // Default
+			})
+			.attr('stroke-dasharray', (d: any) => {
+				const sourceInPath = pathToRoot.includes(d.source.data.id)
+				const targetInPath = pathToRoot.includes(d.target.data.id)
+				
+				// Solid for path highlighting
+				if (sourceInPath && targetInPath) return 'none'
+				
+				// Different dash patterns for different rule types
+				const sourceNode = d.source.data
+				if (!sourceNode.ast) return 'none'
+				
+				if (isAlpha(sourceNode.ast)) return 'none' // Solid for α
+				if (isBeta(sourceNode.ast)) return '6,4' // Dashed for β
+				if (isImplication(sourceNode.ast)) return '10,3' // Long dash for implication
+				if (isDoubleNeg(sourceNode.ast)) return '3,3' // Dotted for double negation
+				if (isQuantifier(sourceNode.ast)) return '8,2,2,2' // Dash-dot for quantifiers
+				return 'none' // Default solid
 			})
 			.attr('d', (d: any) => {
 				if (layoutMode === 'hierarchy') {
@@ -1174,153 +1746,58 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 
 	return (
 		<Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }} ref={containerRef}>
-			<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 0.5 }}>
-				<Tooltip title="Tree: Spaced layout with curved links, larger nodes. Hierarchy: Compact layout with straight links, smaller nodes.">
-					<ToggleButtonGroup
-						value={layoutMode}
-						exclusive
-						onChange={(_, v) => v && setLayoutMode(v)}
-						size="small"
-						color="primary"
-					>
-						<ToggleButton value="tree">Tree</ToggleButton>
-						<ToggleButton value="hierarchy">Hierarchy</ToggleButton>
-					</ToggleButtonGroup>
-				</Tooltip>
-				
-				<FormControl size="small" sx={{ minWidth: 120 }}>
-					<InputLabel>Logic Mode</InputLabel>
-					<Select
-						value={logicMode}
-						label="Logic Mode"
-						onChange={(e) => setLogicMode(e.target.value as LogicMode)}
-					>
-						<MenuItem value="classical">Classical</MenuItem>
-						<MenuItem value="epistemic">Epistemic</MenuItem>
-						<MenuItem value="deontic">Deontic</MenuItem>
-						<MenuItem value="temporal">Temporal</MenuItem>
-						<MenuItem value="informal">Informal</MenuItem>
-						<MenuItem value="paraconsistent">Paraconsistent</MenuItem>
-						<MenuItem value="fuzzy">Fuzzy</MenuItem>
-					</Select>
-				</FormControl>
-				
-				<Chip 
-					label={logicMode} 
-					size="small" 
-					color="primary" 
-					variant="outlined"
-				/>
-				
-				<span style={{ fontSize: 12, opacity: 0.7 }}>Semantic Tableau • {expression || '—'}</span>
-				
-				<Tooltip title="Keyboard Shortcuts: D (decompose), X (close), A (auto expand), C (auto close), Ctrl+E (export)">
-					<Chip label="⌨️" size="small" variant="outlined" />
-				</Tooltip>
-				
-				{/* Proof Status */}
-				<Tooltip title={
-					proofStatus.errors.length > 0 
-						? `Errors: ${proofStatus.errors.join(', ')}`
-						: `Open: ${proofStatus.openBranches}, Closed: ${proofStatus.closedBranches}`
-				}>
-					<Chip 
-						label={
-							proofStatus.isComplete 
-								? "✓ Complete" 
-								: proofStatus.isValid 
-									? `${proofStatus.openBranches}/${proofStatus.openBranches + proofStatus.closedBranches} Open`
-									: "⚠ Invalid"
-						}
-						size="small" 
-						color={
-							proofStatus.isComplete 
-								? "success" 
-								: proofStatus.isValid 
-									? "info" 
-									: "error"
-						}
-						variant="outlined"
-					/>
-				</Tooltip>
-			</Box>
+			<CompactTableauMenu
+				layoutMode={layoutMode}
+				setLayoutMode={setLayoutMode}
+				logicMode={logicMode}
+				setLogicMode={setLogicMode}
+				expression={expression}
+				proofStatus={proofStatus}
+				stepMode={stepMode}
+				setStepMode={setStepMode}
+				maxDepth={maxDepth}
+				setMaxDepth={setMaxDepth}
+				currentStep={currentStep}
+				setCurrentStep={setCurrentStep}
+				busy={busy}
+				autoExpand={autoExpand}
+				autoClose={autoClose}
+				stepExpand={stepExpand}
+				exportTableau={exportTableau}
+				importTableau={importTableau}
+				generateProofText={generateProofText}
+				generateLatexTableau={generateLatexTableau}
+				exportTableauImage={exportTableauImage}
+				exportProofSteps={exportProofSteps}
+				setComparisonOpen={setComparisonOpen}
+				compact={compact}
+				root={root}
+			/>
 			<Box sx={{ flex: 1, position: 'relative' }}>
 				<svg ref={svgRef} width={size.width} height={size.height} />
 			</Box>
 
-			{/* Top-level auto operations and progress */}
-			<Box sx={{ position: 'absolute', top: 40, right: 12, display: 'flex', gap: 1, flexDirection: 'column' }}>
-				<Box sx={{ display: 'flex', gap: 1 }}>
-					<Button size="small" variant="outlined" color="secondary" onClick={autoExpand} disabled={!!busy.mode}>
-						{stepMode ? `Auto Expand (Depth ${maxDepth})` : 'Auto Expand'}
-					</Button>
-					<Button size="small" variant="outlined" color="secondary" onClick={autoClose} disabled={!!busy.mode}>Auto Close</Button>
-				</Box>
-				
-				{stepMode && (
-					<Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-						<Button size="small" variant="outlined" color="info" onClick={stepExpand} disabled={!!busy.mode}>
-							Step ({currentStep})
-						</Button>
-						<Box sx={{ minWidth: 100 }}>
-							<Typography variant="caption" sx={{ fontSize: 10 }}>Depth: {maxDepth}</Typography>
-							<Slider
-								size="small"
-								value={maxDepth}
-								onChange={(_, value) => setMaxDepth(value as number)}
-								min={1}
-								max={10}
-								step={1}
-								valueLabelDisplay="auto"
-							/>
-						</Box>
-					</Box>
-				)}
-				
-				<Box sx={{ display: 'flex', gap: 1 }}>
-					<FormControlLabel
-						control={
-							<Switch
-								size="small"
-								checked={stepMode}
-								onChange={(e) => {
-									setStepMode(e.target.checked)
-									setCurrentStep(0)
-								}}
-							/>
-						}
-						label={<Typography variant="caption">Step Mode</Typography>}
-					/>
-				</Box>
-				
-				<Box sx={{ display: 'flex', gap: 1 }}>
-					<Button size="small" variant="outlined" color="primary" onClick={exportTableau}>Export</Button>
-					<Button size="small" variant="outlined" color="primary" component="label">
-						Import
-						<input type="file" accept=".json" onChange={importTableau} style={{ display: 'none' }} />
-					</Button>
-				</Box>
-				{selectedNodeId && (
-					<Box sx={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', textAlign: 'center' }}>
-						Selected: {(() => {
-							if (!root) return 'Node'
-							const findNodeById = (node: TableauNode): TableauNode | null => {
-								if (node.id === selectedNodeId) return node
-								if (node.children) {
-									for (const child of node.children) {
-										const found = findNodeById(child)
-										if (found) return found
-									}
+			{/* Selected Node Info */}
+			{selectedNodeId && (
+				<Box sx={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', textAlign: 'center', p: 1 }}>
+					Selected: {(() => {
+						if (!root) return 'Node'
+						const findNodeById = (node: TableauNode): TableauNode | null => {
+							if (node.id === selectedNodeId) return node
+							if (node.children) {
+								for (const child of node.children) {
+									const found = findNodeById(child)
+									if (found) return found
 								}
-								return null
 							}
-							const selectedNode = findNodeById(root)
-							return selectedNode?.label || 'Node'
-						})()}
-						{pathToRoot.length > 1 && ` (Path: ${pathToRoot.length - 1} steps)`}
-					</Box>
-				)}
-			</Box>
+							return null
+						}
+						const selectedNode = findNodeById(root)
+						return selectedNode?.label || 'Node'
+					})()}
+					{pathToRoot.length > 1 && ` (Path: ${pathToRoot.length - 1} steps)`}
+				</Box>
+			)}
 			{busy.mode && (
 				<Box sx={{ position: 'absolute', top: 8, left: 0, right: 0, px: 4 }}>
 					<LinearProgress variant="determinate" value={busy.progress} />
@@ -1369,6 +1846,14 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 						nodeId={selectedNodeForDialog?.data?.id || selectedNodeForDialog?.id || 'node'}
 					/>
 				</>
+			)}
+			
+			{!compact && (
+				<TableauComparison
+					open={comparisonOpen}
+					onClose={() => setComparisonOpen(false)}
+					initialExpression={expression}
+				/>
 			)}
 		</Box>
 	)
