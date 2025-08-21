@@ -11,6 +11,7 @@ import { downloadJson, readJsonFile } from '../services/io'
 import { CommandBar, ControlsDrawer, InspectorDrawer, StatusBar } from '../components/Visualizer'
 import AdvancedSearch from '../components/Search/AdvancedSearch'
 import { usePerformanceMonitor } from '../hooks/usePerformanceMonitor'
+import { useGlobalShortcuts, createShortcut } from '../hooks/useGlobalShortcuts'
 
 const LogicVisualizer: React.FC = () => {
 	const { 
@@ -286,39 +287,21 @@ const LogicVisualizer: React.FC = () => {
 		}
 	}
 
-	// Keyboard shortcuts
-	React.useEffect(() => {
-		const handleKeyDown = (e: KeyboardEvent) => {
-			if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-			
-			const k = e.key.toLowerCase()
-			if (e.ctrlKey || e.metaKey) {
-				if (k === 'k') {
-					e.preventDefault()
-					setAdvancedSearchOpen(true)
-				}
-				return
-			}
-			
-			if (k === 'g') { 
-				showInfo('View: Graph', 'info') 
-			}
-			if (k === 'f') { 
-				// Fit graph - would need to be implemented in graph component
-				showInfo('Fit Graph', 'info') 
-			}
-			if (k === 'c') { 
-				// Center graph - would need to be implemented in graph component
-				showInfo('Center Graph', 'info') 
-			}
-			if (k === '?') {
-				setShortcutsOpen(true)
-			}
-		}
+	// Keyboard shortcuts using global shortcuts hook
+	const shortcuts = React.useMemo(() => [
+		createShortcut('k', () => setAdvancedSearchOpen(true), 'Open Advanced Search', { ctrl: true }),
+		createShortcut('g', () => showInfo('View: Graph', 'info'), 'Graph View'),
+		createShortcut('f', () => showInfo('Fit Graph', 'info'), 'Fit Graph'),
+		createShortcut('c', () => showInfo('Center Graph', 'info'), 'Center Graph'),
+		createShortcut('?', () => setShortcutsOpen(true), 'Show Shortcuts')
+	], [])
 
-		window.addEventListener('keydown', handleKeyDown)
-		return () => window.removeEventListener('keydown', handleKeyDown)
-	}, [])
+	useGlobalShortcuts(shortcuts, {
+		disableInInputs: true,
+		disableInDialogs: true,
+		debugLogging: false,
+		componentName: 'LogicVisualizer'
+	})
 
 	// Window size state for responsive drawer widths
 	const [windowWidth, setWindowWidth] = React.useState(() => 

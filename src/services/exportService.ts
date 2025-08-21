@@ -9,6 +9,38 @@ interface ExportData {
   svgElement?: SVGSVGElement;
 }
 
+// Tableau-specific interfaces
+export interface TableauNode {
+  id: string;
+  label: string;
+  type: 'root' | 'open' | 'closed' | 'intermediate';
+  children?: TableauNode[];
+  ast?: any; // AstNodeRec type
+  decomposed?: boolean;
+}
+
+export interface LatexExportOptions {
+  includeProofSteps?: boolean;
+  usePackages?: string[];
+  documentClass?: string;
+}
+
+export interface ProofStep {
+  step: number;
+  action: string;
+  formula: string;
+  rule: string;
+  justification: string;
+  branchStatus: 'open' | 'closed' | 'continuing';
+}
+
+export interface ImageExportOptions {
+  format: 'png' | 'svg';
+  backgroundColor?: string;
+  padding?: number;
+  filename?: string;
+}
+
 class ExportService {
   async exportObject(data: ExportData, options: ExportOptions): Promise<void> {
     const { object, svgElement } = data;
@@ -369,6 +401,281 @@ class ExportService {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  // Tableau-specific export methods
+  
+  /**
+   * Generate LaTeX document for semantic tableau
+   */
+  generateTableauLatex(
+    tableauRoot: TableauNode, 
+    expression: string,
+    options: LatexExportOptions = {}
+  ): string {
+    const {
+      includeProofSteps = true,
+      usePackages = ['amsmath', 'amsfonts', 'amssymb', 'proof', 'bussproofs', 'tikz'],
+      documentClass = 'article'
+    } = options;
+
+    const lines: string[] = [];
+    
+    // LaTeX document header
+    lines.push(`\\documentclass{${documentClass}}`);
+    usePackages.forEach(pkg => {
+      lines.push(`\\usepackage{${pkg}}`);
+    });
+    lines.push('\\usetikzlibrary{trees}');
+    lines.push('');
+    lines.push('\\begin{document}');
+    lines.push('');
+    lines.push(`\\title{Semantic Tableau for: $${this.latexifyFormula(expression)}$}`);
+    lines.push('\\maketitle');
+    lines.push('');
+    
+    // Generate tableau using tikz
+    lines.push('\\begin{figure}[h]');
+    lines.push('\\centering');
+    lines.push('\\begin{tikzpicture}[');
+    lines.push('  level distance=1.5cm,');
+    lines.push('  level 1/.style={sibling distance=4cm},');
+    lines.push('  level 2/.style={sibling distance=2cm},');
+    lines.push('  level 3/.style={sibling distance=1cm}');
+    lines.push(']');
+    
+    // Generate tree structure
+    const generateLatexNode = (node: TableauNode): string => {
+      const formula = this.latexifyFormula(node.label);
+      let nodeStr = `node {$${formula}$}`;
+      
+      if (node.type === 'closed') {
+        nodeStr += ' [fill=red!20]';
+      } else if (node.type === 'root') {
+        nodeStr += ' [fill=blue!20]';
+      }
+      
+      if (node.children && node.children.length > 0) {
+        const childrenStr = node.children.map(child => 
+          `child { ${generateLatexNode(child)} }`
+        ).join(' ');
+        nodeStr += ` ${childrenStr}`;
+      }
+      
+      return nodeStr;
+    };
+    
+    lines.push(`\\${generateLatexNode(tableauRoot)};`);
+    lines.push('\\end{tikzpicture}');
+    lines.push(`\\caption{Semantic tableau for $${this.latexifyFormula(expression)}$}`);
+    lines.push('\\end{figure}');
+    lines.push('');
+    
+    if (includeProofSteps) {
+      lines.push('\\section{Proof Steps}');
+      lines.push('\\begin{enumerate}');
+      
+      const addLatexProofSteps = (node: TableauNode) => {
+        const formula = this.latexifyFormula(node.label);
+        lines.push(`\\item $${formula}$`);
+        
+        if (node.children && node.children.length > 0) {
+          node.children.forEach(child => addLatexProofSteps(child));
+        }
+        
+        if (node.type === 'closed') {
+          lines.push('\\item[$\\bot$] Contradiction - branch closes');
+        }
+      };
+      
+      addLatexProofSteps(tableauRoot);
+      lines.push('\\end{enumerate}');
+    }
+    
+    lines.push('');
+    lines.push('\\end{document}');
+    
+    return lines.join('\n');
+  }
+
+  /**
+   * Export tableau as LaTeX file
+   */
+  exportTableauLatex(
+    tableauRoot: TableauNode,
+    expression: string,
+    options: LatexExportOptions = {}
+  ): void {
+    const latexContent = this.generateTableauLatex(tableauRoot, expression, options);
+    const filename = `tableau-${expression.replace(/[^a-zA-Z0-9]/g, '_')}.tex`;
+    
+    const blob = new Blob([latexContent], { type: 'text/plain' });
+    this.downloadBlob(blob, filename);
+  }
+
+  /**
+   * Export tableau as image (PNG or SVG)
+   */
+  async exportTableauImage(
+    svgElement: SVGSVGElement,
+    options: ImageExportOptions
+  ): Promise<void> {
+    const {
+      format,
+      backgroundColor = '#1a1a1a',
+      padding = 50,
+      filename
+    } = options;
+
+    // Clone the SVG to avoid modifying the original
+    const clonedSvg = svgElement.cloneNode(true) as SVGElement;
+    
+    // Set background for better visibility in exports
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('width', '100%');
+    rect.setAttribute('height', '100%');
+    rect.setAttribute('fill', backgroundColor);
+    clonedSvg.insertBefore(rect, clonedSvg.firstChild);
+    
+    // Get the bounding box and set proper dimensions
+    const bbox = svgElement.getBBox();
+    clonedSvg.setAttribute('width', String(bbox.width + padding * 2));
+    clonedSvg.setAttribute('height', String(bbox.height + padding * 2));
+    clonedSvg.setAttribute('viewBox', `${bbox.x - padding} ${bbox.y - padding} ${bbox.width + padding * 2} ${bbox.height + padding * 2}`);
+    
+    const defaultFilename = filename || `tableau-export.${format}`;
+    
+    if (format === 'svg') {
+      // Direct SVG export
+      const svgData = new XMLSerializer().serializeToString(clonedSvg);
+      const blob = new Blob([svgData], { type: 'image/svg+xml' });
+      this.downloadBlob(blob, defaultFilename);
+    } else {
+      // PNG export via canvas
+      return new Promise((resolve, reject) => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+        
+        const img = new Image();
+        const svgData = new XMLSerializer().serializeToString(clonedSvg);
+        const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
+        
+        img.onload = () => {
+          canvas.width = bbox.width + padding * 2;
+          canvas.height = bbox.height + padding * 2;
+          ctx.drawImage(img, 0, 0);
+          
+          canvas.toBlob((blob) => {
+            if (blob) {
+              this.downloadBlob(blob, defaultFilename);
+              resolve();
+            } else {
+              reject(new Error('Failed to create PNG blob'));
+            }
+            URL.revokeObjectURL(url);
+          }, 'image/png');
+        };
+        
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error('Failed to load SVG image'));
+        };
+        
+        img.src = url;
+      });
+    }
+  }
+
+  /**
+   * Export proof steps in various formats
+   */
+  exportProofSteps(
+    steps: ProofStep[],
+    format: 'json' | 'csv' | 'markdown' | 'html',
+    filename?: string
+  ): void {
+    const defaultFilename = filename || `proof-steps.${format}`;
+    
+    switch (format) {
+      case 'json':
+        const jsonContent = JSON.stringify(steps, null, 2);
+        const jsonBlob = new Blob([jsonContent], { type: 'application/json' });
+        this.downloadBlob(jsonBlob, defaultFilename);
+        break;
+        
+      case 'csv':
+        const csvHeader = 'Step,Action,Formula,Rule,Justification,Branch Status\n';
+        const csvRows = steps.map(step => 
+          `${step.step},"${step.action}","${step.formula}","${step.rule}","${step.justification}","${step.branchStatus}"`
+        ).join('\n');
+        const csvContent = csvHeader + csvRows;
+        const csvBlob = new Blob([csvContent], { type: 'text/csv' });
+        this.downloadBlob(csvBlob, defaultFilename);
+        break;
+        
+      case 'markdown':
+        let mdContent = '# Proof Steps\n\n';
+        mdContent += '| Step | Action | Formula | Rule | Justification | Branch Status |\n';
+        mdContent += '|------|--------|---------|------|---------------|---------------|\n';
+        steps.forEach(step => {
+          mdContent += `| ${step.step} | ${step.action} | \`${step.formula}\` | ${step.rule} | ${step.justification} | ${step.branchStatus} |\n`;
+        });
+        const mdBlob = new Blob([mdContent], { type: 'text/markdown' });
+        this.downloadBlob(mdBlob, defaultFilename);
+        break;
+        
+      case 'html':
+        let htmlContent = '<!DOCTYPE html>\n<html>\n<head>\n<title>Proof Steps</title>\n';
+        htmlContent += '<style>table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ddd;padding:8px;text-align:left;}th{background-color:#f2f2f2;}</style>\n';
+        htmlContent += '</head>\n<body>\n<h1>Proof Steps</h1>\n<table>\n';
+        htmlContent += '<tr><th>Step</th><th>Action</th><th>Formula</th><th>Rule</th><th>Justification</th><th>Branch Status</th></tr>\n';
+        steps.forEach(step => {
+          htmlContent += `<tr><td>${step.step}</td><td>${this.escapeHTML(step.action)}</td><td><code>${this.escapeHTML(step.formula)}</code></td><td>${this.escapeHTML(step.rule)}</td><td>${this.escapeHTML(step.justification)}</td><td>${step.branchStatus}</td></tr>\n`;
+        });
+        htmlContent += '</table>\n</body>\n</html>';
+        const htmlBlob = new Blob([htmlContent], { type: 'text/html' });
+        this.downloadBlob(htmlBlob, defaultFilename);
+        break;
+        
+      default:
+        throw new Error(`Unsupported proof steps format: ${format}`);
+    }
+  }
+
+  /**
+   * Helper to convert logical formulas to LaTeX
+   */
+  private latexifyFormula(formula: string): string {
+    return formula
+      .replace(/¬/g, '\\neg ')
+      .replace(/∧/g, ' \\land ')
+      .replace(/∨/g, ' \\lor ')
+      .replace(/→/g, ' \\rightarrow ')
+      .replace(/↔/g, ' \\leftrightarrow ')
+      .replace(/∀/g, '\\forall ')
+      .replace(/∃/g, '\\exists ')
+      .replace(/⊻/g, ' \\oplus ')
+      .replace(/⊥/g, '\\bot');
+  }
+
+  /**
+   * Unified download helper for all export types
+   */
+  downloadFile(content: string | Blob, filename: string, mimeType?: string): void {
+    let blob: Blob;
+    
+    if (content instanceof Blob) {
+      blob = content;
+    } else {
+      blob = new Blob([content], { type: mimeType || 'text/plain' });
+    }
+    
+    this.downloadBlob(blob, filename);
   }
 }
 

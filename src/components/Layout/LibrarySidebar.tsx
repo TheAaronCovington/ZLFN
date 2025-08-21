@@ -5,52 +5,58 @@ import PushPinIcon from '@mui/icons-material/PushPin'
 import { Link as RouterLink } from 'react-router-dom'
 import { getDocumentList } from '../../services/docs'
 import type { DocMeta } from '../../services/docs'
+import { storage } from '../../services/storage'
 
 const PINS_KEY = 'xv_pins'
 const RECENTS_KEY = 'xv_recents'
 const COLLAPSE_KEY = 'xv_sidebar_collapse'
 const ONLY_PINS_KEY = 'xv_sidebar_onlypins'
 
-function loadSet(key: string): Set<string> {
-	try {
-		const raw = localStorage.getItem(key)
-		return new Set<string>(raw ? JSON.parse(raw) : [])
-	} catch { return new Set() }
-}
-function saveSet(key: string, set: Set<string>) {
-	localStorage.setItem(key, JSON.stringify(Array.from(set)))
-}
-
 export const LibrarySidebar: React.FC = () => {
 	const [open, setOpen] = useState(false)
 	const [docs, setDocs] = useState<DocMeta[]>([])
 	const [query, setQuery] = useState('')
-	const [pins, setPins] = useState<Set<string>>(() => loadSet(PINS_KEY))
-	const [recents, setRecents] = useState<Set<string>>(() => loadSet(RECENTS_KEY))
-    const [showPinned, setShowPinned] = useState<boolean>(() => { try { return JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}')?.pinned !== false } catch { return true } })
-    const [showRecent, setShowRecent] = useState<boolean>(() => { try { return JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}')?.recent !== false } catch { return true } })
-    const [showAll, setShowAll] = useState<boolean>(() => { try { return JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}')?.all !== false } catch { return true } })
+	const [pins, setPins] = useState<Set<string>>(() => storage.getSet(PINS_KEY))
+	const [recents, setRecents] = useState<Set<string>>(() => storage.getSet(RECENTS_KEY))
+    const [showPinned, setShowPinned] = useState<boolean>(() => {
+		const collapseState = storage.getJSON<{pinned?: boolean}>(COLLAPSE_KEY, {})
+		return collapseState?.pinned !== false
+	})
+    const [showRecent, setShowRecent] = useState<boolean>(() => {
+		const collapseState = storage.getJSON<{recent?: boolean}>(COLLAPSE_KEY, {})
+		return collapseState?.recent !== false
+	})
+    const [showAll, setShowAll] = useState<boolean>(() => {
+		const collapseState = storage.getJSON<{all?: boolean}>(COLLAPSE_KEY, {})
+		return collapseState?.all !== false
+	})
     const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set())
-    const [onlyPins, setOnlyPins] = useState<boolean>(() => { try { return localStorage.getItem(ONLY_PINS_KEY) === '1' } catch { return false } })
+    const [onlyPins, setOnlyPins] = useState<boolean>(() => storage.getItem(ONLY_PINS_KEY) === '1')
 
 	useEffect(() => {
 		getDocumentList().then(setDocs).catch(() => setDocs([]))
 	}, [])
 
-	useEffect(() => saveSet(PINS_KEY, pins), [pins])
-	useEffect(() => saveSet(RECENTS_KEY, recents), [recents])
+	useEffect(() => { storage.setSet(PINS_KEY, pins) }, [pins])
+	useEffect(() => { storage.setSet(RECENTS_KEY, recents) }, [recents])
 	useEffect(() => {
-		const onStorage = (e: StorageEvent) => {
-			if (e.key === PINS_KEY) setPins(loadSet(PINS_KEY))
-			if (e.key === RECENTS_KEY) setRecents(loadSet(RECENTS_KEY))
+		const unsubscribePins = storage.onStorageChange(PINS_KEY, () => {
+			setPins(storage.getSet(PINS_KEY))
+		})
+		const unsubscribeRecents = storage.onStorageChange(RECENTS_KEY, () => {
+			setRecents(storage.getSet(RECENTS_KEY))
+		})
+		return () => {
+			unsubscribePins()
+			unsubscribeRecents()
 		}
-		window.addEventListener('storage', onStorage)
-		return () => window.removeEventListener('storage', onStorage)
 	}, [])
 	useEffect(() => {
-		try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify({ pinned: showPinned, recent: showRecent, all: showAll })) } catch {}
+		storage.setJSON(COLLAPSE_KEY, { pinned: showPinned, recent: showRecent, all: showAll })
 	}, [showPinned, showRecent, showAll])
-    useEffect(() => { try { localStorage.setItem(ONLY_PINS_KEY, onlyPins ? '1' : '0') } catch {} }, [onlyPins])
+    useEffect(() => {
+		storage.setItem(ONLY_PINS_KEY, onlyPins ? '1' : '0')
+	}, [onlyPins])
 
 	const allTags = useMemo(() => {
 		const s = new Set<string>()

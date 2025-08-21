@@ -170,16 +170,25 @@
   - **Dependencies**: zlfnAPI, event system
 
 ### Export & Import Services
-- **`src/services/exportService.ts`** *(~377 lines)*
-  - **Features**: Multi-format export (JSON, PDF, DOCX, SVG, PNG, Markdown)
+- **`src/services/exportService.ts`** *(~685 lines)* 🟡 **ENHANCED**
+  - **Features**: Multi-format export (JSON, PDF, DOCX, SVG, PNG, Markdown, LaTeX, Proof Steps)
   - **Classes**: `ExportService` with format-specific methods
   - **Functions**: Format conversion, file generation, download triggers
-  - **Dependencies**: File APIs, canvas manipulation
+  - **New Tableau Features**: LaTeX export, image export (PNG/SVG), proof steps export (JSON/CSV/Markdown/HTML)
+  - **Interfaces**: `TableauNode`, `LatexExportOptions`, `ProofStep`, `ImageExportOptions`
+  - **Dependencies**: File APIs, canvas manipulation, LaTeX generation
 
 - **`src/services/io.ts`**
   - **Features**: Basic file I/O utilities
   - **Functions**: `downloadJson`, `readJsonFile`
   - **Dependencies**: File API, JSON parsing
+
+- **`src/services/storage.ts`** *(~200 lines)* 🆕 **NEW**
+  - **Features**: Consolidated localStorage operations with error handling
+  - **Functions**: `getItem`, `setItem`, `getJSON`, `setJSON`, `getSet`, `setSet`, `onStorageChange`
+  - **Classes**: `StorageServiceImpl` with cross-tab synchronization
+  - **Compatibility**: Legacy functions for gradual migration
+  - **Dependencies**: Browser localStorage API
 
 ### Document Services
 - **`src/services/documentParser.ts`**
@@ -225,6 +234,14 @@
   - **Functions**: Metric collection, alert thresholds, optimization suggestions
   - **Types**: `PerformanceMetrics`, `PerformanceConfig`
   - **Dependencies**: Browser performance APIs
+
+### Interaction Hooks
+- **`src/hooks/useGlobalShortcuts.ts`** *(~250 lines)* 🆕 **NEW**
+  - **Features**: Consolidated keyboard shortcut handling with context detection
+  - **Functions**: `useGlobalShortcuts`, `createShortcut`, context detection, dynamic registration
+  - **Types**: `ShortcutBinding`, `ShortcutOptions`, `ShortcutContext`
+  - **Patterns**: Common shortcuts (fit, center, save, search, help, undo/redo)
+  - **Dependencies**: Keyboard event APIs, context detection logic
 
 ### Layout & Interaction Hooks
 - **`src/hooks/useResizeObserver.ts`**
@@ -409,22 +426,24 @@
 
 ---
 
-## Duplication Candidates
+## Duplication Status
 
-### Export/Import Logic
-- **Locations**: `LogicVisualizer.tsx`, `SemanticTableau.tsx`, `CompactTableauMenu.tsx`, `exportService.ts`, `io.ts`
-- **Duplication**: Multiple export implementations, file download patterns
-- **Solution**: Consolidate into `exportService.ts` with typed APIs
+### ✅ **RESOLVED** - Export/Import Logic
+- **Previous Locations**: `LogicVisualizer.tsx`, `SemanticTableau.tsx`, `CompactTableauMenu.tsx`, `exportService.ts`, `io.ts`
+- **Solution Implemented**: Enhanced `exportService.ts` with tableau-specific exports (LaTeX, PNG/SVG, proof steps)
+- **Status**: Consolidated into single service with typed APIs
 
-### Keyboard Shortcuts
-- **Locations**: `ZlfnGraph.tsx`, `LogicVisualizer.tsx`, `SemanticTableau.tsx`
-- **Duplication**: Similar keyboard event handling patterns
-- **Solution**: `useGlobalShortcuts` hook with pluggable bindings
+### ✅ **RESOLVED** - Keyboard Shortcuts  
+- **Previous Locations**: `ZlfnGraph.tsx`, `LogicVisualizer.tsx`, `SemanticTableau.tsx`
+- **Solution Implemented**: `useGlobalShortcuts` hook with context detection and pluggable bindings
+- **Status**: LogicVisualizer migrated; ZlfnGraph and SemanticTableau pending
 
-### Local Storage Patterns
-- **Locations**: `LogicVisualizer.tsx`, `SemanticTableau.tsx`, various components
-- **Duplication**: localStorage get/set with JSON parsing, error handling
-- **Solution**: `services/storage.ts` with typed helpers
+### ✅ **RESOLVED** - Local Storage Patterns
+- **Previous Locations**: `LogicVisualizer.tsx`, `SemanticTableau.tsx`, `LibrarySidebar.tsx`, various components
+- **Solution Implemented**: `services/storage.ts` with typed helpers and cross-tab synchronization
+- **Status**: LibrarySidebar migrated; other components pending
+
+### 🔄 **PENDING** - Status/Legend Components
 
 ### Status/Legend Components
 - **Locations**: `SemanticTableau.tsx`, various visualization components
