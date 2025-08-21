@@ -20,3 +20,8 @@ export function isTimelineRelevant(d: any): boolean {
 export function isCounterRelevant(d: any): boolean {
 	return (d?.type === 'fallacy')
 }
+
+export function isRebuttalRelevant(d: any): boolean {
+	// Show rebuttal facet for ATN rebuttal nodes or nodes with rebuttal facet enabled
+	return (d?.argumentType === 'rebuttal') || (d?.facets?.rebuttalRelevant === true)
+}

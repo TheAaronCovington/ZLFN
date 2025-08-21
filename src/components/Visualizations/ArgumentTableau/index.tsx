@@ -29,6 +29,14 @@ import {
   renderTableLayout,
   type TableRenderState 
 } from './tableRenderer'
+import { type FacetClick } from '../../../vis/facets/icons'
+import { 
+  VennDiagramDialog,
+  TruthTableDialog,
+  TimelineDialog,
+  CounterargumentsDialog,
+  RebuttalDialog
+} from '../../Enhanced'
 
 /**
  * Sample argument data for initial development and testing
@@ -208,6 +216,15 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
   // Refs for rendering containers
   const containerRef = useRef<HTMLDivElement>(null)
   const renderStateRef = useRef<TreeRenderState | TableRenderState | null>(null)
+
+  // Facet dialog states
+  const [facetDialogs, setFacetDialogs] = useState({
+    venn: { open: false, nodeData: null as ArgumentNode | null },
+    truth: { open: false, nodeData: null as ArgumentNode | null },
+    timeline: { open: false, nodeData: null as ArgumentNode | null },
+    counter: { open: false, nodeData: null as ArgumentNode | null },
+    rebuttal: { open: false, nodeData: null as ArgumentNode | null }
+  })
   // State management
   const [layoutMode, setLayoutMode] = useState<ATNLayoutMode>(() => {
     try {
@@ -286,6 +303,23 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
     onEdgeSelect?.(edge)
   }
 
+  // Handle facet clicks
+  const handleFacetClick: FacetClick = (type, _opts, datum, _target) => {
+    const nodeData = datum as ArgumentNode
+    setFacetDialogs(prev => ({
+      ...prev,
+      [type]: { open: true, nodeData }
+    }))
+  }
+
+  // Close facet dialogs
+  const closeFacetDialog = (type: keyof typeof facetDialogs) => {
+    setFacetDialogs(prev => ({
+      ...prev,
+      [type]: { open: false, nodeData: null }
+    }))
+  }
+
   // Render the visualization when layout mode or argument changes
   useEffect(() => {
     if (!containerRef.current) return
@@ -308,9 +342,9 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
         const state = initializeTreeSVG(containerRef.current, config)
         
         if (layoutMode === 'tree') {
-          renderTreeLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect)
+          renderTreeLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect, handleFacetClick)
         } else {
-          renderHierarchicalLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect)
+          renderHierarchicalLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect, handleFacetClick)
         }
         
         renderStateRef.current = state
@@ -342,9 +376,9 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
           const state = initializeTreeSVG(containerRef.current, config)
           
           if (layoutMode === 'tree') {
-            renderTreeLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect)
+            renderTreeLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect, handleFacetClick)
           } else {
-            renderHierarchicalLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect)
+            renderHierarchicalLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect, handleFacetClick)
           }
           
           renderStateRef.current = state
@@ -464,6 +498,73 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
           </Typography>
         </Box>
       )}
+
+      {/* Facet Dialogs */}
+      <VennDiagramDialog
+        open={facetDialogs.venn.open}
+        onClose={() => closeFacetDialog('venn')}
+        data={{
+          sets: [
+            { label: 'Set A', items: ['item1', 'item2'], color: '#7ac7ff' },
+            { label: 'Set B', items: ['item2', 'item3'], color: '#ff8a80' }
+          ],
+          intersection: ['item2']
+        }}
+        expression={facetDialogs.venn.nodeData?.label || ''}
+        nodeId={facetDialogs.venn.nodeData?.id}
+      />
+      
+      <TruthTableDialog
+        open={facetDialogs.truth.open}
+        onClose={() => closeFacetDialog('truth')}
+        ast={{
+          id: facetDialogs.truth.nodeData?.id || 'ast-node',
+          label: facetDialogs.truth.nodeData?.label || 'A',
+          children: []
+        }}
+        expression={facetDialogs.truth.nodeData?.label || ''}
+        nodeId={facetDialogs.truth.nodeData?.id}
+      />
+      
+      <TimelineDialog
+        open={facetDialogs.timeline.open}
+        onClose={() => closeFacetDialog('timeline')}
+        nodes={[
+          { 
+            id: '1', 
+            label: 'Event 1', 
+            type: 'premise', 
+            timestamp: Date.now(), 
+            confidence: 80,
+            dependencies: []
+          },
+          { 
+            id: '2', 
+            label: 'Event 2', 
+            type: 'conclusion', 
+            timestamp: Date.now() + 1000, 
+            confidence: 90,
+            dependencies: ['1']
+          }
+        ]}
+        edges={[
+          { from: '1', to: '2', rule: 'implication', strength: 0.8, timestamp: Date.now() }
+        ]}
+        nodeId={facetDialogs.timeline.nodeData?.id}
+      />
+      
+      <CounterargumentsDialog
+        open={facetDialogs.counter.open}
+        onClose={() => closeFacetDialog('counter')}
+        expression={facetDialogs.counter.nodeData?.label || ''}
+        nodeId={facetDialogs.counter.nodeData?.id}
+      />
+      
+      <RebuttalDialog
+        open={facetDialogs.rebuttal.open}
+        onClose={() => closeFacetDialog('rebuttal')}
+        nodeData={facetDialogs.rebuttal.nodeData}
+      />
     </Box>
   )
 }

@@ -11,6 +11,7 @@ import type {
   ArgumentRenderConfig
 } from './types'
 import { ARGUMENT_COLORS } from './types'
+import { createFacetIcons, type FacetClick } from '../../../vis/facets/icons'
 
 export interface TreeRenderState {
   svg: d3.Selection<SVGSVGElement, unknown, null, undefined>
@@ -135,7 +136,8 @@ export function renderTreeLayout(
   argumentData: ArgumentData,
   config: ArgumentRenderConfig,
   onNodeClick?: (node: ArgumentNode) => void,
-  onEdgeClick?: (edge: ArgumentEdge) => void
+  onEdgeClick?: (edge: ArgumentEdge) => void,
+  onFacetClick?: FacetClick
 ): void {
   const { g, width, height } = state
 
@@ -185,7 +187,7 @@ export function renderTreeLayout(
   renderTreeLinks(g, edgeLinks, config, onEdgeClick)
 
   // Render nodes
-  renderTreeNodes(g, nodes, config, onNodeClick)
+  renderTreeNodes(g, nodes, config, onNodeClick, onFacetClick)
 
   // Add attack and undercut relationships as curved links
   renderNonHierarchicalEdges(g, argumentData, nodes, config, onEdgeClick)
@@ -250,7 +252,8 @@ function renderTreeNodes(
   g: d3.Selection<SVGGElement, unknown, null, undefined>,
   nodes: TreeNodeDatum[],
   _config: ArgumentRenderConfig,
-  onNodeClick?: (node: ArgumentNode) => void
+  onNodeClick?: (node: ArgumentNode) => void,
+  onFacetClick?: FacetClick
 ): void {
   const nodeSelection = g.selectAll<SVGGElement, TreeNodeDatum>('.tree-node')
     .data(nodes, d => d.data.id)
@@ -354,6 +357,11 @@ function renderTreeNodes(
         .style('font-size', '10px')
         .style('pointer-events', 'none')
         .text(`${d.data.strength}%`)
+    }
+
+    // Add facet icons if callback is provided
+    if (onFacetClick) {
+      createFacetIcons(node, onFacetClick)
     }
   })
 
@@ -459,7 +467,8 @@ export function renderHierarchicalLayout(
   argumentData: ArgumentData,
   config: ArgumentRenderConfig,
   onNodeClick?: (node: ArgumentNode) => void,
-  onEdgeClick?: (edge: ArgumentEdge) => void
+  onEdgeClick?: (edge: ArgumentEdge) => void,
+  onFacetClick?: FacetClick
 ): void {
   const { g, width, height } = state
 
@@ -604,6 +613,11 @@ export function renderHierarchicalLayout(
         const label = d.label || d.name || 'Untitled'
         return label.length > 15 ? label.substring(0, 15) + '...' : label
       })
+
+    // Add facet icons if callback is provided
+    if (onFacetClick) {
+      createFacetIcons(node, onFacetClick)
+    }
   })
 
   // Update positions on simulation tick

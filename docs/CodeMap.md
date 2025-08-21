@@ -1,6 +1,6 @@
-# ZLFN/STN Codebase Map
+# ZLFN/STN/ATN Codebase Map
 
-**Version**: 1.1  
+**Version**: 1.2  
 **Last Updated**: 2024-12-19  
 **Purpose**: Comprehensive mapping of features to files for maintainability and refactoring
 
@@ -27,11 +27,11 @@
 
 ### Main Pages
 - **`src/pages/LogicVisualizer.tsx`** *(635 lines)* ✅ **OPTIMIZED WITH LAZY LOADING**
-  - **Features**: Main application shell, view mode switching (ZLFN/STN), drawer management
+  - **Features**: Main application shell, view mode switching (ZLFN/STN/ATN), drawer management
   - **Components**: CommandBar, ControlsDrawer, InspectorDrawer, StatusBar integration
   - **State**: View mode, drawer states, performance overlay, search, snackbar notifications
   - **Logic**: Expression parsing, import/export, keyboard shortcuts, responsive layout
-  - **Dependencies**: LogicSharedContext, lazy-loaded ZlfnGraphWithNotes, lazy-loaded SemanticTableau
+  - **Dependencies**: LogicSharedContext, lazy-loaded ZlfnGraphWithNotes, lazy-loaded SemanticTableau, lazy-loaded ArgumentTableau
   - **Performance**: Heavy visualization components load on-demand with React.Suspense
 
 - **`src/pages/Phase2Demo.tsx`**: Demo page for Phase 2 features
@@ -45,7 +45,7 @@
 
 ### Command & Control Layer
 - **`src/components/Visualizer/CommandBar.tsx`** *(~350 lines)*
-  - **Features**: Top toolbar, search, simulation controls, layout actions, view mode toggle
+  - **Features**: Top toolbar, search, simulation controls, layout actions, view mode toggle (ZLFN/STN/ATN)
   - **Components**: Search autocomplete, argument filter, performance toggle, help/shortcuts
   - **State**: Menu anchors, search state
   - **Dependencies**: MUI components, icons
@@ -116,6 +116,62 @@
   - **Components**: Multiple SemanticTableau instances, comparison insights
   - **State**: Comparison list, input expressions
   - **Dependencies**: SemanticTableau, logic parser
+
+### Argument Tableau Network (ATN)
+- **`src/components/Visualizations/ArgumentTableau/index.tsx`** *(~470 lines)* ✅ **NEW IMPLEMENTATION**
+  - **Features**: Third visualization mode for informal argument analysis
+  - **Components**: Argument selector, layout mode toggle, status bar, renderer integration
+  - **State**: Layout mode (tree/hierarchical/table), selected argument, render state
+  - **Logic**: Argument data management, renderer orchestration, resize handling
+  - **Dependencies**: Storage service, tree/table renderers, sample argument data
+  - **Performance**: Lazy-loaded as part of visualizations chunk
+
+- **`src/components/Visualizations/ArgumentTableau/types.ts`** *(~200 lines)* ✅ **NEW IMPLEMENTATION**
+  - **Features**: ATN-specific type definitions extending ZLFN base types
+  - **Types**: ArgumentNode, ArgumentEdge, ArgumentData, ATNLayoutMode, ArgumentRenderConfig
+  - **Enums**: ArgumentType, RelationshipType, argument colors, default configurations
+  - **Helpers**: toArgumentNode, toArgumentEdge conversion functions
+  - **Logic**: Type-safe argument structure with scheme clustering support
+
+- **`src/components/Visualizations/ArgumentTableau/treeRenderer.ts`** *(~620 lines)* ✅ **NEW IMPLEMENTATION**
+  - **Features**: D3-based tree and hierarchical layout rendering for arguments
+  - **Components**: SVG initialization, tree layout, force simulation, node/edge rendering
+  - **Rendering**: Argument type shapes (rectangles, diamonds, hexagons, circles), relationship arrows
+  - **Interactions**: Node/edge clicking, dragging, tooltips, zoom/pan support
+  - **Logic**: Hierarchy building from relationships, curved attack/undercut paths
+  - **Dependencies**: D3 v7, argument types, visual styling
+
+- **`src/components/Visualizations/ArgumentTableau/tableRenderer.ts`** *(~400 lines)* ✅ **NEW IMPLEMENTATION**
+  - **Features**: Tabular analysis view for argument structure and relationships
+  - **Components**: Responsive table, argument rows, summary statistics, interactive elements
+  - **Analysis**: Strength calculation, support/attack tracking, scheme clustering
+  - **Visualization**: Color-coded argument types, relationship indicators (⚔ ⚡), strength bars
+  - **Logic**: Dynamic strength computation, relationship analysis, statistical summaries
+  - **Dependencies**: D3 selections for DOM manipulation, argument types
+
+### Facet System Extensions
+- **`src/vis/utils/relevance.ts`** ✅ **EXTENDED FOR ATN**
+  - **New Function**: `isRebuttalRelevant()` for ATN rebuttal nodes
+  - **Logic**: Shows rebuttal facet for argumentType === 'rebuttal' or facets.rebuttalRelevant === true
+  - **Integration**: Seamlessly extends existing facet relevance system
+
+- **`src/vis/facets/icons.ts`** ✅ **EXTENDED FOR ATN**
+  - **New Icon**: Red hexagonal rebuttal icon (polygon shape)
+  - **Extended Type**: FacetClick now includes 'rebuttal' option
+  - **Integration**: Reuses existing createFacetIcons pattern with new rebuttal support
+
+- **`src/components/Enhanced/EnhancedRebuttal.tsx`** *(~400 lines)* ✅ **NEW IMPLEMENTATION**
+  - **Features**: Comprehensive rebuttal analysis with evidence, weaknesses, counter-rebuttals
+  - **Components**: Tabbed interface, strength assessment, evidence categorization, interactive analysis
+  - **Analysis**: Overall effectiveness calculation, evidence strength scoring, weakness severity tracking
+  - **Visualization**: Color-coded rebuttal types, strength indicators, rating systems
+  - **Dependencies**: MUI components, rebuttal data types
+
+- **`src/components/Enhanced/RebuttalDialog.tsx`** *(~150 lines)* ✅ **NEW IMPLEMENTATION**
+  - **Features**: Dialog wrapper for Enhanced Rebuttal component
+  - **Components**: Modal dialog with sample data generation
+  - **Logic**: Converts ATN node data to comprehensive rebuttal analysis
+  - **Dependencies**: EnhancedRebuttal, MUI Dialog components
 
 ### Enhanced Facet Dialogs
 - **`src/components/Enhanced/`**
@@ -524,8 +580,12 @@ Vendor Chunks:
 - **Solution Implemented**: Code splitting, lazy loading, manual chunks configuration
 - **Performance Impact**: 96% reduction in main bundle size (830kB → 34kB)
 - **Status**: All bundle size warnings resolved, optimal loading performance achieved
-- **Duplication**: Similar chip/badge rendering for status and legends
-- **Solution**: `components/UI/StatusChip.tsx` and `components/UI/Legend.tsx`
+
+### 🟡 **MINOR DUPLICATION** - D3 SVG Initialization Patterns
+- **Locations**: `ZlfnGraph/rendering.ts`, `ArgumentTableau/treeRenderer.ts`, `SemanticTableau.tsx`, `VennDiagram.tsx`
+- **Duplication**: Similar D3 SVG setup, marker/arrow definitions, defs initialization
+- **Impact**: Low - each renderer has specific needs, shared patterns are minimal
+- **Recommendation**: Monitor for future consolidation if patterns become more complex
 
 ### Dialog Management
 - **Locations**: Enhanced dialogs, various modal components
