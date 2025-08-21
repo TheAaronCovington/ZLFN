@@ -27,7 +27,8 @@ import {
   Settings as SettingsIcon,
   Analytics as AnalyticsIcon,
   AccountTree as SchemeIcon,
-  Warning as WarningIcon
+  Warning as WarningIcon,
+  Keyboard as KeyboardIcon
 } from '@mui/icons-material'
 import type { 
   ArgumentTableauProps, 
@@ -72,6 +73,13 @@ import {
   exportATNAnalysis,
   type ATNExportOptions 
 } from './exportService'
+import {
+  createATNKeyboardHandler,
+  getLayoutModeFromKey,
+  getNextLayoutMode,
+  type ATNKeyboardShortcuts
+} from './keyboardShortcuts'
+import KeyboardShortcutsDialog from './KeyboardShortcutsDialog'
 
 /**
  * Sample argument data for initial development and testing
@@ -266,6 +274,8 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
   const [showStrengthAnalysis, setShowStrengthAnalysis] = useState(true)
   const [exportMenuAnchor, setExportMenuAnchor] = useState<null | HTMLElement>(null)
   const [settingsMenuAnchor, setSettingsMenuAnchor] = useState<null | HTMLElement>(null)
+  const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
+  const [selectedNodeIndex, setSelectedNodeIndex] = useState<number>(-1)
   // State management
   const [layoutMode, setLayoutMode] = useState<ATNLayoutMode>(() => {
     try {
@@ -410,6 +420,154 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
     setExportMenuAnchor(null)
     setSettingsMenuAnchor(null)
   }
+
+  // Get currently selected node
+  const selectedNode = useMemo(() => {
+    if (selectedNodeIndex >= 0 && selectedNodeIndex < atnNodes.length) {
+      return atnNodes[selectedNodeIndex]
+    }
+    return null
+  }, [selectedNodeIndex, atnNodes])
+
+  // Keyboard shortcuts implementation
+  const keyboardShortcuts: ATNKeyboardShortcuts = useMemo(() => ({
+    // Layout controls
+    switchToTree: () => setLayoutMode('tree'),
+    switchToHierarchical: () => setLayoutMode('hierarchical'),
+    switchToTable: () => setLayoutMode('table'),
+    cycleLayouts: () => setLayoutMode(prev => getNextLayoutMode(prev)),
+    
+    // Analysis controls
+    toggleStrengthAnalysis: () => setShowStrengthAnalysis(prev => !prev),
+    toggleSchemeClustering: () => setShowSchemeClustering(prev => !prev),
+    refreshAnalysis: () => {
+      // Force re-calculation by toggling and re-toggling
+      setShowStrengthAnalysis(prev => {
+        setTimeout(() => setShowStrengthAnalysis(prev), 50)
+        return !prev
+      })
+    },
+    
+    // Export shortcuts
+    exportAsJSON: () => handleExport('json'),
+    exportAsMarkdown: () => handleExport('markdown'),
+    exportAsLaTeX: () => handleExport('latex'),
+    exportAsCSV: () => handleExport('csv'),
+    
+    // Navigation
+    selectNextNode: () => {
+      setSelectedNodeIndex(prev => 
+        prev < atnNodes.length - 1 ? prev + 1 : 0
+      )
+    },
+    selectPreviousNode: () => {
+      setSelectedNodeIndex(prev => 
+        prev > 0 ? prev - 1 : atnNodes.length - 1
+      )
+    },
+    selectCoreNode: () => {
+      const coreIndex = atnNodes.findIndex(node => node.id === currentArgument.core.id)
+      if (coreIndex >= 0) {
+        setSelectedNodeIndex(coreIndex)
+      }
+    },
+    clearSelection: () => setSelectedNodeIndex(-1),
+    
+    // View controls (these would need to be implemented in the renderers)
+    fitToView: () => {
+      // This would need to be implemented in the specific renderer
+      console.log('Fit to view - would need renderer integration')
+    },
+    zoomIn: () => {
+      console.log('Zoom in - would need renderer integration')
+    },
+    zoomOut: () => {
+      console.log('Zoom out - would need renderer integration')
+    },
+    resetZoom: () => {
+      console.log('Reset zoom - would need renderer integration')
+    },
+    
+    // Facet shortcuts
+    openVennDiagram: () => {
+      if (selectedNode) {
+        setFacetDialogs(prev => ({
+          ...prev,
+          venn: { open: true, nodeData: selectedNode }
+        }))
+      }
+    },
+    openTruthTable: () => {
+      if (selectedNode) {
+        setFacetDialogs(prev => ({
+          ...prev,
+          truth: { open: true, nodeData: selectedNode }
+        }))
+      }
+    },
+    openTimeline: () => {
+      if (selectedNode) {
+        setFacetDialogs(prev => ({
+          ...prev,
+          timeline: { open: true, nodeData: selectedNode }
+        }))
+      }
+    },
+    openCounterarguments: () => {
+      if (selectedNode) {
+        setFacetDialogs(prev => ({
+          ...prev,
+          counter: { open: true, nodeData: selectedNode }
+        }))
+      }
+    },
+    openRebuttal: () => {
+      if (selectedNode) {
+        setFacetDialogs(prev => ({
+          ...prev,
+          rebuttal: { open: true, nodeData: selectedNode }
+        }))
+      }
+    },
+    
+    // Settings
+    openSettings: () => setSettingsMenuAnchor(document.body),
+    openExportMenu: () => setExportMenuAnchor(document.body),
+    showHelp: () => setShowKeyboardHelp(true)
+  }), [
+    setLayoutMode, 
+    setShowStrengthAnalysis, 
+    setShowSchemeClustering, 
+    handleExport, 
+    atnNodes, 
+    selectedNode, 
+    currentArgument.core.id
+  ])
+
+  // Create keyboard event handler
+  const keyboardHandler = useMemo(() => 
+    createATNKeyboardHandler(keyboardShortcuts, true), 
+    [keyboardShortcuts]
+  )
+
+  // Add keyboard event listeners
+  useEffect(() => {
+    document.addEventListener('keydown', keyboardHandler)
+    return () => document.removeEventListener('keydown', keyboardHandler)
+  }, [keyboardHandler])
+
+  // Handle direct layout switching from number keys
+  useEffect(() => {
+    const handleDirectLayoutSwitch = (event: KeyboardEvent) => {
+      const layoutMode = getLayoutModeFromKey(event.key)
+      if (layoutMode) {
+        setLayoutMode(layoutMode)
+      }
+    }
+
+    document.addEventListener('keydown', handleDirectLayoutSwitch)
+    return () => document.removeEventListener('keydown', handleDirectLayoutSwitch)
+  }, [])
 
   // Render the visualization when layout mode or argument changes
   useEffect(() => {
@@ -558,6 +716,12 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
                 <SettingsIcon />
               </IconButton>
             </Tooltip>
+
+            <Tooltip title="Keyboard Shortcuts (Shift + ?)">
+              <IconButton onClick={() => setShowKeyboardHelp(true)} sx={{ color: '#40c4ff' }}>
+                <KeyboardIcon />
+              </IconButton>
+            </Tooltip>
           </Stack>
         </Box>
       )}
@@ -592,6 +756,15 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
                 label={`${schemeClusters.length} Schemes`}
                 color="info"
                 size="small"
+              />
+            )}
+
+            {selectedNode && (
+              <Chip
+                label={`Selected: ${selectedNode.name || selectedNode.label}`}
+                color="primary"
+                size="small"
+                onDelete={() => setSelectedNodeIndex(-1)}
               />
             )}
           </Stack>
@@ -816,6 +989,12 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
           />
         </Box>
       </Menu>
+
+      {/* Keyboard Shortcuts Help Dialog */}
+      <KeyboardShortcutsDialog
+        open={showKeyboardHelp}
+        onClose={() => setShowKeyboardHelp(false)}
+      />
     </Box>
   )
 }

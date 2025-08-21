@@ -1,6 +1,6 @@
 # ZLFN/STN/ATN Codebase Map
 
-**Version**: 1.2  
+**Version**: 1.3  
 **Last Updated**: 2024-12-19  
 **Purpose**: Comprehensive mapping of features to files for maintainability and refactoring
 
@@ -16,6 +16,7 @@
 - [Testing](#testing)
 - [File Size Analysis](#file-size-analysis)
 - [Duplication Candidates](#duplication-candidates)
+- [ATN Implementation Status](#atn-implementation-status)
 
 ---
 
@@ -196,6 +197,22 @@
   - **Analysis**: Strength summaries, conflict reports, scheme effectiveness, recommendations
   - **Academic**: LaTeX formatting for academic papers, citation-ready exports
   - **Dependencies**: File download API, text formatting utilities
+
+- **`src/components/Visualizations/ArgumentTableau/keyboardShortcuts.ts`** *(~400 lines)* ✅ **NEW IMPLEMENTATION**
+  - **Features**: Comprehensive keyboard shortcut system for ATN navigation and control
+  - **Functions**: `createATNKeyboardHandler`, `getLayoutModeFromKey`, `formatShortcut`, `groupShortcutsByCategory`
+  - **Shortcuts**: 20+ keyboard shortcuts across 7 categories (Layout, Analysis, Export, Navigation, View, Facets, Settings)
+  - **Smart Detection**: Input field detection, browser conflict avoidance, context-aware activation
+  - **Categories**: Layout switching (1/2/3), analysis controls (S/C/R), export (Ctrl+J/M/L/E), navigation (arrows), facets (V/T/I/U/B)
+  - **Dependencies**: Event handling, keyboard event processing
+
+- **`src/components/Visualizations/ArgumentTableau/KeyboardShortcutsDialog.tsx`** *(~200 lines)* ✅ **NEW IMPLEMENTATION**
+  - **Features**: Interactive help dialog displaying all available keyboard shortcuts
+  - **Components**: Categorized shortcut display, color-coded categories, formatted key combinations
+  - **UI**: Grid layout with category icons, hover effects, pro tips section
+  - **Categories**: 7 color-coded categories with emoji icons and organized shortcut lists
+  - **Accessibility**: Keyboard navigation, clear visual hierarchy, responsive design
+  - **Dependencies**: MUI components, keyboard shortcut utilities
 
 ### Enhanced Facet Dialogs
 - **`src/components/Enhanced/`**
@@ -620,6 +637,55 @@ Vendor Chunks:
 - **Locations**: Multiple components with FPS/memory tracking
 - **Duplication**: Similar performance metric collection
 - **Solution**: Already centralized in `usePerformanceMonitor` - ensure adoption
+
+---
+
+## ATN Implementation Status
+
+### 🎉 **COMPLETE** - Argument Tableau Network (ATN) System
+**Status**: ✅ **ALL PHASES IMPLEMENTED** - Production Ready
+
+#### **Phase 1: Infrastructure & Types** ✅ **COMPLETED**
+- **Files**: `types.ts`, `index.tsx` (base structure)
+- **Features**: Core ATN types, argument data structures, layout mode management
+- **Status**: Fully implemented with comprehensive TypeScript definitions
+
+#### **Phase 2: Layout Renderers** ✅ **COMPLETED**  
+- **Files**: `treeRenderer.ts`, `tableRenderer.ts`
+- **Features**: Tree/hierarchical D3 layouts, tabular analysis view, interactive visualizations
+- **Status**: Both renderers fully functional with complete feature sets
+
+#### **Phase 3: Facet Integration** ✅ **COMPLETED**
+- **Files**: `relevance.ts`, `icons.ts`, `EnhancedRebuttal.tsx`, `RebuttalDialog.tsx`
+- **Features**: 5 facet types (Venn, Truth, Timeline, Counter, Rebuttal), node-specific dialogs
+- **Status**: All facets integrated with ATN nodes, rebuttal facet newly implemented
+
+#### **Phase 4: Advanced Features** ✅ **COMPLETED**
+- **Files**: `schemeCluster.ts`, `strengthPropagation.ts`, `exportService.ts`
+- **Features**: Scheme clustering, strength analysis, conflict detection, multi-format export
+- **Status**: Complete analytical engine with academic-grade export capabilities
+
+#### **Phase 5: Keyboard Shortcuts** ✅ **COMPLETED**
+- **Files**: `keyboardShortcuts.ts`, `KeyboardShortcutsDialog.tsx`
+- **Features**: 20+ shortcuts across 7 categories, interactive help system, smart context detection
+- **Status**: Professional keyboard navigation system with comprehensive help documentation
+
+### **ATN System Capabilities** 🚀
+- **3 Layout Modes**: Tree, Hierarchical, Table views with seamless switching
+- **5 Facet Types**: Comprehensive analysis tools for each argument node
+- **Advanced Analytics**: Strength propagation, conflict detection, scheme clustering
+- **Professional Export**: JSON, CSV, LaTeX, Markdown with full analysis data
+- **Keyboard Control**: Complete keyboard navigation with 20+ shortcuts
+- **Academic Ready**: LaTeX export, citation formatting, research-grade analysis
+
+### **Integration Status** ✅
+- **Main App**: Fully integrated into LogicVisualizer with view mode switching
+- **Lazy Loading**: Optimized bundle loading as part of visualizations chunk
+- **Type Safety**: Complete TypeScript coverage with proper interfaces
+- **Performance**: Efficient D3 rendering with proper cleanup and memory management
+- **Accessibility**: Keyboard navigation, proper ARIA labels, responsive design
+
+**The ATN system is production-ready and provides a comprehensive platform for argument analysis, academic research, and professional argumentation assessment.**
 
 ---
 
