@@ -1,8 +1,10 @@
 import React from 'react'
-import { ZlfnGraphWithNotes } from '../components/Visualizations/ZlfnGraphWithNotes'
+
+// Lazy load heavy visualization component
+const ZlfnGraphWithNotes = React.lazy(() => import('../components/Visualizations/ZlfnGraphWithNotes').then(module => ({ default: module.ZlfnGraphWithNotes })))
 import type { ZlfnEdge, ZlfnNode } from '../components/Visualizations/ZlfnGraph'
 import { useLogicShared } from '../context/LogicSharedContext'
-import { Button, Stack, Typography, IconButton, Tooltip } from '@mui/material'
+import { Button, Stack, Typography, IconButton, Tooltip, CircularProgress, Box } from '@mui/material'
 import SearchIcon from '@mui/icons-material/Search'
 import NeonCard from '../components/UI/NeonCard'
 
@@ -41,7 +43,13 @@ const VizZlfn: React.FC = () => {
 				</Tooltip>
 			</Stack>
 			<NeonCard sx={{ position: 'relative', overflow: 'visible' }} contentSx={{ p: 0, '&:last-child': { pb: 0 } }}>
-				<ZlfnGraphWithNotes nodes={nodes} edges={edges} storageKey="/vis/zlfn" objectId="/vis/zlfn" showNotesIndicators={true} />
+				<React.Suspense fallback={
+					<Box display="flex" justifyContent="center" alignItems="center" height="400px">
+						<CircularProgress size={40} />
+					</Box>
+				}>
+					<ZlfnGraphWithNotes nodes={nodes} edges={edges} storageKey="/vis/zlfn" objectId="/vis/zlfn" showNotesIndicators={true} />
+				</React.Suspense>
 			</NeonCard>
 		</div>
 	)

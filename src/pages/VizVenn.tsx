@@ -1,8 +1,10 @@
 import React from 'react'
-import VennDiagram from '../components/Visualizations/VennDiagram'
+
+// Lazy load visualization component
+const VennDiagram = React.lazy(() => import('../components/Visualizations/VennDiagram'))
 import NeonAccordion from '../components/Accordion/NeonAccordion'
 import type { VennDiagramData, NecessarySufficientExample } from '../components/Visualizations/VennDiagram'
-import { Typography } from '@mui/material'
+import { Typography, CircularProgress, Box } from '@mui/material'
 import TableauViewer from '../components/Visualizations/TableauViewer'
 
 const VizVenn: React.FC = () => {
@@ -21,7 +23,13 @@ const VizVenn: React.FC = () => {
 	return (
 		<div style={{ maxWidth: 800, margin: '0 auto', padding: '1rem' }}>
 			<Typography variant="h5" sx={{ mb: 2 }}>Venn Diagram (Demo)</Typography>
-			<VennDiagram title="Necessary & Sufficient" data={data} type="necessary-sufficient" examples={examples} />
+			<React.Suspense fallback={
+				<Box display="flex" justifyContent="center" alignItems="center" height="300px">
+					<CircularProgress size={40} />
+				</Box>
+			}>
+				<VennDiagram title="Necessary & Sufficient" data={data} type="necessary-sufficient" examples={examples} />
+			</React.Suspense>
 			<div style={{ marginTop: '1rem' }}>
 				<NeonAccordion items={[
 					{ id: 'a1', title: 'What is Necessary?', content: <div>Condition that must hold for another to be possible.</div> },

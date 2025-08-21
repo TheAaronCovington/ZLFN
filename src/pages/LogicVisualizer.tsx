@@ -1,7 +1,9 @@
 import React from 'react'
-import { Box, Snackbar, Alert, Dialog, DialogTitle, DialogContent } from '@mui/material'
-import { ZlfnGraphWithNotes } from '../components/Visualizations/ZlfnGraphWithNotes'
-import SemanticTableau from '../components/Visualizations/SemanticTableau'
+import { Box, Snackbar, Alert, Dialog, DialogTitle, DialogContent, CircularProgress } from '@mui/material'
+
+// Lazy load heavy visualization components
+const ZlfnGraphWithNotes = React.lazy(() => import('../components/Visualizations/ZlfnGraphWithNotes').then(module => ({ default: module.ZlfnGraphWithNotes })))
+const SemanticTableau = React.lazy(() => import('../components/Visualizations/SemanticTableau'))
 import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph'
 import type { VennDiagramData, NecessarySufficientExample } from '../components/Visualizations/VennDiagram'
 import { parseExpressionToAst, astToZlfnGraph, toNNF, toCNF, astToString, type AstNodeRec } from '../services/logic'
@@ -479,22 +481,28 @@ const LogicVisualizer: React.FC = () => {
 						position: 'relative',
 						overflow: 'hidden'
 					}}>
-						{viewMode === 'graph' ? (
-							<ZlfnGraphWithNotes
-								nodes={nodes}
-								edges={edges}
-								storageKey={currentExpression}
-								onInfo={showInfo}
-								centerOnNodeId={searchId || undefined}
-								centerOnNodeTrigger={searchTrigger}
-								onEdgeSelect={handleEdgeSelect}
-								onOpenTruthTable={handleOpenTruthTable}
-								objectId="main-visualizer"
-								showNotesIndicators={true}
-							/>
-						) : (
-							<SemanticTableau expression={currentExpression} ast={ast} />
-						)}
+						<React.Suspense fallback={
+							<Box display="flex" justifyContent="center" alignItems="center" height="100%">
+								<CircularProgress size={60} />
+							</Box>
+						}>
+							{viewMode === 'graph' ? (
+								<ZlfnGraphWithNotes
+									nodes={nodes}
+									edges={edges}
+									storageKey={currentExpression}
+									onInfo={showInfo}
+									centerOnNodeId={searchId || undefined}
+									centerOnNodeTrigger={searchTrigger}
+									onEdgeSelect={handleEdgeSelect}
+									onOpenTruthTable={handleOpenTruthTable}
+									objectId="main-visualizer"
+									showNotesIndicators={true}
+								/>
+							) : (
+								<SemanticTableau expression={currentExpression} ast={ast} />
+							)}
+						</React.Suspense>
 					</Box>
 				</Box>
 

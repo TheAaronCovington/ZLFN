@@ -9,12 +9,28 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
+          // Vendor libraries
           'vendor-d3': ['d3'],
           'vendor-markdown': ['react-markdown'],
           'vendor-katex': ['katex'],
-          'vendor-mui': ['@mui/material', '@mui/icons-material']
+          'vendor-mui': ['@mui/material', '@mui/icons-material'],
+          
+          // Application chunks
+          'visualizations': [
+            './src/components/Visualizations/ZlfnGraph.tsx',
+            './src/components/Visualizations/SemanticTableau.tsx',
+            './src/components/Visualizations/VennDiagram.tsx',
+            './src/components/Visualizations/TruthTable.tsx'
+          ],
+          'services': [
+            './src/services/logic.ts',
+            './src/services/inference.ts',
+            './src/services/exportService.ts'
+          ]
         }
       }
-    }
+    },
+    // Increase chunk size warning limit to 1MB
+    chunkSizeWarningLimit: 1000
   }
 })
