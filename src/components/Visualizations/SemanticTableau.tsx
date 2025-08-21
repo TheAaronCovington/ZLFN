@@ -354,22 +354,35 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 		return () => ro.disconnect()
 	}, [])
 
-	// Helpers for rules and closure
+	// Helpers for rules and closure (enhanced with ZLFN advanced logic support)
 	const isAlpha = (n: AstNodeRec | undefined) => !!n && (n.label === '∧')
 	const isBeta = (n: AstNodeRec | undefined) => !!n && (n.label === '∨' || n.label === '⊻')
 	const isDoubleNeg = (n: AstNodeRec | undefined) => !!n && n.label === '¬' && n.children && (n.children[0] as any)?.label === '¬'
 	const isImplication = (n: AstNodeRec | undefined) => !!n && (n.label === '→' || n.label === '⇒' || n.label === '⊃')
+	const isBiconditional = (n: AstNodeRec | undefined) => !!n && (n.label === '↔')
+	const isQuantifier = (n: AstNodeRec | undefined) => !!n && (n.label.startsWith('∀') || n.label.startsWith('∃'))
+	const isPredicate = (n: AstNodeRec | undefined) => !!n && n.children && n.children.length > 0 && !['∧', '∨', '⊻', '→', '↔', '¬'].includes(n.label)
 	const serialize = (n: AstNodeRec | undefined): string => (n ? astToString(n) : '')
 	const complementOf = (s: string) => s.startsWith('¬') ? s.slice(1) : `¬${s}`
 	
-	// Helper to get rule badge for a node
+	// Helper to get rule badge for a node (enhanced with ZLFN advanced logic)
 	function getRuleBadge(node: TableauNode): { text: string; color: string; tooltip: string } | null {
 		if (!node.ast) return null
 		
 		if (isAlpha(node.ast)) return { text: 'α', color: '#2196f3', tooltip: 'Alpha rule (conjunction)' }
 		if (isBeta(node.ast)) return { text: 'β', color: '#ff9800', tooltip: 'Beta rule (disjunction)' }
 		if (isImplication(node.ast)) return { text: '→', color: '#9c27b0', tooltip: 'Implication rule' }
+		if (isBiconditional(node.ast)) return { text: '↔', color: '#e91e63', tooltip: 'Biconditional rule' }
 		if (isDoubleNeg(node.ast)) return { text: '¬¬', color: '#4caf50', tooltip: 'Double negation elimination' }
+		if (isQuantifier(node.ast)) {
+			const isUniversal = node.ast.label.startsWith('∀')
+			return { 
+				text: isUniversal ? '∀' : '∃', 
+				color: isUniversal ? '#673ab7' : '#3f51b5', 
+				tooltip: isUniversal ? 'Universal quantifier' : 'Existential quantifier' 
+			}
+		}
+		if (isPredicate(node.ast)) return { text: 'P', color: '#00bcd4', tooltip: 'Predicate application' }
 		
 		// Check for negated complex formulas
 		if (node.ast.label === '¬' && node.ast.children) {
@@ -377,6 +390,15 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 			if (inner.label === '∧') return { text: '¬α', color: '#ff5722', tooltip: 'Negated conjunction (De Morgan)' }
 			if (inner.label === '∨' || inner.label === '⊻') return { text: '¬β', color: '#795548', tooltip: 'Negated disjunction (De Morgan)' }
 			if (isImplication(inner)) return { text: '¬→', color: '#607d8b', tooltip: 'Negated implication' }
+			if (isBiconditional(inner)) return { text: '¬↔', color: '#8bc34a', tooltip: 'Negated biconditional' }
+			if (isQuantifier(inner)) {
+				const isUniversal = inner.label.startsWith('∀')
+				return { 
+					text: isUniversal ? '¬∀' : '¬∃', 
+					color: '#ff7043', 
+					tooltip: isUniversal ? 'Negated universal (becomes existential)' : 'Negated existential (becomes universal)' 
+				}
+			}
 		}
 		
 		return null
@@ -469,6 +491,62 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 			target.decomposed = true
 			return true
 		}
+		
+		// Advanced logic features (reused from ZLFN)
+		
+		// Biconditional rule: P ↔ Q ≡ (P → Q) ∧ (Q → P)
+		if (isBiconditional(target.ast) && validateRule('Distributivity', modes)) {
+			const [left, right] = target.ast.children as AstNodeRec[]
+			if (left && right) {
+				const leftToRight = nodeFromAst({ id: `impl_${left.id}_${right.id}`, label: '→', children: [left, right] })
+				const rightToLeft = nodeFromAst({ id: `impl_${right.id}_${left.id}`, label: '→', children: [right, left] })
+				leftToRight.children = [rightToLeft]
+				target.children = [leftToRight]
+				target.decomposed = true
+				return true
+			}
+		}
+		
+		// Negated biconditional: ¬(P ↔ Q) ≡ (P ∧ ¬Q) ∨ (¬P ∧ Q)
+		if (target.ast.label === '¬' && target.ast.children && isBiconditional((target.ast.children as any)[0]) && validateRule('De Morgan', modes)) {
+			const bicond = (target.ast.children as any)[0] as AstNodeRec
+			const [left, right] = bicond.children as AstNodeRec[]
+			if (left && right) {
+				const negRight: AstNodeRec = { id: `neg_${right.id}`, label: '¬', children: [right] as any }
+				const negLeft: AstNodeRec = { id: `neg_${left.id}`, label: '¬', children: [left] as any }
+				const branch1: AstNodeRec = { id: `conj_${left.id}_neg_${right.id}`, label: '∧', children: [left, negRight] as any }
+				const branch2: AstNodeRec = { id: `conj_neg_${left.id}_${right.id}`, label: '∧', children: [negLeft, right] as any }
+				target.children = [nodeFromAst(branch1), nodeFromAst(branch2)]
+				target.decomposed = true
+				return true
+			}
+		}
+		
+		// Quantifier instantiation (basic)
+		if (isQuantifier(target.ast) && validateRule('Knowledge Closure', modes)) {
+			const body = target.ast.children?.[0]
+			if (body) {
+				target.children = [nodeFromAst(body)]
+				target.decomposed = true
+				return true
+			}
+		}
+		
+		// Negated quantifiers: ¬∀x P(x) ≡ ∃x ¬P(x), ¬∃x P(x) ≡ ∀x ¬P(x)
+		if (target.ast.label === '¬' && target.ast.children && isQuantifier((target.ast.children as any)[0]) && validateRule('Knowledge Closure', modes)) {
+			const quant = (target.ast.children as any)[0] as AstNodeRec
+			const isUniversal = quant.label.startsWith('∀')
+			const body = quant.children?.[0]
+			if (body) {
+				const newQuantLabel = isUniversal ? quant.label.replace('∀', '∃') : quant.label.replace('∃', '∀')
+				const negBody: AstNodeRec = { id: `neg_${body.id}`, label: '¬', children: [body] as any }
+				const newQuant: AstNodeRec = { id: `quant_${target.id}`, label: newQuantLabel, children: [negBody] as any }
+				target.children = [nodeFromAst(newQuant)]
+				target.decomposed = true
+				return true
+			}
+		}
+		
 		return false
 	}
 
@@ -520,13 +598,13 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 	}, [])
 
 	function collectDecomposable(n: TableauNode, acc: TableauNode[]) {
-		if (n.ast && (isAlpha(n.ast) || isBeta(n.ast) || isDoubleNeg(n.ast) || isImplication(n.ast)) && !n.decomposed) acc.push(n)
+		if (n.ast && (isAlpha(n.ast) || isBeta(n.ast) || isDoubleNeg(n.ast) || isImplication(n.ast) || isBiconditional(n.ast) || isQuantifier(n.ast)) && !n.decomposed) acc.push(n)
 		n.children?.forEach(c => collectDecomposable(c, acc))
 	}
 	
 	function collectDecomposableToDepth(n: TableauNode, acc: TableauNode[], maxDepth: number, currentDepth: number = 0) {
 		if (currentDepth >= maxDepth) return
-		if (n.ast && (isAlpha(n.ast) || isBeta(n.ast) || isDoubleNeg(n.ast) || isImplication(n.ast)) && !n.decomposed) acc.push(n)
+		if (n.ast && (isAlpha(n.ast) || isBeta(n.ast) || isDoubleNeg(n.ast) || isImplication(n.ast) || isBiconditional(n.ast) || isQuantifier(n.ast)) && !n.decomposed) acc.push(n)
 		n.children?.forEach(c => collectDecomposableToDepth(c, acc, maxDepth, currentDepth + 1))
 	}
 
