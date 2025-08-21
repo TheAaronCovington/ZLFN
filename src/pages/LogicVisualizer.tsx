@@ -4,6 +4,7 @@ import { Box, Snackbar, Alert, Dialog, DialogTitle, DialogContent, CircularProgr
 // Lazy load heavy visualization components
 const ZlfnGraphWithNotes = React.lazy(() => import('../components/Visualizations/ZlfnGraphWithNotes').then(module => ({ default: module.ZlfnGraphWithNotes })))
 const SemanticTableau = React.lazy(() => import('../components/Visualizations/SemanticTableau'))
+const ArgumentTableau = React.lazy(() => import('../components/Visualizations/ArgumentTableau'))
 import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph'
 import type { VennDiagramData, NecessarySufficientExample } from '../components/Visualizations/VennDiagram'
 import { parseExpressionToAst, astToZlfnGraph, toNNF, toCNF, astToString, type AstNodeRec } from '../services/logic'
@@ -42,8 +43,8 @@ const LogicVisualizer: React.FC = () => {
 	const [shortcutsOpen, setShortcutsOpen] = React.useState(false)
 	const [advancedSearchOpen, setAdvancedSearchOpen] = React.useState(false)
 
-	// View mode: graph (ZLFN) | tableau (STN)
-	const [viewMode, setViewMode] = React.useState<'graph' | 'tableau'>(() => {
+	// View mode: graph (ZLFN) | tableau (STN) | argument (ATN)
+	const [viewMode, setViewMode] = React.useState<'graph' | 'tableau' | 'argument'>(() => {
 		try { return (localStorage.getItem('xv_view_mode') as any) || 'graph' } catch { return 'graph' }
 	})
 	React.useEffect(() => { try { localStorage.setItem('xv_view_mode', viewMode) } catch {} }, [viewMode])
@@ -499,8 +500,21 @@ const LogicVisualizer: React.FC = () => {
 									objectId="main-visualizer"
 									showNotesIndicators={true}
 								/>
-							) : (
+							) : viewMode === 'tableau' ? (
 								<SemanticTableau expression={currentExpression} ast={ast} />
+							) : (
+								<ArgumentTableau 
+									expression={currentExpression} 
+									ast={ast}
+									onNodeSelect={(node) => {
+										// Handle ATN node selection
+										showInfo(`Selected argument node: ${node.name || node.label}`)
+									}}
+									onEdgeSelect={(edge) => {
+										// Handle ATN edge selection
+										showInfo(`Selected relationship: ${edge.scheme}`)
+									}}
+								/>
 							)}
 						</React.Suspense>
 					</Box>

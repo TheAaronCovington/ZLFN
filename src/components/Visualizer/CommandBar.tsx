@@ -75,8 +75,8 @@ interface CommandBarProps {
   onSelectArgument?: (id: string | null) => void
 
   // View selector
-  viewMode?: 'graph' | 'tableau'
-  onChangeViewMode?: (mode: 'graph' | 'tableau') => void
+  viewMode?: 'graph' | 'tableau' | 'argument'
+  onChangeViewMode?: (mode: 'graph' | 'tableau' | 'argument') => void
 }
 
 export const CommandBar: React.FC<CommandBarProps> = ({
@@ -208,6 +208,7 @@ export const CommandBar: React.FC<CommandBarProps> = ({
             >
               <MuiMenuItem value="graph">ZLFN View</MuiMenuItem>
               <MuiMenuItem value="tableau">Tableau View</MuiMenuItem>
+              <MuiMenuItem value="argument">Argument View</MuiMenuItem>
             </Select>
           </FormControl>
           <Tooltip title="Fit Graph">
