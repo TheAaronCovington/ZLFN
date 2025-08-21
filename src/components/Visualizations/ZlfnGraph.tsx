@@ -142,6 +142,8 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	const miniMapRef = useRef<SVGSVGElement | null>(null)
 	const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null)
 	const transformRef = useRef<d3.ZoomTransform>(d3.zoomIdentity)
+	const initialFitDoneRef = useRef<boolean>(false)
+	const centeredAfterSimRef = useRef<boolean>(false)
 	// keep baseline Y for Terms so toggles don't yank them vertically
 	const termsBaselineYRef = useRef<Record<string, number>>({})
 	// prevent re-loading saved layout on every rebuild for same storageKey
@@ -598,6 +600,15 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			if (e.ctrlKey && e.key.toLowerCase()==='y') { e.preventDefault(); redoLayout() }
 		}
 		window.addEventListener('keydown', onKey, { capture: true })
+		const onSetArg = (ev: Event) => {
+			const detail = (ev as CustomEvent).detail as any
+			const next = (detail?.id ?? null) as (string | null)
+			setSelectedArgumentId(next)
+			if (storageKey) {
+				try { if (next) localStorage.setItem(`xv_argument_${storageKey}`, next); else localStorage.removeItem(`xv_argument_${storageKey}`) } catch {}
+			}
+			onInfo?.(next ? `Focused ${next}` : 'Overview')
+		}
 		const onCenter = (ev: Event) => {
 			const detail = (ev as CustomEvent).detail as any
 			const targetId: string | undefined = detail?.nodeId
@@ -606,8 +617,12 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				queueMicrotask(() => centerOnSelection())
 			}
 		}
+		window.addEventListener('zlfn:set-argument', onSetArg as any)
 		window.addEventListener('zlfn:center-node', onCenter as any)
-		return () => window.removeEventListener('keydown', onKey, { capture: true } as any)
+		return () => {
+			window.removeEventListener('keydown', onKey as any, { capture: true } as any)
+			window.removeEventListener('zlfn:set-argument', onSetArg as any)
+		}
 	}, [disableShortcuts, simulationMode, setSimulationMode, resetStates, onInfo, frozen, showEdgeLabels, onEdgeSelect, selectedArgumentId, argumentIds, storageKey, showLegend, dynamicFit, setSelectedNodeId, showNodeSearch, selectedNodeId, nodes, filteredSearchNodes, selectedSearchIndex])
 
 	// init persisted filter/toggles per expression
@@ -747,6 +762,9 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 
 		// clear content
 		g.selectAll('*').remove()
+		// reset one-time flags per render
+		initialFitDoneRef.current = false
+		centeredAfterSimRef.current = false
 
 		// Mobile touch gesture support
 		if (responsive.isTouch) {
@@ -1180,6 +1198,12 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		simulation.on('end', () => {
 			performanceMonitor.endSimulationTiming()
 			const optimizationTime = performance.now() - startOptimization
+			// After simulation settles the first time, center content to viewport
+			if (!centeredAfterSimRef.current) {
+				centeredAfterSimRef.current = true
+				// Ensure transform positions are fresh
+				requestAnimationFrame(() => fitToContents())
+			}
 			if (debug) {
 				console.log('[ZLFN] Simulation completed:', {
 					nodes: nodeCount,
@@ -2546,10 +2570,22 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				if (positions.length) {
 					const xs = positions.map(p => p.x)
 					const ys = positions.map(p => p.y)
-					const minX = Math.min(...xs), maxX = Math.max(...xs)
-					const minY = Math.min(...ys), maxY = Math.max(...ys)
+					let minX = Math.min(...xs), maxX = Math.max(...xs)
+					let minY = Math.min(...ys), maxY = Math.max(...ys)
+					// include zone bounds so zones never touch browser edges
+					const zoneRects = d3.select(gRef.current).selectAll<SVGRectElement, any>('g.zones rect.zone')
+					if (!zoneRects.empty()) {
+						const labelOffset = 20
+						zoneRects.each(function(z: any) {
+							if (!z || !z.xRange || !z.yRange) return
+							minX = Math.min(minX, z.xRange[0])
+							maxX = Math.max(maxX, z.xRange[1])
+							minY = Math.min(minY, z.yRange[0] - labelOffset)
+							maxY = Math.max(maxY, z.yRange[1])
+						})
+					}
 					if (fitDynamic && svgRef.current && zoomRef.current) {
-						const padding = 80
+						const padding = 120
 						const w = maxX - minX + padding
 						const h = maxY - minY + padding
 						const scale = Math.max(0.1, Math.min(2, Math.min((size.width||800) / w, ((size.height||560)-56) / h)))
@@ -2999,6 +3035,14 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 
 		// optional: compute status summary here if needed in future
 		// (moved to a top-level effect)
+		// Initial fit-to-screen once after nodes render
+		if (!initialFitDoneRef.current) {
+			const hasNodes = (nodesWithArgs as any[]).length > 0
+			if (hasNodes && svgRef.current && zoomRef.current) {
+				initialFitDoneRef.current = true
+				requestAnimationFrame(() => fitToContents())
+			}
+		}
 
 		return () => {
 			simulation.stop()
@@ -3189,20 +3233,35 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		const width = size.width || 800
 		const height = (size.height || 560) - 56
 		const nodesSel = d3.select(gRef.current).selectAll<SVGGElement, any>('g.nodes g.node')
-		const data = nodesSel.data()
-		if (!data || !data.length) return
+		const nodeData = nodesSel.data()
 		let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-		for (const d of data as any[]) {
-			if (typeof d.x !== 'number' || typeof d.y !== 'number') continue
-			minX = Math.min(minX, d.x)
-			minY = Math.min(minY, d.y)
-			maxX = Math.max(maxX, d.x)
-			maxY = Math.max(maxY, d.y)
+		// include node extents
+		if (nodeData && (nodeData as any[]).length) {
+			for (const d of nodeData as any[]) {
+				if (typeof d.x !== 'number' || typeof d.y !== 'number') continue
+				minX = Math.min(minX, d.x)
+				minY = Math.min(minY, d.y)
+				maxX = Math.max(maxX, d.x)
+				maxY = Math.max(maxY, d.y)
+			}
+		}
+		// include zone rectangle extents (with label offset above)
+		const zoneRects = d3.select(gRef.current).selectAll<SVGRectElement, any>('g.zones rect.zone')
+		if (!zoneRects.empty()) {
+			const labelOffset = 20
+			zoneRects.each(function (z: any) {
+				if (!z || !z.xRange || !z.yRange) return
+				minX = Math.min(minX, z.xRange[0])
+				maxX = Math.max(maxX, z.xRange[1])
+				minY = Math.min(minY, z.yRange[0] - labelOffset)
+				maxY = Math.max(maxY, z.yRange[1])
+			})
 		}
 		if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) return
-		const padding = 80
-		const w = maxX - minX + padding
-		const h = maxY - minY + padding
+		// generous outer padding to avoid touching browser edges
+		const padding = 120
+		const w = (maxX - minX) + padding
+		const h = (maxY - minY) + padding
 		const scale = Math.max(0.1, Math.min(2, Math.min(width / w, height / h)))
 		const cx = (minX + maxX) / 2
 		const cy = (minY + maxY) / 2
@@ -3688,8 +3747,8 @@ Controls:
 
 	return (
 		<div ref={elementRef} style={{ 
-			width: '100%', 
-			height: responsive.isMobile ? '100vh' : 560, 
+			width: responsive.isMobile ? '100%' : 'calc(100vw - 24px)', 
+			height: responsive.isMobile ? '100vh' : 820, 
 			position: 'relative',
 			overflow: 'hidden'
 		}}>
@@ -3740,16 +3799,40 @@ Controls:
 							Center
 						</Button>
 					</ButtonGroup>
+					{(argumentIds && argumentIds.length > 0) && (
+						<Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', ml: 1, flexWrap: 'wrap' }}>
+							<span style={{ fontSize: 11, opacity: 0.7 }}>Args:</span>
+							<Chip
+								size="small"
+								label="All"
+								color={!selectedArgumentId ? 'warning' : 'default'}
+								variant={!selectedArgumentId ? 'filled' : 'outlined'}
+								onClick={() => {
+									setSelectedArgumentId(null)
+									if (storageKey) { try { localStorage.removeItem(`xv_argument_${storageKey}`) } catch {} }
+								}}
+							/>
+							{argumentIds.map((aid) => (
+								<Chip
+									key={aid}
+									size="small"
+									label={aid}
+									color={selectedArgumentId === aid ? 'warning' : 'default'}
+									variant={selectedArgumentId === aid ? 'filled' : 'outlined'}
+									onClick={() => {
+										setSelectedArgumentId(prev => {
+											const next = prev === aid ? null : aid
+											if (storageKey) { try { if (next) localStorage.setItem(`xv_argument_${storageKey}`, next); else localStorage.removeItem(`xv_argument_${storageKey}`) } catch {} }
+											return next
+										})
+									}}
+								/>
+							))}
+						</Stack>
+					)}
 					
 					{/* Quick Search */}
-					<IconButton 
-						size={responsive.isMobile ? 'medium' : 'small'} 
-						onClick={() => setShowNodeSearch(v => !v)}
-						color={showNodeSearch ? 'primary' : 'default'}
-						sx={{ minWidth: responsive.isMobile ? 44 : 'auto', display: 'none' }}
-					>
-						<SearchIcon />
-					</IconButton>
+
 					{!responsive.isMobile && (
 						<IconButton size="small" onClick={async ()=>{ try { await navigator.clipboard.writeText(JSON.stringify({ nodes, edges }, null, 2)); onInfo?.('Copied graph JSON') } catch {} }} title="Copy Graph JSON">
 							<ContentCopyIcon />
@@ -3790,7 +3873,7 @@ Controls:
 							<div>n: Toggle Notes</div>
 							<div>f: Fit</div>
 							<div>c: Center on selection</div>
-							<div>[/]: Cycle argument</div>
+							<div>[ ]: Cycle argument</div>
 							<div>Enter: Center on selected node</div>
 							<div style="margin-top:8px;color:#8ad7ff">Esc: Close</div>
 						`
@@ -3981,57 +4064,7 @@ Controls:
 				</Collapse>
 			</Paper>
 
-			{/* Argument Selector - Positioned Below Toolbar */}
-			{argumentIds.length > 0 && (
-				<Paper 
-					elevation={1} 
-					sx={{ 
-						position: 'absolute', 
-						top: toolbarExpanded ? 120 : 70, 
-						left: 8, 
-						zIndex: 1,
-						p: 0.5,
-						backgroundColor: 'rgba(25,25,35,0.95)',
-						borderRadius: 1
-					}}
-				>
-					<Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-						<span style={{ fontSize: 11, opacity: 0.7, marginRight: 4 }}>Args:</span>
-						<Chip
-							size="small"
-							label="All"
-							variant={!selectedArgumentId ? 'filled' : 'outlined'}
-							onClick={() => { 
-								setSelectedArgumentId(null); 
-								if (storageKey) { 
-									try { localStorage.removeItem(`xv_argument_${storageKey}`) } catch {} 
-								} 
-							}}
-						/>
-						{argumentIds.map(aid => (
-							<Chip
-								key={aid}
-								size="small"
-								label={aid}
-								color={selectedArgumentId === aid ? 'warning' : 'default'}
-								variant={selectedArgumentId === aid ? 'filled' : 'outlined'}
-								onClick={() => {
-									setSelectedArgumentId(prev => {
-										const next = prev === aid ? null : aid
-										if (storageKey) { 
-											try { 
-												if (next) localStorage.setItem(`xv_argument_${storageKey}`, next)
-												else localStorage.removeItem(`xv_argument_${storageKey}`) 
-											} catch {} 
-										}
-										return next
-									})
-								}}
-							/>
-						))}
-					</Stack>
-				</Paper>
-			)}
+			{/* Argument Selector moved to menubar */}
 
 			{/* Status Text */}
 			{statusText && (

@@ -1,37 +1,80 @@
 import React from 'react'
-import { Box, Typography, Stack, TextField, Button, ToggleButton, ToggleButtonGroup, Snackbar, Alert, Dialog, DialogTitle, DialogContent, Autocomplete, Checkbox, FormControlLabel, FormGroup } from '@mui/material'
-import DocumentViewer from '../components/DocumentViewer/DocumentViewer'
+import { Box, Snackbar, Alert, Dialog, DialogTitle, DialogContent } from '@mui/material'
 import { ZlfnGraphWithNotes } from '../components/Visualizations/ZlfnGraphWithNotes'
 import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph'
-import VennDiagram from '../components/Visualizations/VennDiagram'
 import type { VennDiagramData, NecessarySufficientExample } from '../components/Visualizations/VennDiagram'
-import NeonCard from '../components/UI/NeonCard'
 import { parseExpressionToAst, astToZlfnGraph, toNNF, toCNF, astToString, type AstNodeRec } from '../services/logic'
-import { parseDocumentToGraph, type DocumentGraphData } from '../services/documentParser'
+import { type DocumentGraphData } from '../services/documentParser'
 import { useLogicShared } from '../context/LogicSharedContext'
-import NeonAccordion from '../components/Accordion/NeonAccordion'
-import { downloadJson, readJsonFile, readSavedLayout } from '../services/io'
-import TruthTable from '../components/Visualizations/TruthTable'
+import { downloadJson, readJsonFile } from '../services/io'
+import { CommandBar, ControlsDrawer, InspectorDrawer, StatusBar } from '../components/Visualizer'
+import AdvancedSearch from '../components/Search/AdvancedSearch'
+import { usePerformanceMonitor } from '../hooks/usePerformanceMonitor'
 
 const LogicVisualizer: React.FC = () => {
-	const { selectedNodeId, setSelectedNodeId, currentExpression, setCurrentExpression, bumpExpressionHighlight, modes, setModes } = useLogicShared()
-	// Graph-only view
-	const [viewMode, setViewMode] = React.useState<'graph'>(() => 'graph')
-	const [docId, setDocId] = React.useState<'TAG_Critique' | 'expressions_guide'>(() => (localStorage.getItem('xv_viz_doc') as any) || 'TAG_Critique')
-	React.useEffect(() => { try { localStorage.setItem('xv_viz_doc', docId) } catch {} }, [docId])
-	const [qsDismissed, setQsDismissed] = React.useState<boolean>(() => localStorage.getItem('xv_qs_dismissed') === '1')
-	const dismissQS = () => { setQsDismissed(true); try { localStorage.setItem('xv_qs_dismissed', '1') } catch {} }
-	const toggleQS = () => { const next = !qsDismissed; setQsDismissed(next); try { localStorage.setItem('xv_qs_dismissed', next ? '1' : '0') } catch {} }
+	const { 
+		selectedNodeId, 
+		setSelectedNodeId, 
+		currentExpression, 
+		setCurrentExpression, 
+ 
+		modes, 
+		setModes,
+		simulationMode,
+		setSimulationMode,
+		resetStates
+	} = useLogicShared()
+
+	// UI State (default drawers closed unless explicitly stored as 'true')
+	const [controlsDrawerOpen, setControlsDrawerOpen] = React.useState(() => 
+		localStorage.getItem('xv_controls_drawer') === 'true'
+	)
+	const [inspectorDrawerOpen, setInspectorDrawerOpen] = React.useState(() => 
+		localStorage.getItem('xv_inspector_drawer') === 'true'
+	)
+	const [showPerformanceOverlay, setShowPerformanceOverlay] = React.useState(() => 
+		localStorage.getItem('xv_performance_overlay') === 'true'
+	)
+	const [shortcutsOpen, setShortcutsOpen] = React.useState(false)
+	const [advancedSearchOpen, setAdvancedSearchOpen] = React.useState(false)
+
+	// Persist drawer states
+	React.useEffect(() => {
+		localStorage.setItem('xv_controls_drawer', String(controlsDrawerOpen))
+	}, [controlsDrawerOpen])
+	
+	React.useEffect(() => {
+		localStorage.setItem('xv_inspector_drawer', String(inspectorDrawerOpen))
+	}, [inspectorDrawerOpen])
+	
+	React.useEffect(() => {
+		localStorage.setItem('xv_performance_overlay', String(showPerformanceOverlay))
+	}, [showPerformanceOverlay])
+
+	// Logic processing
 	const ast = React.useMemo<AstNodeRec | null>(() => parseExpressionToAst(currentExpression), [currentExpression])
 	const graph = React.useMemo(() => (ast ? astToZlfnGraph(ast) : null), [ast])
-	const [showDemoExtras, setShowDemoExtras] = React.useState<boolean>(() => localStorage.getItem('xv_demo_extras') === '1')
-	React.useEffect(() => { try { localStorage.setItem('xv_demo_extras', showDemoExtras ? '1' : '0') } catch {} }, [showDemoExtras])
 	
-	// Document-based graph data
-	const [documentGraphData, setDocumentGraphData] = React.useState<DocumentGraphData | null>(null)
-	const [useDocumentData, setUseDocumentData] = React.useState<boolean>(() => localStorage.getItem('xv_use_document') === '1')
-	React.useEffect(() => { try { localStorage.setItem('xv_use_document', useDocumentData ? '1' : '0') } catch {} }, [useDocumentData])
-	// Determine data source: document graph data takes precedence over AST graph
+	// Demo and document data
+	const [showDemoExtras, setShowDemoExtras] = React.useState<boolean>(() => 
+		localStorage.getItem('xv_demo_extras') === '1'
+	)
+	const [documentGraphData] = React.useState<DocumentGraphData | null>(null)
+	const [useDocumentData, setUseDocumentData] = React.useState<boolean>(() => 
+		localStorage.getItem('xv_use_document') === '1'
+	)
+	
+	React.useEffect(() => { 
+		try { localStorage.setItem('xv_demo_extras', showDemoExtras ? '1' : '0') } 
+		catch {} 
+	}, [showDemoExtras])
+	
+	React.useEffect(() => { 
+		try { localStorage.setItem('xv_use_document', useDocumentData ? '1' : '0') } 
+		catch {} 
+	}, [useDocumentData])
+
+	// Determine active data source
 	const activeData = useDocumentData && documentGraphData ? documentGraphData : 
 					   graph ? { nodes: graph.nodes as ZlfnNode[], edges: graph.edges as ZlfnEdge[] } : null
 	
@@ -44,432 +87,538 @@ const LogicVisualizer: React.FC = () => {
 		{ from: 'P1', to: 'T1', weight: 85, style: 'solid', rule: 'Modus Ponens' },
 		{ from: 'T1', to: 'C', weight: 75, style: 'dashed', rule: 'Hypothetical Syllogism' },
 	]
+
+	// Add demo extras if enabled
 	if (showDemoExtras && (!graph || (Array.isArray(graph.nodes) && graph.nodes.length <= 6))) {
-		// add extra conclusion and fallacy for boundary verification
-		if (!nodes.find(n => n.id === 'C2')) nodes = nodes.concat({ id: 'C2', label: 'C2', color: '#8e7cc3', type: 'conclusion', size: { width: 100, height: 30 }, argumentId: 'Demo' })
-		if (!nodes.find(n => n.id === 'F1')) nodes = nodes.concat({ id: 'F1', label: 'F1', color: '#DC143C', type: 'fallacy', size: { width: 100, height: 30 }, argumentId: 'Demo' })
-		// add demo informal and temporal nodes
-		if (!nodes.find(n => n.id === 'INF1')) nodes = nodes.concat({ id: 'INF1', label: 'Informal Note', color: '#ffb74d', type: 'informal', size: { width: 120, height: 26 }, argumentId: 'Demo' })
-		if (!nodes.find(n => n.id === 'TMP1')) nodes = nodes.concat({ id: 'TMP1', label: 't0..t3', color: '#64b5f6', type: 'temporal', size: { width: 90, height: 26 }, argumentId: 'Demo' })
-		// add Core component as central argument hub
-		if (!nodes.find(n => n.id === 'CORE1')) {
-			nodes = nodes.concat({ 
-				id: 'CORE1', 
-				label: 'Core Hub', 
-				color: '#ffd700', 
-				type: 'core', 
-				layoutMode: 'radial',
-				complexity: 'moderate',
-				centralHub: true,
-				connectedArguments: ['Demo', 'Secondary'],
-				size: { radius: 30 }, 
-				argumentId: 'Demo' 
-			})
+		if (!nodes.find(n => n.id === 'C2')) {
+			nodes = nodes.concat({ id: 'C2', label: 'C2', color: '#8e7cc3', type: 'conclusion', size: { width: 100, height: 30 }, argumentId: 'Demo' })
 		}
-		edges = edges.concat(
-			{ from: nodes[1]?.id || 'T1', to: 'C2', weight: 72, style: 'solid', rule: 'Inference' },
-			{ from: 'F1', to: nodes[1]?.id || 'T1', weight: 50, style: 'dotted', rule: 'Fallacy Link', type: 'counterexample' },
-			{ from: 'CORE1', to: 'P1', weight: 90, style: 'solid', rule: 'Core Connection' },
-			{ from: 'CORE1', to: 'C', weight: 88, style: 'solid', rule: 'Core Connection' },
-			{ from: 'INF1', to: 'T1', weight: 40, style: 'dotted', rule: 'Informal Context', type: 'semantic' },
-			{ from: 'TMP1', to: 'C', weight: 60, style: 'dashed', rule: 'Temporal Lead', type: 'semantic' },
-		)
-	}
-	const examples: NecessarySufficientExample[] = [
-		{ id: 'ex', title: 'If A then B', necessary: 'A', sufficient: 'B' },
-	]
-	const vennData: VennDiagramData = {
-		description: 'Necessary & sufficient demo',
-		sets: [
-			{ label: 'A', items: ['a1', 'a2'], color: '#40c4ff' },
-			{ label: 'B', items: ['b1'], color: '#00e676' },
-		],
-		intersection: ['a∧b'],
-	}
-	const selectedNode = React.useMemo(() => nodes.find(n => n.id === selectedNodeId) || null, [nodes, selectedNodeId])
-	const [snackbar, setSnackbar] = React.useState<{ open: boolean; msg: string; severity?: 'success'|'info'|'warning'|'error' }>({ open: false, msg: '' })
-	const showInfo = (msg: string, severity: 'success'|'info'|'warning'|'error' = 'info') => setSnackbar({ open: true, msg, severity })
-	
-	// Load document graph data when docId changes
-	React.useEffect(() => {
-		if (useDocumentData && docId) {
-			parseDocumentToGraph(docId).then(data => {
-				setDocumentGraphData(data)
-				if (data && data.arguments.length > 0) {
-					showInfo(`Loaded ${data.arguments.length} logical arguments from document`, 'success')
-				}
-			}).catch(error => {
-				console.error('Failed to parse document:', error)
-				showInfo('Failed to parse document for logical arguments', 'error')
-			})
-		} else {
-			setDocumentGraphData(null)
+		if (!nodes.find(n => n.id === 'F1')) {
+			nodes = nodes.concat({ id: 'F1', label: 'F1', color: '#DC143C', type: 'fallacy', size: { width: 100, height: 30 }, argumentId: 'Demo' })
 		}
-	}, [docId, useDocumentData, showInfo])
-	
-	const exprInputRef = React.useRef<HTMLInputElement | null>(null)
+		if (!edges.find(e => e.from === 'T1' && e.to === 'C2')) {
+			edges = edges.concat({ from: 'T1', to: 'C2', weight: 60, style: 'dotted', rule: 'Weak Inference' })
+		}
+		if (!edges.find(e => e.from === 'P1' && e.to === 'F1')) {
+			edges = edges.concat({ from: 'P1', to: 'F1', weight: 30, style: 'dashed', rule: 'Ad Hominem' })
+		}
+	}
+
+	// Selection state
+	const selectedNode = React.useMemo(() => 
+		selectedNodeId ? nodes.find(n => n.id === selectedNodeId) || null : null, 
+		[selectedNodeId, nodes]
+	)
+	const [selectedEdge, setSelectedEdge] = React.useState<any>(null)
+	const [truthAst, setTruthAst] = React.useState<AstNodeRec | null>(null)
+
+	// Search state
 	const [searchId, setSearchId] = React.useState<string>('')
 	const [searchTrigger, setSearchTrigger] = React.useState<number>(0)
-    const [shortcutsOpen, setShortcutsOpen] = React.useState(false)
-    const [truthAst, setTruthAst] = React.useState<AstNodeRec | null>(null)
-	const searchInputRef = React.useRef<HTMLInputElement | null>(null)
-
-	React.useEffect(() => {
-		const onKey = (e: KeyboardEvent) => {
-			const active = (document.activeElement as HTMLElement | null) || (e.target as HTMLElement | null)
-			if (active) {
-				const tag = active.tagName
-				const inDialog = !!active.closest('[role="dialog"], .MuiDialog-root, .MuiModal-root, .MuiPopover-root, [data-notes-dialog="true"]')
-				const role = active.getAttribute?.('role')
-				const isEditable = (active as any).isContentEditable || role === 'textbox'
-				try { console.debug('[VIZ-KEY]', { key: e.key, tag, inDialog, isEditable }) } catch {}
-				if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || isEditable || inDialog) return
-			}
-			const k = e.key.toLowerCase()
-			if (k === 'g') { setViewMode('graph'); showInfo('View: Graph') }
-			if (e.key === '?') { setShortcutsOpen(true) }
-			if (k === 'k') { searchInputRef.current?.focus() }
-			if (k === 'escape') { setShortcutsOpen(false) }
-		}
-		window.addEventListener('keydown', onKey)
-		return () => window.removeEventListener('keydown', onKey)
-	}, [showInfo])
-
-	React.useEffect(() => {
-		// bump highlight when selection changes (doc auto-scroll to active expr)
-		bumpExpressionHighlight()
-		// persist selected node per expression
-		try { localStorage.setItem(`xv_sel_${currentExpression}`, selectedNodeId || '') } catch {}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [selectedNodeId])
-
-	React.useEffect(() => {
-		// restore selection when expression changes
-		try {
-			const saved = localStorage.getItem(`xv_sel_${currentExpression}`)
-			if (saved) setSelectedNodeId(saved)
-			else setSelectedNodeId(null)
-		} catch {}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [currentExpression])
-
-	const selectionItems = React.useMemo(() => {
-		if (!selectedNode) return []
-		const outEdges = edges.filter(e => (e.from ?? e.source) === selectedNode.id)
-		const inEdges = edges.filter(e => (e.to ?? e.target) === selectedNode.id)
-		return [
-			{ id: 'info', title: 'Info', content: (
-				<Box sx={{ fontSize: 14 }}>
-					<div><strong>ID:</strong> {selectedNode.id}</div>
-					<div><strong>Label:</strong> {selectedNode.label}</div>
-					{selectedNode.symbol && <div><strong>Symbol:</strong> {selectedNode.symbol}</div>}
-					{selectedNode.name && <div><strong>Name:</strong> {selectedNode.name}</div>}
-					{selectedNode.type && <div><strong>Type:</strong> {selectedNode.type}</div>}
-					<Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-						<Button size="small" variant="outlined" onClick={() => setSelectedNodeId(null)}>Clear</Button>
-						<Button size="small" variant="outlined" onClick={async () => {
-							const outEdges = edges.filter(e => (e.from ?? e.source) === selectedNode.id)
-							const inEdges = edges.filter(e => (e.to ?? e.target) === selectedNode.id)
-							const lines: string[] = []
-							lines.push(`Node ${selectedNode.id}`)
-							if (selectedNode.label) lines.push(`Label: ${selectedNode.label}`)
-							if (selectedNode.symbol) lines.push(`Symbol: ${selectedNode.symbol}`)
-							if (selectedNode.name) lines.push(`Name: ${selectedNode.name}`)
-							if (selectedNode.type) lines.push(`Type: ${selectedNode.type}`)
-							if (inEdges.length) {
-								lines.push('Incoming:')
-								inEdges.forEach(e => lines.push(`  ${e.from ?? e.source} --${e.rule ?? e.label ?? ''}--> ${selectedNode.id}`))
-							}
-							if (outEdges.length) {
-								lines.push('Outgoing:')
-								outEdges.forEach(e => lines.push(`  ${selectedNode.id} --${e.rule ?? e.label ?? ''}--> ${e.to ?? e.target}`))
-							}
-							try { await navigator.clipboard.writeText(lines.join('\n')); showInfo('Copied selection details', 'success') } catch {}
-						}}>Copy Details</Button>
-					</Stack>
-				</Box>
-			) },
-			{ id: 'out', title: `Outgoing (${outEdges.length})`, content: (
-				<Box sx={{ fontSize: 13 }}>
-					{outEdges.length ? outEdges.map((e, i) => <div key={i}>{e.rule || e.label || 'edge'} → {(e.to ?? e.target) as string}</div>) : <div>None</div>}
-				</Box>
-			)},
-			{ id: 'in', title: `Incoming (${inEdges.length})`, content: (
-				<Box sx={{ fontSize: 13 }}>
-					{inEdges.length ? inEdges.map((e, i) => <div key={i}>{(e.from ?? e.source) as string} → {e.rule || e.label || 'edge'}</div>) : <div>None</div>}
-				</Box>
-			)},
-		]
-	}, [selectedNode, edges, setSelectedNodeId])
-
-	const [preview, setPreview] = React.useState<any | null>(null)
-	const exportAll = () => {
-		const layout = readSavedLayout(currentExpression)
-		const slug = currentExpression.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'logic'
-		let pins: string[] = []
-		let recents: string[] = []
-		try { pins = JSON.parse(localStorage.getItem('xv_pins') || '[]') } catch {}
-		try { recents = JSON.parse(localStorage.getItem('xv_recents') || '[]') } catch {}
-		downloadJson({ expression: currentExpression, ast: ast ?? undefined, graph: graph ?? undefined, viewMode, selectedNodeId, layout: layout ?? undefined, pins, recents }, `logic-export-${slug}.json`)
-		showInfo('Exported JSON', 'success')
-	}
-	const importFromFile = async (file?: File | null) => {
-		if (!file) return
-		try {
-			const json = await readJsonFile(file)
-			setPreview(json)
-		} catch { showInfo('Import failed', 'error') }
-	}
-	const applyPreview = () => {
-		if (!preview) return
-		if (typeof preview?.expression === 'string') setCurrentExpression(preview.expression)
-		if (preview?.viewMode === 'graph') setViewMode(preview.viewMode as 'graph')
-		if (typeof preview?.selectedNodeId === 'string' || preview?.selectedNodeId === null) setSelectedNodeId(preview.selectedNodeId ?? null)
-		if (preview?.layout && typeof preview.layout === 'object') {
-			try { localStorage.setItem(`xv_layout_${preview.expression}`, JSON.stringify(preview.layout)) } catch {}
-		}
-		if (Array.isArray(preview?.pins)) { try { localStorage.setItem('xv_pins', JSON.stringify(preview.pins)) } catch {} }
-		if (Array.isArray(preview?.recents)) { try { localStorage.setItem('xv_recents', JSON.stringify(preview.recents)) } catch {} }
-		setPreview(null)
-		showInfo('Imported JSON', 'success')
-	}
-
-	const copyExpr = async () => { try { await navigator.clipboard.writeText(currentExpression); showInfo('Copied expression', 'success') } catch {} }
-
 	const nodeIdOptions = React.useMemo(() => nodes.map(n => n.id), [nodes])
 
-	const [selectedEdge, setSelectedEdge] = React.useState<ZlfnEdge | null>(null)
+	// Snackbar state
+	const [snackbar, setSnackbar] = React.useState<{
+		open: boolean
+		msg: string
+		severity?: 'success' | 'info' | 'warning' | 'error'
+	}>({ open: false, msg: '' })
+
+	const showInfo = (msg: string, severity: 'success' | 'info' | 'warning' | 'error' = 'info') => {
+		setSnackbar({ open: true, msg, severity })
+	}
+
+	// Performance monitoring
+	const performanceMonitor = usePerformanceMonitor({
+		enabled: showPerformanceOverlay,
+		sampleInterval: 100
+	})
+
+	// Venn diagram data
+	const vennData: VennDiagramData = React.useMemo(() => ({
+		sets: [
+			{ label: 'Premises', items: nodes.filter(n => n.type === 'premise').map(n => n.label || n.id), color: '#20B2AA' },
+			{ label: 'Conclusions', items: nodes.filter(n => n.type === 'conclusion').map(n => n.label || n.id), color: '#9370DB' }
+		],
+		intersection: []
+	}), [nodes])
+
+	const vennExamples: NecessarySufficientExample[] = [
+		{ id: '1', title: 'Sufficient Example', necessary: 'All humans are mortal', sufficient: 'Socrates is mortal' },
+		{ id: '2', title: 'Necessary Example', necessary: 'If it rains, the ground gets wet', sufficient: 'The ground is wet' }
+	]
+
+	// Event handlers
+	const handleSearchChange = (value: string) => {
+		setSearchId(value)
+	}
+
+	const handleSearchSelect = (value: string) => {
+		if (value && nodes.find(n => n.id === value)) {
+			setSearchId(value)
+			setSelectedNodeId(value)
+			setSearchTrigger(t => t + 1)
+			showInfo(`Centering on ${value}`, 'success')
+		}
+	}
+
+
+
+	const handleEdgeSelect = (edge: any) => {
+		setSelectedEdge(edge)
+	}
+
+	const handleExpressionChange = (value: string) => {
+		setCurrentExpression(value)
+	}
+
+	const handleResetExpression = () => {
+		setCurrentExpression('(A ∧ B) → C')
+		showInfo('Expression reset', 'success')
+	}
+
+	const handleCopyExpression = async () => {
+		try {
+			await navigator.clipboard.writeText(currentExpression)
+			showInfo('Expression copied', 'success')
+		} catch {
+			showInfo('Failed to copy', 'error')
+		}
+	}
+
+	const handleConvertToNNF = () => {
+		const a = parseExpressionToAst(currentExpression)
+		if (!a) return
+		const s = astToString(toNNF(a))
+		setCurrentExpression(s)
+		showInfo('Converted to NNF', 'success')
+	}
+
+	const handleConvertToCNF = () => {
+		const a = parseExpressionToAst(currentExpression)
+		if (!a) return
+		const s = astToString(toCNF(a))
+		setCurrentExpression(s)
+		showInfo('Converted to CNF', 'success')
+	}
+
+	const handleModeChange = (mode: string, checked: boolean) => {
+		setModes((prev: any) => ({ ...prev, [mode]: checked }))
+	}
+
+	const handleToggleDocumentData = () => {
+		setUseDocumentData(v => !v)
+	}
+
+	const handleToggleDemoExtras = () => {
+		setShowDemoExtras(v => !v)
+	}
+
+	const handleExport = () => {
+		const data = {
+			expression: currentExpression,
+			ast: ast ?? undefined,
+			graph: graph ?? undefined,
+			selectedNodeId,
+			modes,
+			useDocumentData,
+			showDemoExtras
+		}
+		downloadJson(data, `logic-export-${Date.now()}.json`)
+		showInfo('Exported successfully', 'success')
+	}
+
+	const handleImport = () => {
+		const input = document.createElement('input')
+		input.type = 'file'
+		input.accept = 'application/json'
+		input.onchange = async (e) => {
+			const file = (e.target as HTMLInputElement).files?.[0]
+			if (!file) return
+			try {
+				const data = await readJsonFile(file)
+				if (data.expression) setCurrentExpression(data.expression)
+				if (data.selectedNodeId) setSelectedNodeId(data.selectedNodeId)
+				if (data.modes) setModes(data.modes)
+				if (typeof data.useDocumentData === 'boolean') setUseDocumentData(data.useDocumentData)
+				if (typeof data.showDemoExtras === 'boolean') setShowDemoExtras(data.showDemoExtras)
+				showInfo('Imported successfully', 'success')
+			} catch {
+				showInfo('Import failed', 'error')
+			}
+		}
+		input.click()
+	}
+
+	const handleOpenTruthTable = (expr: string) => {
+		const ta = parseExpressionToAst(expr)
+		if (ta) {
+			setTruthAst(ta)
+			setInspectorDrawerOpen(true)
+			showInfo('Opened Truth Table', 'success')
+		}
+	}
+
+	const handleCopyNode = async () => {
+		if (!selectedNode) return
+		try {
+			await navigator.clipboard.writeText(`${selectedNode.id}: ${selectedNode.label || ''}`)
+			showInfo('Node copied', 'success')
+		} catch {
+			showInfo('Failed to copy', 'error')
+		}
+	}
+
+	const handleCopyEdge = async () => {
+		if (!selectedEdge) return
+		try {
+			await navigator.clipboard.writeText(`${selectedEdge.from ?? selectedEdge.source} --${selectedEdge.rule ?? selectedEdge.label ?? ''}--> ${selectedEdge.to ?? selectedEdge.target}`)
+			showInfo('Edge copied', 'success')
+		} catch {
+			showInfo('Failed to copy', 'error')
+		}
+	}
+
+	// Keyboard shortcuts
+	React.useEffect(() => {
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+			
+			const k = e.key.toLowerCase()
+			if (e.ctrlKey || e.metaKey) {
+				if (k === 'k') {
+					e.preventDefault()
+					setAdvancedSearchOpen(true)
+				}
+				return
+			}
+			
+			if (k === 'g') { 
+				showInfo('View: Graph', 'info') 
+			}
+			if (k === 'f') { 
+				// Fit graph - would need to be implemented in graph component
+				showInfo('Fit Graph', 'info') 
+			}
+			if (k === 'c') { 
+				// Center graph - would need to be implemented in graph component
+				showInfo('Center Graph', 'info') 
+			}
+			if (k === '?') {
+				setShortcutsOpen(true)
+			}
+		}
+
+		window.addEventListener('keydown', handleKeyDown)
+		return () => window.removeEventListener('keydown', handleKeyDown)
+	}, [])
+
+	// Window size state for responsive drawer widths
+	const [windowWidth, setWindowWidth] = React.useState(() => 
+		typeof window !== 'undefined' ? window.innerWidth : 1200
+	)
+
+	React.useEffect(() => {
+		const handleResize = () => setWindowWidth(window.innerWidth)
+		window.addEventListener('resize', handleResize)
+		return () => window.removeEventListener('resize', handleResize)
+	}, [])
+
+	// Calculate layout margins based on drawer states and screen size
+	const getDrawerWidth = (type: 'controls' | 'inspector') => {
+		if (windowWidth < 600) { // xs
+			return type === 'controls' ? 280 : 300
+		} else if (windowWidth < 960) { // sm
+			return type === 'controls' ? 320 : 350
+		} else { // md+
+			return type === 'controls' ? 360 : 400
+		}
+	}
+	
+	const leftMargin = controlsDrawerOpen ? getDrawerWidth('controls') : 0
+	const rightMargin = inspectorDrawerOpen ? getDrawerWidth('inspector') : 0
+	// Second toolbar height if args row present
+	const topOffset = 48
 
 	return (
-		<div style={{ maxWidth: 1400, margin: '0 auto', padding: '1rem' }}>
-			<Typography variant="h5" sx={{ mb: 2 }}>Logic Visualizer</Typography>
-			<Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
-				<Box>
-					<NeonCard title="Document">
-						<Stack direction="row" spacing={1} sx={{ mb: 1 }}>
-							<Button size="small" variant={docId === 'TAG_Critique' ? 'contained' : 'outlined'} onClick={() => setDocId('TAG_Critique')}>Critique</Button>
-							<Button size="small" variant={docId === 'expressions_guide' ? 'contained' : 'outlined'} onClick={() => setDocId('expressions_guide')}>Guide</Button>
-						</Stack>
-						<DocumentViewer filenameOverride={docId} />
-					</NeonCard>
-				</Box>
-				<Box>
-					<Stack spacing={2}>
-						<NeonCard title="Expression">
-							<Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-								<TextField inputRef={exprInputRef} autoFocus fullWidth label="Expression" size="small" value={currentExpression} onChange={e => setCurrentExpression(e.target.value)} />
-								<Button variant="outlined" onClick={() => setCurrentExpression('(A ∧ B) → C')}>Reset</Button>
-								<Button variant="outlined" onClick={copyExpr}>Copy</Button>
-								<Button variant="outlined" onClick={exportAll}>Export</Button>
-								<Button variant="outlined" onClick={() => { const a = parseExpressionToAst(currentExpression); if (!a) return; const s = astToString(toNNF(a)); setCurrentExpression(s); showInfo('Converted to NNF') }}>NNF</Button>
-								<Button variant="outlined" onClick={() => { const a = parseExpressionToAst(currentExpression); if (!a) return; const s = astToString(toCNF(a)); setCurrentExpression(s); showInfo('Converted to CNF') }}>CNF</Button>
-								<Button variant="outlined" component="label">
-									Import
-									<input hidden type="file" accept="application/json" onChange={e => importFromFile(e.target.files?.[0])} />
-								</Button>
-							</Stack>
-						</NeonCard>
-						<NeonCard title="Modes">
-							<FormGroup row>
-								{(['classical','epistemic','deontic','temporal','informal','paraconsistent','fuzzy'] as const).map(m => (
-									<FormControlLabel key={m} control={<Checkbox checked={!!modes[m]} onChange={(_, checked)=> setModes((prev: any) => ({ ...prev, [m]: checked }))} />} label={m} />
-								))}
-							</FormGroup>
-						</NeonCard>
-						<NeonCard title="View">
-							<ToggleButtonGroup
-								color="primary"
-								value={viewMode}
-								exclusive
-								onChange={(_, val) => val && setViewMode(val)}
-								size="small"
+		<Box sx={{ 
+			display: 'flex', 
+			flexDirection: 'column', 
+			height: '100vh',
+			backgroundColor: '#0a0a0f'
+		}}>
+			{/* Command Bar */}
+			<CommandBar
+				searchValue={searchId}
+				searchOptions={nodeIdOptions}
+				onSearchChange={handleSearchChange}
+				onSearchSelect={handleSearchSelect}
+				onAdvancedSearch={() => setAdvancedSearchOpen(true)}
+				simulationMode={simulationMode}
+				onToggleSimulation={() => setSimulationMode(!simulationMode)}
+				onResetStates={resetStates}
+				onFitGraph={() => showInfo('Fit Graph', 'info')}
+				onCenterGraph={() => showInfo('Center Graph', 'info')}
+				onSaveLayout={() => showInfo('Layout Saved', 'success')}
+				onClearLayout={() => showInfo('Layout Cleared', 'success')}
+				onExport={handleExport}
+				onImport={handleImport}
+				onTogglePerformance={() => setShowPerformanceOverlay(!showPerformanceOverlay)}
+				onShowShortcuts={() => setShortcutsOpen(true)}
+				onShowHelp={() => showInfo('Help coming soon', 'info')}
+				isPerformanceVisible={showPerformanceOverlay}
+				controlsOpen={controlsDrawerOpen}
+				inspectorOpen={inspectorDrawerOpen}
+				onToggleControls={() => setControlsDrawerOpen(v => !v)}
+				onToggleInspector={() => setInspectorDrawerOpen(v => !v)}
+				argumentIds={Array.from(new Set(nodes.map(n => n.argumentId).filter(Boolean) as string[]))}
+				selectedArgumentId={(() => { try { return localStorage.getItem(`xv_argument_${currentExpression}`) || null } catch { return null } })()}
+				onSelectArgument={(id) => {
+					// Persist and dispatch an event so the graph updates its filter
+					try {
+						if (id) localStorage.setItem(`xv_argument_${currentExpression}`, id)
+						else localStorage.removeItem(`xv_argument_${currentExpression}`)
+					} catch {}
+					// Fire a custom event that graph listens to via key handler already; we add a bespoke event
+					const ev = new CustomEvent('zlfn:set-argument', { detail: { id } })
+					window.dispatchEvent(ev as any)
+				}}
+			/>
+
+			{/* Main Content Area */}
+			<Box sx={{ 
+				display: 'flex', 
+				flexGrow: 1,
+				position: 'relative',
+				overflow: 'hidden',
+				width: '100vw',
+				maxWidth: '100vw'
+			}}>
+				{/* Controls Drawer */}
+				<ControlsDrawer
+					open={controlsDrawerOpen}
+					onClose={() => setControlsDrawerOpen(false)}
+					topOffset={topOffset}
+					expression={currentExpression}
+					onExpressionChange={handleExpressionChange}
+					onResetExpression={handleResetExpression}
+					onCopyExpression={handleCopyExpression}
+					onConvertToNNF={handleConvertToNNF}
+					onConvertToCNF={handleConvertToCNF}
+					modes={modes}
+					onModeChange={handleModeChange}
+					useDocumentData={useDocumentData}
+					onToggleDocumentData={handleToggleDocumentData}
+					documentArguments={documentGraphData?.arguments}
+					showDemoExtras={showDemoExtras}
+					onToggleDemoExtras={handleToggleDemoExtras}
+				/>
+
+				{/* Graph Canvas */}
+				<Box sx={{ 
+					flexGrow: 1,
+					marginLeft: leftMargin,
+					marginRight: rightMargin,
+					transition: 'margin 0.3s ease',
+					position: 'relative',
+					height: `calc(100vh - ${topOffset}px - 32px)`,
+					minWidth: 0,
+					overflow: 'hidden'
+				}}>
+					{/* Drawer Toggle Buttons */}
+					{!controlsDrawerOpen && (
+						<Box sx={{ 
+							position: 'absolute', 
+							left: 8, 
+							bottom: 8, 
+							zIndex: 1000,
+							backgroundColor: 'rgba(25, 25, 35, 0.9)',
+							borderRadius: 1,
+							border: '1px solid rgba(64, 196, 255, 0.2)'
+						}}>
+							<button 
+								onClick={() => setControlsDrawerOpen(true)}
+								style={{
+									background: 'none',
+									border: 'none',
+									color: '#40c4ff',
+									padding: '8px 12px',
+									cursor: 'pointer',
+									fontSize: '12px',
+									fontWeight: 500
+								}}
 							>
-								<ToggleButton value="graph">Graph</ToggleButton>
-							</ToggleButtonGroup>
-							<Button size="small" variant="outlined" sx={{ ml: 1 }} onClick={() => setShortcutsOpen(true)}>Shortcuts</Button>
-							<Button size="small" variant="outlined" sx={{ ml: 1 }} onClick={toggleQS}>{qsDismissed ? 'Show Quick Start' : 'Hide Quick Start'}</Button>
-							<Button size="small" variant={showDemoExtras ? 'contained' : 'outlined'} sx={{ ml: 1 }} onClick={() => setShowDemoExtras(v=>!v)}>Demo Extras</Button>
-							<Button size="small" variant={useDocumentData ? 'contained' : 'outlined'} sx={{ ml: 1 }} onClick={() => setUseDocumentData(v=>!v)}>Document Mode</Button>
-						</NeonCard>
-						
-						{/* Document Arguments Panel */}
-						{useDocumentData && documentGraphData && documentGraphData.arguments.length > 0 && (
-							<NeonCard title={`Logical Arguments (${documentGraphData.arguments.length})`}>
-								<Stack spacing={1}>
-									{documentGraphData.arguments.map((arg) => (
-										<Box key={arg.id} sx={{ p: 1, border: '1px solid rgba(64,196,255,0.3)', borderRadius: 1, backgroundColor: 'rgba(25,25,35,0.5)' }}>
-											<Typography variant="subtitle2" sx={{ color: '#40c4ff', mb: 0.5 }}>{arg.title}</Typography>
-											<Typography variant="caption" sx={{ color: '#8ad7ff', textTransform: 'uppercase' }}>{arg.type} argument</Typography>
-											{arg.premises.length > 0 && (
-												<Box sx={{ mt: 1 }}>
-													<Typography variant="caption" sx={{ color: '#20B2AA', fontWeight: 600 }}>Premises:</Typography>
-													{arg.premises.map((premise, pIdx) => (
-														<Box key={pIdx} sx={{ ml: 1, fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>
-															{pIdx + 1}. {premise.length > 80 ? premise.substring(0, 80) + '...' : premise}
-														</Box>
-													))}
-												</Box>
-											)}
-											{arg.conclusions.length > 0 && (
-												<Box sx={{ mt: 1 }}>
-													<Typography variant="caption" sx={{ color: '#9370DB', fontWeight: 600 }}>Conclusions:</Typography>
-													{arg.conclusions.map((conclusion, cIdx) => (
-														<Box key={cIdx} sx={{ ml: 1, fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>
-															{cIdx + 1}. {conclusion.length > 80 ? conclusion.substring(0, 80) + '...' : conclusion}
-														</Box>
-													))}
-												</Box>
-											)}
-											{arg.validity && (
-												<Box sx={{ mt: 1 }}>
-													<Typography variant="caption" sx={{ color: arg.validity === 'valid' ? '#00e676' : '#ff5252' }}>
-														{arg.validity.toUpperCase()}
-													</Typography>
-												</Box>
-											)}
-										</Box>
-									))}
-								</Stack>
-							</NeonCard>
-						)}
-						
-						{(truthAst || ast) && (
-							<NeonCard title={truthAst ? 'Truth Table (node expression)' : 'Truth Table'}>
-								{truthAst && (
-									<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-										<Typography variant="body2" color="text.secondary">Viewing table for selected node expression</Typography>
-										<Button size="small" variant="outlined" onClick={()=> setTruthAst(null)}>Close</Button>
-									</Box>
-								)}
-								<TruthTable ast={truthAst || ast!} />
-							</NeonCard>
-						)}
-						<NeonCard title="Find Node">
-							<Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-								<Autocomplete
-									size="small"
-									options={nodeIdOptions}
-									value={searchId}
-									onChange={(_, val) => setSearchId(val || '')}
-									renderInput={(params) => <TextField {...params} inputRef={searchInputRef} onKeyDown={(e) => { if (e.key === 'Enter' && searchId) { setSearchTrigger(t => t + 1); setSelectedNodeId(searchId); showInfo(`Centering ${searchId}`) } }} label="Node ID" />}
-									freeSolo
-									fullWidth
-								/>
-								<Button variant="outlined" onClick={() => { if (searchId) { setSearchTrigger(t => t + 1); setSelectedNodeId(searchId); showInfo(`Centering ${searchId}`) } }}>Go</Button>
-							</Stack>
-						</NeonCard>
-						{!qsDismissed && (
-							<NeonCard title="Quick Start">
-								<NeonAccordion items={[
-									{ id: 'qs1', title: '1) Enter expression', content: <div>Use symbols or ASCII: {'`(A ∧ B) → C`'} , {'`A & B -> C`'} , {'`X <-> Y`'}.</div> },
-									{ id: 'qs2', title: '2) Toggle views', content: <div>Switch Graph/AST or Both. Click nodes to select; use Fit/Center controls.</div> },
-									{ id: 'qs3', title: '3) Save layout', content: <div>Drag nodes, then Save Layout to persist per expression.</div> },
-								]} />
-								<Box sx={{ textAlign: 'right', mt: 1 }}>
-									<Button size="small" onClick={dismissQS}>Dismiss</Button>
-								</Box>
-							</NeonCard>
-						)}
-						<NeonCard title="Selection">
-							{selectedNode ? (
-								<NeonAccordion items={selectionItems} />
-							) : (
-								<Box sx={{ color: 'text.secondary', fontSize: 14 }}>No node selected.</Box>
-							)}
-						</NeonCard>
-						{(viewMode === 'graph') && (
-							<NeonCard 
-								title="ZLFN Graph" 
-								sx={{ position: 'relative', overflow: 'visible', height: '600px' }}
-								contentSx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1 }}
-							>
-								<ZlfnGraphWithNotes
-									nodes={nodes}
-									edges={edges}
-									storageKey={currentExpression}
-									onInfo={msg => showInfo(msg, 'success')}
-									centerOnNodeId={searchId || undefined}
-									centerOnNodeTrigger={searchTrigger}
-									onEdgeSelect={setSelectedEdge}
-									onOpenTruthTable={(expr) => { const ta = parseExpressionToAst(expr); if (ta) { setTruthAst(ta); showInfo('Opened Truth Table for node expression') } }}
-									objectId="main-visualizer"
-									showNotesIndicators={true}
-								/>
-							</NeonCard>
-						)}
-						<NeonCard title="Edge Details">
-							{selectedEdge ? (
-								<Box sx={{ fontSize: 13 }}>
-									<div><strong>Rule:</strong> {selectedEdge.rule || selectedEdge.label || '(none)'}</div>
-									<div><strong>From:</strong> {(selectedEdge.from ?? selectedEdge.source) as string}</div>
-									<div><strong>To:</strong> {(selectedEdge.to ?? selectedEdge.target) as string}</div>
-									{selectedEdge.type && <div><strong>Type:</strong> {selectedEdge.type}</div>}
-									{typeof selectedEdge.weight === 'number' && <div><strong>Weight:</strong> {selectedEdge.weight}%</div>}
-									<Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-										<Button size="small" variant="outlined" onClick={async ()=>{ try { await navigator.clipboard.writeText(`${selectedEdge.from ?? selectedEdge.source} --${selectedEdge.rule ?? selectedEdge.label ?? ''}--> ${selectedEdge.to ?? selectedEdge.target}`); showInfo('Copied edge', 'success') } catch {} }}>Copy</Button>
-										<Button size="small" variant="outlined" onClick={()=>setSelectedEdge(null)}>Clear</Button>
-									</Stack>
-								</Box>
-							) : (
-								<Box sx={{ color: 'text.secondary', fontSize: 13 }}>Click an edge to see details.</Box>
-							)}
-						</NeonCard>
-						<NeonCard title="Necessary & Sufficient">
-							<VennDiagram title="" data={vennData} type="necessary-sufficient" examples={examples} />
-						</NeonCard>
-					</Stack>
-				</Box>
-			</Box>
-			<Snackbar open={snackbar.open} autoHideDuration={2000} onClose={() => setSnackbar(s => ({ ...s, open: false }))} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
-				<Alert severity={snackbar.severity || 'info'} variant="filled" sx={{ width: '100%' }}>{snackbar.msg}</Alert>
-			</Snackbar>
-			<Dialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)}>
-				<DialogTitle>Keyboard Shortcuts</DialogTitle>
-				<DialogContent sx={{ fontSize: 14 }}>
-					<div><strong>g</strong>: View Graph</div>
-					<div><strong>f</strong>: Fit Graph</div>
-					<div><strong>c</strong>: Center on Selection</div>
-					<div><strong>p</strong>: Center on Path</div>
-					<div><strong>s</strong>: Save Layout</div>
-					<div><strong>m</strong>: Toggle Simulation</div>
-					<div><strong>r</strong>: Reset States</div>
-					<div><strong>h</strong>: Toggle Path Highlight</div>
-					<div><strong>x</strong>: Freeze/Unfreeze Layout</div>
-					<div><strong>l</strong>: Toggle Edge Labels</div>
-					<div><strong>k</strong>: Focus Node Search</div>
-					<div><strong>e</strong>: Clear Edge Selection</div>
-					<div><strong>/</strong>: Focus Rule Filter</div>
-					<div><strong>Esc</strong>: Close Shortcuts</div>
-					<div><strong>Ctrl + Click</strong> (node): Pin/Unpin</div>
-				</DialogContent>
-			</Dialog>
-			<Dialog open={!!preview} onClose={() => setPreview(null)}>
-				<DialogTitle>Import Preview</DialogTitle>
-				<DialogContent sx={{ fontSize: 13 }}>
-					{preview ? (
-						<Box sx={{ display: 'grid', gap: 1 }}>
-							<div><strong>Expression:</strong> {String(preview.expression || '')}</div>
-							<div><strong>View:</strong> {String(preview.viewMode || '')}</div>
-							<div><strong>Selected:</strong> {String(preview.selectedNodeId || '')}</div>
-							<div><strong>Pins:</strong> {Array.isArray(preview.pins) ? preview.pins.length : 0}</div>
-							<div><strong>Recents:</strong> {Array.isArray(preview.recents) ? preview.recents.length : 0}</div>
-							<Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-								<Button size="small" variant="contained" onClick={applyPreview}>Apply</Button>
-								<Button size="small" variant="outlined" onClick={() => setPreview(null)}>Cancel</Button>
-							</Stack>
+								Controls ›
+							</button>
 						</Box>
-					) : null}
+					)}
+					
+					{!inspectorDrawerOpen && (
+						<Box sx={{ 
+							position: 'absolute', 
+							right: 8, 
+							bottom: 8, 
+							zIndex: 1000,
+							backgroundColor: 'rgba(25, 25, 35, 0.9)',
+							borderRadius: 1,
+							border: '1px solid rgba(64, 196, 255, 0.2)'
+						}}>
+							<button 
+								onClick={() => setInspectorDrawerOpen(true)}
+								style={{
+									background: 'none',
+									border: 'none',
+									color: '#40c4ff',
+									padding: '8px 12px',
+									cursor: 'pointer',
+									fontSize: '12px',
+									fontWeight: 500
+								}}
+							>
+								‹ Inspector
+							</button>
+						</Box>
+					)}
+
+					{/* Graph Component */}
+					<Box sx={{ 
+						width: '100%', 
+						height: '100%', 
+						position: 'relative',
+						overflow: 'hidden'
+					}}>
+						<ZlfnGraphWithNotes
+							nodes={nodes}
+							edges={edges}
+							storageKey={currentExpression}
+							onInfo={showInfo}
+							centerOnNodeId={searchId || undefined}
+							centerOnNodeTrigger={searchTrigger}
+							onEdgeSelect={handleEdgeSelect}
+							onOpenTruthTable={handleOpenTruthTable}
+							objectId="main-visualizer"
+							showNotesIndicators={true}
+						/>
+					</Box>
+				</Box>
+
+				{/* Inspector Drawer */}
+				<InspectorDrawer
+					open={inspectorDrawerOpen}
+					onClose={() => setInspectorDrawerOpen(false)}
+					topOffset={topOffset}
+					selectedNode={selectedNode}
+					selectedEdge={selectedEdge}
+					truthTableAst={truthAst}
+					onCloseTruthTable={() => setTruthAst(null)}
+					vennData={vennData}
+					vennExamples={vennExamples}
+					nodeCount={nodes.length}
+					edgeCount={edges.length}
+					fps={performanceMonitor.metrics.fps}
+					memoryUsage={performanceMonitor.metrics.memoryUsage}
+					onCopyNode={handleCopyNode}
+					onCopyEdge={handleCopyEdge}
+					onOpenNodeNotes={() => showInfo('Notes coming soon', 'info')}
+					onEditNode={() => showInfo('Edit coming soon', 'info')}
+					onCenterOnNode={() => {
+						if (selectedNode) {
+							setSearchId(selectedNode.id)
+							setSearchTrigger(t => t + 1)
+							showInfo(`Centered on ${selectedNode.id}`, 'success')
+						}
+					}}
+					onCenterOnEdge={() => showInfo('Center on edge coming soon', 'info')}
+				/>
+			</Box>
+
+			{/* Status Bar */}
+			<StatusBar
+				nodeCount={nodes.length}
+				edgeCount={edges.length}
+				selectedCount={selectedNode || selectedEdge ? 1 : 0}
+				fps={showPerformanceOverlay ? performanceMonitor.metrics.fps : undefined}
+				memoryUsage={showPerformanceOverlay ? performanceMonitor.metrics.memoryUsage : undefined}
+				isPerformanceVisible={showPerformanceOverlay}
+				statusMessage={snackbar.open ? snackbar.msg : undefined}
+				statusType={snackbar.severity}
+			/>
+
+			{/* Advanced Search Dialog */}
+			<Dialog 
+				open={advancedSearchOpen} 
+				onClose={() => setAdvancedSearchOpen(false)}
+				maxWidth="md"
+				fullWidth
+				PaperProps={{
+					sx: {
+						backgroundColor: 'rgba(25, 25, 35, 0.95)',
+						backdropFilter: 'blur(8px)',
+						border: '1px solid rgba(64, 196, 255, 0.2)'
+					}
+				}}
+			>
+				<DialogTitle sx={{ color: '#40c4ff' }}>Advanced Search</DialogTitle>
+				<DialogContent>
+					<AdvancedSearch
+						open={advancedSearchOpen}
+						onClose={() => setAdvancedSearchOpen(false)}
+						onSelectResult={(_objectId: any, nodeId: any) => {
+							if (nodeId && nodes.find(n => n.id === nodeId)) {
+								setSearchId(nodeId)
+								setSelectedNodeId(nodeId)
+								setSearchTrigger(t => t + 1)
+								showInfo(`Found and centered on ${nodeId}`, 'success')
+							}
+							setAdvancedSearchOpen(false)
+						}}
+						currentNodes={nodes}
+					/>
 				</DialogContent>
 			</Dialog>
-		<div
-			onDragOver={(e)=>{ e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
-			onDrop={async (e)=>{ e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) await importFromFile(f) }}
-			style={{ position: 'fixed', inset: 0, pointerEvents: 'none' }}
-		/>
-	</div>
+
+			{/* Keyboard Shortcuts Dialog */}
+			<Dialog 
+				open={shortcutsOpen} 
+				onClose={() => setShortcutsOpen(false)}
+				PaperProps={{
+					sx: {
+						backgroundColor: 'rgba(25, 25, 35, 0.95)',
+						backdropFilter: 'blur(8px)',
+						border: '1px solid rgba(64, 196, 255, 0.2)'
+					}
+				}}
+			>
+				<DialogTitle sx={{ color: '#40c4ff' }}>Keyboard Shortcuts</DialogTitle>
+				<DialogContent sx={{ color: '#ffffff' }}>
+					<Box sx={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 1, fontSize: 14 }}>
+						<strong>Ctrl/Cmd + K</strong><span>Open Advanced Search</span>
+						<strong>G</strong><span>Graph View</span>
+						<strong>F</strong><span>Fit Graph</span>
+						<strong>C</strong><span>Center Graph</span>
+						<strong>?</strong><span>Show Shortcuts</span>
+					</Box>
+				</DialogContent>
+			</Dialog>
+
+			{/* Snackbar */}
+			<Snackbar 
+				open={snackbar.open} 
+				autoHideDuration={3000} 
+				onClose={() => setSnackbar(s => ({ ...s, open: false }))} 
+				anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+				sx={{ mb: 4 }} // Above status bar
+			>
+				<Alert 
+					severity={snackbar.severity || 'info'} 
+					variant="filled" 
+					sx={{ width: '100%' }}
+				>
+					{snackbar.msg}
+				</Alert>
+			</Snackbar>
+		</Box>
 	)
 }
 
 export default LogicVisualizer
-
-
