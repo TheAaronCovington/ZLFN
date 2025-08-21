@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import * as d3 from 'd3'
 import { Button, Stack } from '@mui/material'
 import './VennDiagram.css'
+import { Legend, createColorLegend } from '../UI/Legend'
 
 export type VennSet = {
 	label: string
@@ -255,16 +256,24 @@ export const VennDiagram: React.FC<VennDiagramProps> = ({ title = '', data, type
 
 			<div className="venn-svg-container">
 				<svg ref={svgRef} className="venn-svg" />
-				<div className="diagram-legend">
-					<div className="legend-item" data-tooltip={legendTooltip('necessary')}>
-						<span className="legend-color necessary-color" />
-						<span className="legend-text">{necessaryLabel}</span>
-					</div>
-					<div className="legend-item" data-tooltip={legendTooltip('sufficient')}>
-						<span className="legend-color sufficient-color" />
-						<span className="legend-text">{sufficientLabel}</span>
-					</div>
-				</div>
+				<Legend
+					variant="panel"
+					compact
+					items={createColorLegend([
+						{
+							key: 'necessary',
+							label: necessaryLabel,
+							color: '#40c4ff',
+							description: legendTooltip('necessary')
+						},
+						{
+							key: 'sufficient',
+							label: sufficientLabel,
+							color: '#00e676',
+							description: legendTooltip('sufficient')
+						}
+					])}
+				/>
 			</div>
 
 			{type === 'necessary-sufficient' && examples.length > 0 && (

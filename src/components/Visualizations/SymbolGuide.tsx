@@ -1,5 +1,5 @@
 import React from 'react'
-import { Card, CardContent, Tooltip, Typography, Box } from '@mui/material'
+import { Legend, createSymbolLegend } from '../UI/Legend'
 
 type SymbolInfo = { symbol: string; name: string; desc: string }
 
@@ -19,25 +19,17 @@ const SYMBOLS: SymbolInfo[] = [
 
 export const SymbolGuide: React.FC = () => {
 	return (
-		<Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-			{SYMBOLS.map(s => (
-				<Tooltip key={s.symbol} title={s.desc} arrow>
-					<Card sx={{
-						backgroundColor: 'var(--ai-bg-secondary)',
-						border: '1px solid rgba(64,196,255,0.3)',
-						borderRadius: 2,
-						textAlign: 'center'
-					}}>
-						<CardContent>
-							<Typography variant="h4" sx={{ color: '#00e676', textShadow: '0 0 6px rgba(0,230,118,0.6)' }}>
-								{s.symbol}
-							</Typography>
-							<Typography variant="body2" sx={{ color: 'var(--ai-text-secondary)' }}>{s.name}</Typography>
-						</CardContent>
-					</Card>
-				</Tooltip>
-			))}
-		</Box>
+		<Legend
+			variant="symbols"
+			items={createSymbolLegend(
+				SYMBOLS.map(s => ({
+					key: s.symbol,
+					symbol: s.symbol,
+					label: s.name,
+					description: s.desc
+				}))
+			)}
+		/>
 	)
 }
 

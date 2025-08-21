@@ -2,6 +2,7 @@ import React from 'react'
 import { Box, ToggleButton, ToggleButtonGroup, Tooltip, Button, Select, MenuItem, FormControl, InputLabel, Chip, Slider, Typography, Switch, FormControlLabel, IconButton, Menu, Divider } from '@mui/material'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import type { LogicMode } from '../../services/inference'
+import { StatusChip, createKeyboardChip, createBranchChip } from '../UI/StatusChip'
 
 interface CompactTableauMenuProps {
 	layoutMode: 'tree' | 'hierarchy'
@@ -224,26 +225,26 @@ export function CompactTableauMenu({
 					<Divider sx={{ borderColor: 'rgba(255,255,255,0.1)' }} />
 					<MenuItem onClick={() => setMenuAnchor(null)}>
 						<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-							<Tooltip title="Keyboard Shortcuts: Arrow keys (navigate), D (decompose), X (close), A (auto expand), C (auto close), Ctrl+E (export)">
-								<Chip label="⌨️" size="small" variant="outlined" />
-							</Tooltip>
+							<StatusChip 
+								{...createKeyboardChip("⌨️", "Keyboard Shortcuts: Arrow keys (navigate), D (decompose), X (close), A (auto expand), C (auto close), Ctrl+E (export)")}
+							/>
 							<span style={{ fontSize: 11 }}>Shortcuts</span>
 						</Box>
 					</MenuItem>
 					<MenuItem onClick={() => setMenuAnchor(null)}>
 						<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-							<Tooltip title={
-								<div style={{ fontSize: 11 }}>
-									<div><span style={{ color: '#2196f3' }}>━━</span> α rules (conjunction)</div>
-									<div><span style={{ color: '#ff9800' }}>┅┅</span> β rules (disjunction)</div>
-									<div><span style={{ color: '#9c27b0' }}>━━</span> Implication</div>
-									<div><span style={{ color: '#e91e63' }}>━━</span> Biconditional</div>
-									<div><span style={{ color: '#673ab7' }}>┄┄</span> Quantifiers</div>
-									<div><span style={{ color: '#4caf50' }}>···</span> Double negation</div>
-								</div>
-							}>
-								<Chip label="🌳" size="small" variant="outlined" />
-							</Tooltip>
+							<StatusChip 
+								{...createBranchChip(
+									<div style={{ fontSize: 11 }}>
+										<div><span style={{ color: '#2196f3' }}>━━</span> α rules (conjunction)</div>
+										<div><span style={{ color: '#ff9800' }}>┅┅</span> β rules (disjunction)</div>
+										<div><span style={{ color: '#9c27b0' }}>━━</span> Implication</div>
+										<div><span style={{ color: '#e91e63' }}>━━</span> Biconditional</div>
+										<div><span style={{ color: '#673ab7' }}>┄┄</span> Quantifiers</div>
+										<div><span style={{ color: '#4caf50' }}>···</span> Double negation</div>
+									</div>
+								)}
+							/>
 							<span style={{ fontSize: 11 }}>Branch Legend</span>
 						</Box>
 					</MenuItem>
