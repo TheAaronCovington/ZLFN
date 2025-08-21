@@ -1,7 +1,9 @@
 import React from 'react'
 import * as d3 from 'd3'
-import { Box, ToggleButton, ToggleButtonGroup, Tooltip, Button, LinearProgress, Snackbar, Alert } from '@mui/material'
+import { Box, ToggleButton, ToggleButtonGroup, Tooltip, Button, LinearProgress, Snackbar, Alert, Select, MenuItem, FormControl, InputLabel, Chip, Slider, Typography, Switch, FormControlLabel } from '@mui/material'
 import { astToString, type AstNodeRec } from '../../services/logic'
+import { validateRule, type LogicMode } from '../../services/inference'
+import { downloadJson, readJsonFile, type ExportPayload } from '../../services/io'
 import { createFacetIcons } from '../../vis'
 import { VennDiagramDialog, TruthTableDialog, TimelineDialog, CounterargumentsDialog } from '../Enhanced'
 
@@ -43,6 +45,141 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 	const svgRef = React.useRef<SVGSVGElement | null>(null)
 	const [layoutMode, setLayoutMode] = React.useState<'tree' | 'hierarchy'>('tree')
 	const initialFitDoneRef = React.useRef<boolean>(false)
+	
+	// Logic mode for advanced reasoning
+	const [logicMode, setLogicMode] = React.useState<LogicMode>(() => {
+		try { return (localStorage.getItem('xv_stn_logic_mode') as LogicMode) || 'classical' } catch { return 'classical' }
+	})
+	React.useEffect(() => { 
+		try { localStorage.setItem('xv_stn_logic_mode', logicMode) } catch {} 
+	}, [logicMode])
+	
+	// Step controls
+	const [stepMode, setStepMode] = React.useState<boolean>(() => {
+		try { return localStorage.getItem('xv_stn_step_mode') === 'true' } catch { return false }
+	})
+	const [maxDepth, setMaxDepth] = React.useState<number>(() => {
+		try { return parseInt(localStorage.getItem('xv_stn_max_depth') || '5') } catch { return 5 }
+	})
+	const [currentStep, setCurrentStep] = React.useState<number>(0)
+	
+	React.useEffect(() => { 
+		try { localStorage.setItem('xv_stn_step_mode', stepMode.toString()) } catch {} 
+	}, [stepMode])
+	
+	React.useEffect(() => { 
+		try { localStorage.setItem('xv_stn_max_depth', maxDepth.toString()) } catch {} 
+	}, [maxDepth])
+	
+	// Local tableau state derived from AST (moved here to be available for proof validation)
+	const [root, setRoot] = React.useState<TableauNode | null>(ast ? astToTableau(ast) : null)
+	
+	// Node selection and path highlighting
+	const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null)
+	
+	// Proof validation
+	const [proofStatus, setProofStatus] = React.useState<{
+		isComplete: boolean
+		isValid: boolean
+		openBranches: number
+		closedBranches: number
+		errors: string[]
+	}>({ isComplete: false, isValid: true, openBranches: 0, closedBranches: 0, errors: [] })
+	
+	// Validate tableau completeness and correctness
+	const validateTableau = React.useCallback(() => {
+		if (!root) {
+			setProofStatus({ isComplete: false, isValid: true, openBranches: 0, closedBranches: 0, errors: [] })
+			return
+		}
+		
+		const errors: string[] = []
+		let openBranches = 0
+		let closedBranches = 0
+		let hasDecomposableNodes = false
+		
+		// Check all branches for completeness
+		const validateBranch = (node: TableauNode, path: TableauNode[] = []): void => {
+			const currentPath = [...path, node]
+			
+			// Check if this node can be decomposed
+			if (!node.decomposed && node.ast && (isAlpha(node.ast) || isBeta(node.ast) || isImplication(node.ast) || isDoubleNeg(node.ast))) {
+				hasDecomposableNodes = true
+			}
+			
+			// If this is a leaf node, check if branch is closed
+			if (!node.children || node.children.length === 0) {
+				if (node.type === 'closed') {
+					closedBranches++
+				} else {
+					openBranches++
+					// Check if this branch should be closed (contains contradiction)
+					const formulas = currentPath.map(n => serialize(n.ast)).filter(Boolean)
+					const hasContradiction = formulas.some(f => formulas.includes(complementOf(f)))
+					if (hasContradiction && node.type === 'open') {
+						errors.push(`Branch ending at "${node.label}" contains contradiction but is not marked closed`)
+					}
+				}
+			} else {
+				// Recurse into children
+				node.children.forEach(child => validateBranch(child, currentPath))
+			}
+		}
+		
+		validateBranch(root)
+		
+		const isComplete = !hasDecomposableNodes && openBranches === 0
+		const isValid = errors.length === 0
+		
+		setProofStatus({
+			isComplete,
+			isValid,
+			openBranches,
+			closedBranches,
+			errors
+		})
+	}, [root])
+	
+	// Auto-validate when tableau changes
+	React.useEffect(() => {
+		validateTableau()
+	}, [validateTableau])
+	
+	// Export/Import functionality
+	const exportTableau = () => {
+		const payload: ExportPayload = {
+			expression,
+			ast: ast || undefined,
+			tableau: {
+				root,
+				logicMode,
+				selectedNodeId,
+				layoutMode
+			},
+			viewMode: 'tableau'
+		}
+		downloadJson(payload, `tableau-${expression.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}.json`)
+	}
+	
+	const importTableau = async (event: React.ChangeEvent<HTMLInputElement>) => {
+		const file = event.target.files?.[0]
+		if (!file) return
+		
+		try {
+			const data = await readJsonFile(file)
+			if (data.tableau) {
+				setRoot(data.tableau.root)
+				if (data.tableau.logicMode) setLogicMode(data.tableau.logicMode)
+				if (data.tableau.selectedNodeId) setSelectedNodeId(data.tableau.selectedNodeId)
+				if (data.tableau.layoutMode) setLayoutMode(data.tableau.layoutMode)
+			}
+		} catch (error) {
+			console.error('Failed to import tableau:', error)
+		}
+		
+		// Reset file input
+		event.target.value = ''
+	}
 	const prevSizeRef = React.useRef<{ width: number; height: number } | null>(null)
 	const renderEpochRef = React.useRef<number>(0)
 	const prevExpressionRef = React.useRef<string | null>(null)
@@ -55,12 +192,140 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 	const [timelineOpen, setTimelineOpen] = React.useState(false)
 	const [counterOpen, setCounterOpen] = React.useState(false)
 
-	// Local tableau state derived from AST
-	const [root, setRoot] = React.useState<TableauNode | null>(ast ? astToTableau(ast) : null)
-	React.useEffect(() => { setRoot(ast ? astToTableau(ast) : null) }, [ast])
+	// (State declarations moved above for proper dependency order)
+	// State persistence per expression
+	const getStorageKey = (expr: string) => `xv_stn_${expr.replace(/[^a-zA-Z0-9]/g, '_')}`
 	
-	// Node selection and path highlighting
-	const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null)
+	const saveTableauState = React.useCallback(() => {
+		if (!expression) return
+		try {
+			// Only save UI preferences, not the expanded tableau structure
+			// This ensures tableaux always start fresh and collapsed
+			const state = {
+				logicMode,
+				layoutMode,
+				timestamp: Date.now()
+				// Removed: root, selectedNodeId to prevent auto-expansion on reload
+			}
+			localStorage.setItem(getStorageKey(expression), JSON.stringify(state))
+		} catch (error) {
+			console.warn('Failed to save tableau state:', error)
+		}
+	}, [expression, logicMode, layoutMode])
+	
+	const loadTableauState = React.useCallback((expr: string) => {
+		try {
+			const saved = localStorage.getItem(getStorageKey(expr))
+			if (saved) {
+				const state = JSON.parse(saved)
+				return state
+			}
+		} catch (error) {
+			console.warn('Failed to load tableau state:', error)
+		}
+		return null
+	}, [])
+	
+	// Reset root when expression/AST changes, always start fresh
+	React.useEffect(() => {
+		if (!ast) {
+			setRoot(null)
+			return
+		}
+		
+		// Always start with fresh tableau from AST (don't restore expanded state)
+		// This ensures tableaux always start collapsed and require manual expansion
+		setRoot(astToTableau(ast))
+		
+		// Clear any selection when switching expressions
+		setSelectedNodeId(null)
+		
+		// Only restore UI preferences, not the tableau structure
+		const savedState = loadTableauState(expression)
+		if (savedState) {
+			if (savedState.logicMode) setLogicMode(savedState.logicMode)
+			if (savedState.layoutMode) setLayoutMode(savedState.layoutMode)
+			// Don't restore selectedNodeId or root structure to keep tableaux collapsed
+		}
+	}, [ast, expression, loadTableauState])
+	
+	// Auto-save state when it changes
+	React.useEffect(() => {
+		const timeoutId = setTimeout(saveTableauState, 1000) // Debounce saves
+		return () => clearTimeout(timeoutId)
+	}, [saveTableauState])
+	
+	// Keyboard shortcuts (reusing ZLFN pattern)
+	React.useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			const active = (document.activeElement as HTMLElement | null) || (e.target as HTMLElement | null)
+			if (active) {
+				const tag = active.tagName
+				const inDialog = !!active.closest('[role="dialog"], .MuiDialog-root, .MuiModal-root, .MuiPopover-root, [data-notes-dialog="true"]')
+				const role = active.getAttribute?.('role')
+				const isEditable = (active as any).isContentEditable || role === 'textbox'
+				
+				if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || isEditable || inDialog) {
+					return // Skip shortcuts in input fields or dialogs
+				}
+			}
+			
+			// STN-specific shortcuts
+			if (e.key.toLowerCase() === 'd' && selectedNodeId && root) {
+				e.preventDefault()
+				// Decompose selected node
+				const findAndExpand = (node: TableauNode): boolean => {
+					if (node.id === selectedNodeId) {
+						return expandBranch(node)
+					}
+					if (node.children) {
+						for (const child of node.children) {
+							if (findAndExpand(child)) return true
+						}
+					}
+					return false
+				}
+				if (findAndExpand(root)) {
+					setRoot(prev => prev ? cloneTableau(prev) : prev)
+				}
+			}
+			
+			if (e.key.toLowerCase() === 'x' && selectedNodeId && root) {
+				e.preventDefault()
+				// Close selected branch
+				setRoot(prev => {
+					if (!prev) return prev
+					const newRoot = cloneTableau(prev)
+					markNodeAsClosed(selectedNodeId, newRoot)
+					return newRoot
+				})
+			}
+			
+			if (e.key.toLowerCase() === 'a' && !e.ctrlKey) {
+				e.preventDefault()
+				autoExpand()
+			}
+			
+			if (e.key.toLowerCase() === 'c' && !e.ctrlKey) {
+				e.preventDefault()
+				autoClose()
+			}
+			
+			if (e.key.toLowerCase() === 'e' && e.ctrlKey) {
+				e.preventDefault()
+				exportTableau()
+			}
+			
+			// Arrow keys for node navigation
+			if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+				e.preventDefault()
+				// TODO: Implement node navigation
+			}
+		}
+		
+		window.addEventListener('keydown', onKey)
+		return () => window.removeEventListener('keydown', onKey)
+	}, [selectedNodeId, root, autoExpand, autoClose, exportTableau])
 	
 	// Helper to find path from selected node to root
 	function findPathToRoot(nodeId: string, currentNode: TableauNode, path: string[] = []): string[] | null {
@@ -126,6 +391,10 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 
 	function expandBranch(target: TableauNode): boolean {
 		if (!target.ast || target.decomposed) return false
+		
+		// Create logic mode context for rule validation
+		const modes: Partial<Record<LogicMode, boolean>> = { [logicMode]: true }
+		
 		// helper to build node from AST
 		const nodeFromAst = (n: AstNodeRec): TableauNode => ({
 			id: n.id || Math.random().toString(36),
@@ -134,7 +403,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 			ast: n
 		})
 		// Double negation
-		if (isDoubleNeg(target.ast)) {
+		if (isDoubleNeg(target.ast) && validateRule('Double Negation', modes)) {
 			const inner = (target.ast.children![0] as any).children![0] as AstNodeRec
 			target.ast = inner
 			target.label = inner.label || target.label
@@ -146,7 +415,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 		if (target.ast.label === '¬' && target.ast.children && (target.ast.children as any)[0]) {
 			const inner = (target.ast.children as any)[0] as AstNodeRec
 			// ¬(A ∧ B) -> ¬A | ¬B (β)
-			if (inner.label === '∧' && inner.children && (inner.children as any).length === 2) {
+			if (inner.label === '∧' && inner.children && (inner.children as any).length === 2 && validateRule('De Morgan', modes)) {
 				const [a, b] = inner.children as AstNodeRec[]
 				const notA: AstNodeRec = { id: `neg-${a.id || Math.random().toString(36).slice(2,7)}`, label: '¬', children: [a] as any }
 				const notB: AstNodeRec = { id: `neg-${b.id || Math.random().toString(36).slice(2,7)}`, label: '¬', children: [b] as any }
@@ -155,7 +424,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 				return true
 			}
 			// ¬(A ∨ B) -> ¬A & ¬B (α) — chain them so both on same branch
-			if ((inner.label === '∨' || inner.label === '⊻') && inner.children && (inner.children as any).length === 2) {
+			if ((inner.label === '∨' || inner.label === '⊻') && inner.children && (inner.children as any).length === 2 && validateRule('De Morgan', modes)) {
 				const [a, b] = inner.children as AstNodeRec[]
 				const notA: AstNodeRec = { id: `neg-${a.id || Math.random().toString(36).slice(2,7)}`, label: '¬', children: [a] as any }
 				const notB: AstNodeRec = { id: `neg-${b.id || Math.random().toString(36).slice(2,7)}`, label: '¬', children: [b] as any }
@@ -254,38 +523,97 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 		if (n.ast && (isAlpha(n.ast) || isBeta(n.ast) || isDoubleNeg(n.ast) || isImplication(n.ast)) && !n.decomposed) acc.push(n)
 		n.children?.forEach(c => collectDecomposable(c, acc))
 	}
+	
+	function collectDecomposableToDepth(n: TableauNode, acc: TableauNode[], maxDepth: number, currentDepth: number = 0) {
+		if (currentDepth >= maxDepth) return
+		if (n.ast && (isAlpha(n.ast) || isBeta(n.ast) || isDoubleNeg(n.ast) || isImplication(n.ast)) && !n.decomposed) acc.push(n)
+		n.children?.forEach(c => collectDecomposableToDepth(c, acc, maxDepth, currentDepth + 1))
+	}
 
 	function collectLeaves(h: d3.HierarchyNode<TableauNode>, acc: d3.HierarchyNode<TableauNode>[]) {
 		if (!h.children || h.children.length === 0) acc.push(h)
 		else h.children.forEach(c => collectLeaves(c, acc))
 	}
 
-	function autoExpand() {
+	// Step-by-step expansion
+	const stepExpand = () => {
+		if (!root) return
+		const draft = cloneTableau(root)
+		const batch: TableauNode[] = []
+		collectDecomposable(draft, batch)
+		
+		if (batch.length === 0) {
+			setSnack('No more decomposable nodes')
+			return
+		}
+		
+		// Expand only the first decomposable node
+		if (expandBranch(batch[0])) {
+			setRoot(cloneTableau(draft))
+			setCurrentStep(prev => prev + 1)
+			try { window.dispatchEvent(new CustomEvent('stn-request-refit')) } catch {}
+		}
+	}
+	
+	// Auto expand with depth limit
+	const autoExpandToDepth = (targetDepth: number) => {
 		if (!root) return
 		const draft = cloneTableau(root)
 		setBusy({ mode: 'expand', progress: 5 })
 		let expandedAny = false
 		let iteration = 0
+		
 		const step = () => {
 			const batch: TableauNode[] = []
-			collectDecomposable(draft, batch)
+			collectDecomposableToDepth(draft, batch, targetDepth)
 			
 			if (batch.length === 0) {
 				setRoot(cloneTableau(draft))
 				setBusy({ mode: null, progress: 0 })
-				setSnack(expandedAny ? 'Auto Expand completed' : 'No decomposable nodes')
+				setSnack(expandedAny ? `Auto Expand to depth ${targetDepth} completed` : 'No decomposable nodes at target depth')
 				if (expandedAny) { try { window.dispatchEvent(new CustomEvent('stn-request-refit')) } catch {} }
 				return
 			}
 			batch.slice(0, 100).forEach(n => { if (expandBranch(n)) expandedAny = true })
 			setRoot(cloneTableau(draft))
 			setBusy(prev => ({ mode: 'expand', progress: Math.min(95, (prev.progress || 5) + 10) }))
-			// keep the current view coherent as nodes grow
 			try { window.dispatchEvent(new CustomEvent('stn-request-refit')) } catch {}
 			iteration += 1
 			requestAnimationFrame(step)
 		}
 		requestAnimationFrame(step)
+	}
+	
+	function autoExpand() {
+		if (stepMode) {
+			autoExpandToDepth(maxDepth)
+		} else {
+			// Original unlimited expansion
+			if (!root) return
+			const draft = cloneTableau(root)
+			setBusy({ mode: 'expand', progress: 5 })
+			let expandedAny = false
+			let iteration = 0
+			const step = () => {
+				const batch: TableauNode[] = []
+				collectDecomposable(draft, batch)
+				
+				if (batch.length === 0) {
+					setRoot(cloneTableau(draft))
+					setBusy({ mode: null, progress: 0 })
+					setSnack(expandedAny ? 'Auto Expand completed' : 'No decomposable nodes')
+					if (expandedAny) { try { window.dispatchEvent(new CustomEvent('stn-request-refit')) } catch {} }
+					return
+				}
+				batch.slice(0, 100).forEach(n => { if (expandBranch(n)) expandedAny = true })
+				setRoot(cloneTableau(draft))
+				setBusy(prev => ({ mode: 'expand', progress: Math.min(95, (prev.progress || 5) + 10) }))
+				try { window.dispatchEvent(new CustomEvent('stn-request-refit')) } catch {}
+				iteration += 1
+				requestAnimationFrame(step)
+			}
+			requestAnimationFrame(step)
+		}
 	}
 
 	function autoClose() {
@@ -386,6 +714,47 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 		const svg = d3.select(svgRef.current)
 		svg.selectAll('*').remove()
 		
+		// AI theme visual enhancements
+		const defs = svg.append('defs')
+		
+		// Glow filter for nodes
+		const glowFilter = defs.append('filter')
+			.attr('id', 'glow')
+			.attr('x', '-50%')
+			.attr('y', '-50%')
+			.attr('width', '200%')
+			.attr('height', '200%')
+		
+		glowFilter.append('feGaussianBlur')
+			.attr('stdDeviation', '3')
+			.attr('result', 'coloredBlur')
+		
+		const feMerge = glowFilter.append('feMerge')
+		feMerge.append('feMergeNode').attr('in', 'coloredBlur')
+		feMerge.append('feMergeNode').attr('in', 'SourceGraphic')
+		
+		// AI theme gradients
+		const nodeGradient = defs.append('radialGradient')
+			.attr('id', 'nodeGradient')
+			.attr('cx', '30%')
+			.attr('cy', '30%')
+		nodeGradient.append('stop').attr('offset', '0%').attr('stop-color', 'rgba(64,196,255,0.8)')
+		nodeGradient.append('stop').attr('offset', '100%').attr('stop-color', 'rgba(64,196,255,0.3)')
+		
+		const selectedGradient = defs.append('radialGradient')
+			.attr('id', 'selectedGradient')
+			.attr('cx', '30%')
+			.attr('cy', '30%')
+		selectedGradient.append('stop').attr('offset', '0%').attr('stop-color', 'rgba(255,193,7,0.9)')
+		selectedGradient.append('stop').attr('offset', '100%').attr('stop-color', 'rgba(255,193,7,0.4)')
+		
+		const closedGradient = defs.append('radialGradient')
+			.attr('id', 'closedGradient')
+			.attr('cx', '30%')
+			.attr('cy', '30%')
+		closedGradient.append('stop').attr('offset', '0%').attr('stop-color', 'rgba(255,82,82,0.8)')
+		closedGradient.append('stop').attr('offset', '100%').attr('stop-color', 'rgba(255,82,82,0.3)')
+		
 		// Only reset initial fit when expression/AST actually changes, not on internal state updates
 		const prevExpr = prevExpressionRef.current
 		const prevAst = prevAstIdRef.current
@@ -417,7 +786,21 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 		const hroot = d3.hierarchy<TableauNode>(root)
 		// compute depth/height to support rendering even without children yet
 		hroot.each((d:any)=>{ d.height = d.children ? d.children.length : 0 })
-		const treeLayout = d3.tree<TableauNode>().nodeSize([28, 110])
+		
+		// Different layouts based on mode
+		let treeLayout: d3.TreeLayout<TableauNode>
+		if (layoutMode === 'hierarchy') {
+			// Hierarchy mode: More compact, emphasizes levels, horizontal layout
+			treeLayout = d3.tree<TableauNode>()
+				.nodeSize([50, 150]) // Wider horizontal spacing
+				.separation((a, b) => (a.parent === b.parent ? 0.7 : 1.2))
+		} else {
+			// Tree mode: More spaced out, emphasizes individual nodes, vertical layout
+			treeLayout = d3.tree<TableauNode>()
+				.nodeSize([28, 110]) // Original spacing
+				.separation((a, b) => (a.parent === b.parent ? 1 : 1.8))
+		}
+		
 		const tree = treeLayout(hroot)
 
 		const thisEpoch = ++renderEpochRef.current
@@ -460,9 +843,15 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 				const targetInPath = pathToRoot.includes(d.target.data.id)
 				return (sourceInPath && targetInPath) ? 2.5 : 1.5
 			})
-			.attr('d', (d: any) =>
-				`M${d.source.x},${d.source.y} C ${d.source.x},${(d.source.y + d.target.y) / 2} ${d.target.x},${(d.source.y + d.target.y) / 2} ${d.target.x},${d.target.y}`
-			)
+			.attr('d', (d: any) => {
+				if (layoutMode === 'hierarchy') {
+					// Hierarchy mode: Straight lines for cleaner look
+					return `M${d.source.x},${d.source.y} L${d.target.x},${d.target.y}`
+				} else {
+					// Tree mode: Curved lines for organic feel
+					return `M${d.source.x},${d.source.y} C ${d.source.x},${(d.source.y + d.target.y) / 2} ${d.target.x},${(d.source.y + d.target.y) / 2} ${d.target.x},${d.target.y}`
+				}
+			})
 
 		// Nodes
 		const node = g
@@ -491,18 +880,31 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 
 		node
 			.append('circle')
-			.attr('r', (d: any) => (d.depth === 0 ? 16 : 12))
+			.attr('r', (d: any) => {
+				if (layoutMode === 'hierarchy') {
+					// Hierarchy mode: Smaller, more uniform nodes
+					return d.depth === 0 ? 14 : 10
+				} else {
+					// Tree mode: Larger, more prominent nodes
+					return d.depth === 0 ? 16 : 12
+				}
+			})
 			.attr('fill', (d: any) => {
 				const t = d.data.type
 				const isSelected = d.data.id === selectedNodeId
 				const isInPath = pathToRoot.includes(d.data.id)
 				
-				if (isSelected) return 'rgba(255,193,7,0.6)'
+				if (isSelected) return 'url(#selectedGradient)'
 				if (isInPath) return 'rgba(255,193,7,0.3)'
-				if (t === 'root') return 'rgba(64,196,255,0.35)'
-				if (t === 'closed') return 'rgba(255,82,82,0.35)'
+				if (t === 'root') return 'url(#nodeGradient)'
+				if (t === 'closed') return 'url(#closedGradient)'
 				if (t === 'open') return 'rgba(76,175,80,0.35)'
 				return 'rgba(255,255,255,0.18)'
+			})
+			.attr('filter', (d: any) => {
+				const isSelected = d.data.id === selectedNodeId
+				const isInPath = pathToRoot.includes(d.data.id)
+				return (isSelected || isInPath) ? 'url(#glow)' : null
 			})
 			.attr('stroke', (d: any) => {
 				const isSelected = d.data.id === selectedNodeId
@@ -531,7 +933,15 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 			.attr('y', -18)
 			.attr('text-anchor', 'middle')
 			.attr('fill', 'rgba(255,255,255,0.85)')
-			.attr('font-size', 11)
+			.attr('font-size', (d: any) => {
+				if (layoutMode === 'hierarchy') {
+					// Hierarchy mode: Smaller, more compact text
+					return d.depth === 0 ? 10 : 9
+				} else {
+					// Tree mode: Larger, more readable text
+					return d.depth === 0 ? 12 : 11
+				}
+			})
 			.text((d: any) => d.data.label)
 
 		node
@@ -687,7 +1097,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 	return (
 		<Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }} ref={containerRef}>
 			<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 0.5 }}>
-				<Tooltip title="Toggle layout mode">
+				<Tooltip title="Tree: Spaced layout with curved links, larger nodes. Hierarchy: Compact layout with straight links, smaller nodes.">
 					<ToggleButtonGroup
 						value={layoutMode}
 						exclusive
@@ -699,7 +1109,62 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 						<ToggleButton value="hierarchy">Hierarchy</ToggleButton>
 					</ToggleButtonGroup>
 				</Tooltip>
+				
+				<FormControl size="small" sx={{ minWidth: 120 }}>
+					<InputLabel>Logic Mode</InputLabel>
+					<Select
+						value={logicMode}
+						label="Logic Mode"
+						onChange={(e) => setLogicMode(e.target.value as LogicMode)}
+					>
+						<MenuItem value="classical">Classical</MenuItem>
+						<MenuItem value="epistemic">Epistemic</MenuItem>
+						<MenuItem value="deontic">Deontic</MenuItem>
+						<MenuItem value="temporal">Temporal</MenuItem>
+						<MenuItem value="informal">Informal</MenuItem>
+						<MenuItem value="paraconsistent">Paraconsistent</MenuItem>
+						<MenuItem value="fuzzy">Fuzzy</MenuItem>
+					</Select>
+				</FormControl>
+				
+				<Chip 
+					label={logicMode} 
+					size="small" 
+					color="primary" 
+					variant="outlined"
+				/>
+				
 				<span style={{ fontSize: 12, opacity: 0.7 }}>Semantic Tableau • {expression || '—'}</span>
+				
+				<Tooltip title="Keyboard Shortcuts: D (decompose), X (close), A (auto expand), C (auto close), Ctrl+E (export)">
+					<Chip label="⌨️" size="small" variant="outlined" />
+				</Tooltip>
+				
+				{/* Proof Status */}
+				<Tooltip title={
+					proofStatus.errors.length > 0 
+						? `Errors: ${proofStatus.errors.join(', ')}`
+						: `Open: ${proofStatus.openBranches}, Closed: ${proofStatus.closedBranches}`
+				}>
+					<Chip 
+						label={
+							proofStatus.isComplete 
+								? "✓ Complete" 
+								: proofStatus.isValid 
+									? `${proofStatus.openBranches}/${proofStatus.openBranches + proofStatus.closedBranches} Open`
+									: "⚠ Invalid"
+						}
+						size="small" 
+						color={
+							proofStatus.isComplete 
+								? "success" 
+								: proofStatus.isValid 
+									? "info" 
+									: "error"
+						}
+						variant="outlined"
+					/>
+				</Tooltip>
 			</Box>
 			<Box sx={{ flex: 1, position: 'relative' }}>
 				<svg ref={svgRef} width={size.width} height={size.height} />
@@ -708,8 +1173,54 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 			{/* Top-level auto operations and progress */}
 			<Box sx={{ position: 'absolute', top: 40, right: 12, display: 'flex', gap: 1, flexDirection: 'column' }}>
 				<Box sx={{ display: 'flex', gap: 1 }}>
-					<Button size="small" variant="outlined" color="secondary" onClick={autoExpand} disabled={!!busy.mode}>Auto Expand</Button>
+					<Button size="small" variant="outlined" color="secondary" onClick={autoExpand} disabled={!!busy.mode}>
+						{stepMode ? `Auto Expand (Depth ${maxDepth})` : 'Auto Expand'}
+					</Button>
 					<Button size="small" variant="outlined" color="secondary" onClick={autoClose} disabled={!!busy.mode}>Auto Close</Button>
+				</Box>
+				
+				{stepMode && (
+					<Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+						<Button size="small" variant="outlined" color="info" onClick={stepExpand} disabled={!!busy.mode}>
+							Step ({currentStep})
+						</Button>
+						<Box sx={{ minWidth: 100 }}>
+							<Typography variant="caption" sx={{ fontSize: 10 }}>Depth: {maxDepth}</Typography>
+							<Slider
+								size="small"
+								value={maxDepth}
+								onChange={(_, value) => setMaxDepth(value as number)}
+								min={1}
+								max={10}
+								step={1}
+								valueLabelDisplay="auto"
+							/>
+						</Box>
+					</Box>
+				)}
+				
+				<Box sx={{ display: 'flex', gap: 1 }}>
+					<FormControlLabel
+						control={
+							<Switch
+								size="small"
+								checked={stepMode}
+								onChange={(e) => {
+									setStepMode(e.target.checked)
+									setCurrentStep(0)
+								}}
+							/>
+						}
+						label={<Typography variant="caption">Step Mode</Typography>}
+					/>
+				</Box>
+				
+				<Box sx={{ display: 'flex', gap: 1 }}>
+					<Button size="small" variant="outlined" color="primary" onClick={exportTableau}>Export</Button>
+					<Button size="small" variant="outlined" color="primary" component="label">
+						Import
+						<input type="file" accept=".json" onChange={importTableau} style={{ display: 'none' }} />
+					</Button>
 				</Box>
 				{selectedNodeId && (
 					<Box sx={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', textAlign: 'center' }}>

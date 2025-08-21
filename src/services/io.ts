@@ -2,7 +2,13 @@ export type ExportPayload = {
 	expression: string
 	ast?: any
 	graph?: { nodes: any[]; edges: any[] }
-	viewMode?: 'graph' | 'ast' | 'both'
+	tableau?: {
+		root: any
+		logicMode: string
+		selectedNodeId?: string | null
+		layoutMode: 'tree' | 'hierarchy'
+	}
+	viewMode?: 'graph' | 'ast' | 'both' | 'tableau'
 	selectedNodeId?: string | null
 	layout?: Record<string, { x: number; y: number }>
 	pins?: string[]
