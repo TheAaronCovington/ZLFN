@@ -3,19 +3,32 @@
  * Third visualization mode for informal argument analysis
  */
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Box, Typography, Select, MenuItem, FormControl, InputLabel, Stack } from '@mui/material'
 import type { 
   ArgumentTableauProps, 
   ArgumentData, 
   ArgumentNode, 
+  ArgumentEdge,
   ATNLayoutMode,
   ArgumentCollection 
 } from './types'
 import { 
-  ARGUMENT_COLORS
+  ARGUMENT_COLORS,
+  DEFAULT_ATN_CONFIG
 } from './types'
 import { storage } from '../../../services/storage'
+import { 
+  initializeTreeSVG, 
+  renderTreeLayout, 
+  renderHierarchicalLayout,
+  type TreeRenderState 
+} from './treeRenderer'
+import { 
+  initializeTableContainer, 
+  renderTableLayout,
+  type TableRenderState 
+} from './tableRenderer'
 
 /**
  * Sample argument data for initial development and testing
@@ -188,10 +201,13 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
   ast: _ast,
   compact = false,
   onArgumentSelect,
-  onNodeSelect: _onNodeSelect,
-  onEdgeSelect: _onEdgeSelect,
+  onNodeSelect,
+  onEdgeSelect,
   onLayoutModeChange
 }) => {
+  // Refs for rendering containers
+  const containerRef = useRef<HTMLDivElement>(null)
+  const renderStateRef = useRef<TreeRenderState | TableRenderState | null>(null)
   // State management
   const [layoutMode, setLayoutMode] = useState<ATNLayoutMode>(() => {
     try {
@@ -260,6 +276,88 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
     setSelectedArgumentId(argumentId)
   }
 
+  // Handle node selection
+  const handleNodeSelect = (node: ArgumentNode) => {
+    onNodeSelect?.(node)
+  }
+
+  // Handle edge selection
+  const handleEdgeSelect = (edge: ArgumentEdge) => {
+    onEdgeSelect?.(edge)
+  }
+
+  // Render the visualization when layout mode or argument changes
+  useEffect(() => {
+    if (!containerRef.current) return
+
+    const config = {
+      ...DEFAULT_ATN_CONFIG,
+      layoutMode,
+      width: containerRef.current.clientWidth || 800,
+      height: containerRef.current.clientHeight || 600
+    }
+
+    try {
+      if (layoutMode === 'table') {
+        // Table layout
+        const state = initializeTableContainer(containerRef.current, config)
+        renderTableLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect)
+        renderStateRef.current = state
+      } else {
+        // Tree or hierarchical layout
+        const state = initializeTreeSVG(containerRef.current, config)
+        
+        if (layoutMode === 'tree') {
+          renderTreeLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect)
+        } else {
+          renderHierarchicalLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect)
+        }
+        
+        renderStateRef.current = state
+      }
+    } catch (error) {
+      console.error('ATN rendering error:', error)
+    }
+  }, [layoutMode, currentArgument, handleNodeSelect, handleEdgeSelect])
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (!containerRef.current) return
+      
+      // Re-render on resize
+      const config = {
+        ...DEFAULT_ATN_CONFIG,
+        layoutMode,
+        width: containerRef.current.clientWidth || 800,
+        height: containerRef.current.clientHeight || 600
+      }
+
+      try {
+        if (layoutMode === 'table') {
+          const state = initializeTableContainer(containerRef.current, config)
+          renderTableLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect)
+          renderStateRef.current = state
+        } else {
+          const state = initializeTreeSVG(containerRef.current, config)
+          
+          if (layoutMode === 'tree') {
+            renderTreeLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect)
+          } else {
+            renderHierarchicalLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect)
+          }
+          
+          renderStateRef.current = state
+        }
+      } catch (error) {
+        console.error('ATN resize rendering error:', error)
+      }
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [layoutMode, currentArgument, handleNodeSelect, handleEdgeSelect])
+
   return (
     <Box sx={{ 
       width: '100%', 
@@ -327,39 +425,45 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
       )}
 
       {/* ATN Visualization Area */}
-      <Box sx={{ 
-        flex: 1, 
-        position: 'relative',
-        overflow: 'hidden',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        {/* Placeholder for renderer - will be implemented in Phase 2 */}
+      <Box 
+        ref={containerRef}
+        sx={{ 
+          flex: 1, 
+          position: 'relative',
+          overflow: 'hidden',
+          width: '100%',
+          height: '100%'
+        }}
+      />
+      
+      {/* Status Bar */}
+      {!compact && (
         <Box sx={{ 
-          textAlign: 'center',
-          p: 4,
-          border: '2px dashed rgba(64,196,255,0.3)',
-          borderRadius: 2,
-          backgroundColor: 'rgba(64,196,255,0.05)'
+          p: 1, 
+          borderTop: '1px solid rgba(64,196,255,0.3)',
+          backgroundColor: 'var(--ai-bg-secondary)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          fontSize: '12px',
+          color: 'var(--ai-text-secondary)'
         }}>
-          <Typography variant="h5" sx={{ color: '#40c4ff', mb: 2 }}>
-            ATN Renderer Placeholder
-          </Typography>
-          <Typography variant="body1" sx={{ color: 'var(--ai-text-secondary)', mb: 2 }}>
-            Current Argument: {currentArgument.name}
-          </Typography>
-          <Typography variant="body2" sx={{ color: 'var(--ai-text-secondary)', mb: 1 }}>
-            Layout Mode: {layoutMode}
-          </Typography>
-          <Typography variant="body2" sx={{ color: 'var(--ai-text-secondary)', mb: 1 }}>
-            Nodes: {atnNodes.length} | Edges: {atnEdges.length}
-          </Typography>
+          <Stack direction="row" spacing={2}>
+            <Typography variant="caption">
+              Argument: {currentArgument.name}
+            </Typography>
+            <Typography variant="caption">
+              Layout: {layoutMode}
+            </Typography>
+            <Typography variant="caption">
+              Nodes: {atnNodes.length} | Edges: {atnEdges.length}
+            </Typography>
+          </Stack>
           <Typography variant="caption" sx={{ color: 'var(--ai-text-tertiary)' }}>
-            Phase 2 will implement tree/hierarchical rendering here
+            Click nodes/edges for details
           </Typography>
         </Box>
-      </Box>
+      )}
     </Box>
   )
 }
