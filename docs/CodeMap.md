@@ -68,7 +68,15 @@
 ## Visualization Components
 
 ### ZLFN Graph System
-- **`src/components/Visualizations/ZlfnGraph.tsx`** *(~4400 lines)* 🔴 **LARGE FILE**
+- **`src/components/Visualizations/ZlfnGraph.tsx`** *(~4400 lines)* ✅ **REFACTORED INTO MODULES**
+  - **Modular Structure**: Refactored into focused modules for better maintainability
+  - **`src/components/Visualizations/ZlfnGraph/`**:
+    - **`types.ts`**: Shared interfaces and type definitions
+    - **`simulation.ts`**: D3 force simulation logic and layout algorithms
+    - **`eventHandlers.ts`**: Mouse, keyboard, drag, and zoom interactions
+    - **`rendering.ts`**: SVG rendering, visual updates, and D3 selections
+    - **`utils.ts`**: Helper functions and calculations
+    - **`index.ts`**: Consolidated exports
   - **Features**: D3 force-directed graph, node/edge rendering, interactions, facets
   - **Components**: Graph canvas, node shapes, edge lines, facet overlays (Venn, Truth, Timeline, Counter)
   - **State**: Simulation, selection, zoom/pan, facet dialogs, performance optimization
@@ -82,7 +90,13 @@
   - **Dependencies**: ZlfnGraph, notes hooks
 
 ### Semantic Tableau Network (STN)
-- **`src/components/Visualizations/SemanticTableau.tsx`** *(~1800 lines)* 🔴 **LARGE FILE**
+- **`src/components/Visualizations/SemanticTableau.tsx`** *(~1800 lines)* ✅ **REFACTORED INTO MODULES**
+  - **Modular Structure**: Refactored into focused modules for better maintainability
+  - **`src/components/Visualizations/SemanticTableau/`**:
+    - **`tableauLogic.ts`**: AST to tableau conversion, rule validation, logical operations
+    - **`treeRenderer.ts`**: D3 tree layout and SVG rendering for tableau visualization
+    - **`exportFunctions.ts`**: LaTeX, image, and proof steps export functionality
+    - **`index.ts`**: Consolidated exports
   - **Features**: Tree-based tableau visualization, proof construction, export capabilities
   - **Components**: D3 tree layout, node expansion/closure, rule application, proof validation
   - **State**: Tableau tree, selected nodes, auto operations, step mode, proof status
@@ -436,17 +450,24 @@
 ### ✅ **RESOLVED** - Keyboard Shortcuts  
 - **Previous Locations**: `ZlfnGraph.tsx`, `LogicVisualizer.tsx`, `SemanticTableau.tsx`
 - **Solution Implemented**: `useGlobalShortcuts` hook with context detection and pluggable bindings
-- **Status**: LogicVisualizer migrated; ZlfnGraph and SemanticTableau pending
+- **Status**: LogicVisualizer migrated; ZlfnGraph refactored into modules
 
 ### ✅ **RESOLVED** - Local Storage Patterns
 - **Previous Locations**: `LogicVisualizer.tsx`, `SemanticTableau.tsx`, `LibrarySidebar.tsx`, various components
 - **Solution Implemented**: `services/storage.ts` with typed helpers and cross-tab synchronization
 - **Status**: LibrarySidebar migrated; other components pending
 
-### 🔄 **PENDING** - Status/Legend Components
+### ✅ **RESOLVED** - Status/Legend Components
+- **Previous Locations**: `SemanticTableau.tsx`, `VennDiagram.tsx`, `SymbolGuide.tsx`, `CompactTableauMenu.tsx`
+- **Solution Implemented**: `StatusChip.tsx` and `Legend.tsx` components with multiple variants
+- **Status**: All components migrated to use consolidated UI patterns
 
-### Status/Legend Components
-- **Locations**: `SemanticTableau.tsx`, various visualization components
+### ✅ **RESOLVED** - Large File Refactoring
+- **Previous Issues**: `ZlfnGraph.tsx` (~4400 lines), `SemanticTableau.tsx` (~1800 lines)
+- **Solution Implemented**: Modular architecture with focused responsibilities
+- **ZlfnGraph Modules**: types, simulation, eventHandlers, rendering, utils
+- **SemanticTableau Modules**: tableauLogic, treeRenderer, exportFunctions
+- **Status**: Both large files successfully refactored into maintainable modules
 - **Duplication**: Similar chip/badge rendering for status and legends
 - **Solution**: `components/UI/StatusChip.tsx` and `components/UI/Legend.tsx`
 
