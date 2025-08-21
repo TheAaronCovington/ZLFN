@@ -1,7 +1,9 @@
 import React from 'react'
 import * as d3 from 'd3'
-import { Box, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material'
-import type { AstNodeRec } from '../../services/logic'
+import { Box, ToggleButton, ToggleButtonGroup, Tooltip, Button, LinearProgress, Snackbar, Alert } from '@mui/material'
+import { astToString, type AstNodeRec } from '../../services/logic'
+import { createFacetIcons } from '../../vis'
+import { VennDiagramDialog, TruthTableDialog, TimelineDialog, CounterargumentsDialog } from '../Enhanced'
 
 export interface SemanticTableauProps {
 	// Prefer reusing the current expression/AST from the visualizer
@@ -14,6 +16,8 @@ type TableauNode = {
 	label: string
 	type: 'root' | 'open' | 'closed' | 'intermediate'
 	children?: TableauNode[]
+	ast?: AstNodeRec
+	decomposed?: boolean
 }
 
 // Very lightweight AST → Tableau scaffold. This purposefully reuses the parsed AST
@@ -25,11 +29,10 @@ function astToTableau(ast: AstNodeRec): TableauNode {
 		const t: TableauNode = {
 			id: node.id || `${label}-${depth}-${Math.random().toString(36).slice(2, 7)}`,
 			label,
-			type: depth === 0 ? 'root' : (isLeaf ? 'open' : 'intermediate')
+			type: depth === 0 ? 'root' : (isLeaf ? 'open' : 'intermediate'),
+			ast: node
 		}
-		if (node.children && node.children.length > 0) {
-			t.children = node.children.map((c) => map(c as AstNodeRec, depth + 1))
-		}
+		// Stepped expansion: do not attach children initially; they are created via Decompose (D)
 		return t
 	}
 	return map(ast, 0)
@@ -39,6 +42,40 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 	const containerRef = React.useRef<HTMLDivElement | null>(null)
 	const svgRef = React.useRef<SVGSVGElement | null>(null)
 	const [layoutMode, setLayoutMode] = React.useState<'tree' | 'hierarchy'>('tree')
+	const initialFitDoneRef = React.useRef<boolean>(false)
+	const prevSizeRef = React.useRef<{ width: number; height: number } | null>(null)
+	const renderEpochRef = React.useRef<number>(0)
+	const prevExpressionRef = React.useRef<string | null>(null)
+	const prevAstIdRef = React.useRef<string | null>(null)
+
+	// Facet dialogs (reusing enhanced dialogs from ZLFN)
+	const [selectedNodeForDialog, setSelectedNodeForDialog] = React.useState<any | null>(null)
+	const [vennOpen, setVennOpen] = React.useState(false)
+	const [truthOpen, setTruthOpen] = React.useState(false)
+	const [timelineOpen, setTimelineOpen] = React.useState(false)
+	const [counterOpen, setCounterOpen] = React.useState(false)
+
+	// Local tableau state derived from AST
+	const [root, setRoot] = React.useState<TableauNode | null>(ast ? astToTableau(ast) : null)
+	React.useEffect(() => { setRoot(ast ? astToTableau(ast) : null) }, [ast])
+	
+	// Node selection and path highlighting
+	const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null)
+	
+	// Helper to find path from selected node to root
+	function findPathToRoot(nodeId: string, currentNode: TableauNode, path: string[] = []): string[] | null {
+		const currentPath = [...path, currentNode.id]
+		if (currentNode.id === nodeId) return currentPath
+		if (currentNode.children) {
+			for (const child of currentNode.children) {
+				const result = findPathToRoot(nodeId, child, currentPath)
+				if (result) return result
+			}
+		}
+		return null
+	}
+	
+	const pathToRoot = selectedNodeId && root ? findPathToRoot(selectedNodeId, root) || [] : []
 
 	// Resize observer to keep the canvas responsive, reusing our typical pattern
 	const [size, setSize] = React.useState({ width: 1000, height: 600 })
@@ -52,12 +89,320 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 		return () => ro.disconnect()
 	}, [])
 
-	// Render the tableau using d3.tree() to avoid duplicating D3 scaffolding elsewhere
+	// Helpers for rules and closure
+	const isAlpha = (n: AstNodeRec | undefined) => !!n && (n.label === '∧')
+	const isBeta = (n: AstNodeRec | undefined) => !!n && (n.label === '∨' || n.label === '⊻')
+	const isDoubleNeg = (n: AstNodeRec | undefined) => !!n && n.label === '¬' && n.children && (n.children[0] as any)?.label === '¬'
+	const isImplication = (n: AstNodeRec | undefined) => !!n && (n.label === '→' || n.label === '⇒' || n.label === '⊃')
+	const serialize = (n: AstNodeRec | undefined): string => (n ? astToString(n) : '')
+	const complementOf = (s: string) => s.startsWith('¬') ? s.slice(1) : `¬${s}`
+	
+	// Helper to get rule badge for a node
+	function getRuleBadge(node: TableauNode): { text: string; color: string; tooltip: string } | null {
+		if (!node.ast) return null
+		
+		if (isAlpha(node.ast)) return { text: 'α', color: '#2196f3', tooltip: 'Alpha rule (conjunction)' }
+		if (isBeta(node.ast)) return { text: 'β', color: '#ff9800', tooltip: 'Beta rule (disjunction)' }
+		if (isImplication(node.ast)) return { text: '→', color: '#9c27b0', tooltip: 'Implication rule' }
+		if (isDoubleNeg(node.ast)) return { text: '¬¬', color: '#4caf50', tooltip: 'Double negation elimination' }
+		
+		// Check for negated complex formulas
+		if (node.ast.label === '¬' && node.ast.children) {
+			const inner = (node.ast.children as any)[0] as AstNodeRec
+			if (inner.label === '∧') return { text: '¬α', color: '#ff5722', tooltip: 'Negated conjunction (De Morgan)' }
+			if (inner.label === '∨' || inner.label === '⊻') return { text: '¬β', color: '#795548', tooltip: 'Negated disjunction (De Morgan)' }
+			if (isImplication(inner)) return { text: '¬→', color: '#607d8b', tooltip: 'Negated implication' }
+		}
+		
+		return null
+	}
+
+	function cloneTableau(node: TableauNode): TableauNode {
+		return {
+			...node,
+			children: node.children ? node.children.map(cloneTableau) : undefined
+		}
+	}
+
+	function expandBranch(target: TableauNode): boolean {
+		if (!target.ast || target.decomposed) return false
+		// helper to build node from AST
+		const nodeFromAst = (n: AstNodeRec): TableauNode => ({
+			id: n.id || Math.random().toString(36),
+			label: n.label || 'P',
+			type: (!n.children || (n.children as any).length === 0) ? 'open' : 'intermediate',
+			ast: n
+		})
+		// Double negation
+		if (isDoubleNeg(target.ast)) {
+			const inner = (target.ast.children![0] as any).children![0] as AstNodeRec
+			target.ast = inner
+			target.label = inner.label || target.label
+			target.decomposed = true
+			return true
+		}
+		
+		// Negation rules
+		if (target.ast.label === '¬' && target.ast.children && (target.ast.children as any)[0]) {
+			const inner = (target.ast.children as any)[0] as AstNodeRec
+			// ¬(A ∧ B) -> ¬A | ¬B (β)
+			if (inner.label === '∧' && inner.children && (inner.children as any).length === 2) {
+				const [a, b] = inner.children as AstNodeRec[]
+				const notA: AstNodeRec = { id: `neg-${a.id || Math.random().toString(36).slice(2,7)}`, label: '¬', children: [a] as any }
+				const notB: AstNodeRec = { id: `neg-${b.id || Math.random().toString(36).slice(2,7)}`, label: '¬', children: [b] as any }
+				target.children = [nodeFromAst(notA), nodeFromAst(notB)]
+				target.decomposed = true
+				return true
+			}
+			// ¬(A ∨ B) -> ¬A & ¬B (α) — chain them so both on same branch
+			if ((inner.label === '∨' || inner.label === '⊻') && inner.children && (inner.children as any).length === 2) {
+				const [a, b] = inner.children as AstNodeRec[]
+				const notA: AstNodeRec = { id: `neg-${a.id || Math.random().toString(36).slice(2,7)}`, label: '¬', children: [a] as any }
+				const notB: AstNodeRec = { id: `neg-${b.id || Math.random().toString(36).slice(2,7)}`, label: '¬', children: [b] as any }
+				const childA = nodeFromAst(notA)
+				const childB = nodeFromAst(notB)
+				childA.children = [childB]
+				target.children = [childA]
+				target.decomposed = true
+				return true
+			}
+			// ¬(A → B) -> A & ¬B (α) — chain
+			if (isImplication(inner) && inner.children && (inner.children as any).length === 2) {
+				const [a, b] = inner.children as AstNodeRec[]
+				const notB: AstNodeRec = { id: `neg-${b.id || Math.random().toString(36).slice(2,7)}`, label: '¬', children: [b] as any }
+				const childA = nodeFromAst(a)
+				const childNotB = nodeFromAst(notB)
+				childA.children = [childNotB]
+				target.children = [childA]
+				target.decomposed = true
+				return true
+			}
+		}
+		// Standard α/β and implication
+		if (isAlpha(target.ast) || isBeta(target.ast) || isImplication(target.ast)) {
+			const [a, b] = target.ast.children as AstNodeRec[]
+			let left: AstNodeRec = a
+			let right: AstNodeRec = b
+			if (isImplication(target.ast)) {
+				// P → Q expands to (¬P) | Q (β rule)
+				left = { id: `neg-${a.id || Math.random().toString(36).slice(2,7)}`, label: '¬', children: [a] as any }
+			}
+			if (isAlpha(target.ast)) {
+				// Chain for alpha so both end up on the same branch
+				const childLeft = nodeFromAst(left)
+				const childRight = nodeFromAst(right)
+				childLeft.children = [childRight]
+				target.children = [childLeft]
+			} else {
+				// Beta split
+				target.children = [nodeFromAst(left), nodeFromAst(right)]
+			}
+			target.decomposed = true
+			return true
+		}
+		return false
+	}
+
+	function walkAncestors(node: d3.HierarchyNode<TableauNode>): TableauNode[] {
+		const out: TableauNode[] = []
+		let p: d3.HierarchyNode<TableauNode> | null = node.parent
+		while (p) { out.push(p.data); p = p.parent }
+		return out
+	}
+
+	function detectClosureFor(hnode: d3.HierarchyNode<TableauNode>): boolean {
+		const s = serialize(hnode.data.ast)
+		if (!s) return false
+		const comp = complementOf(s)
+		const ancestorHit = walkAncestors(hnode).some(a => serialize(a.ast) === comp)
+		if (ancestorHit) {
+			hnode.data.type = 'closed'
+			return true
+		}
+		return false
+	}
+
+	// Helper to find and update a node in the root data structure
+	function markNodeAsClosed(nodeId: string, rootNode: TableauNode): boolean {
+		if (rootNode.id === nodeId) {
+			rootNode.type = 'closed'
+			return true
+		}
+		if (rootNode.children) {
+			for (const child of rootNode.children) {
+				if (markNodeAsClosed(nodeId, child)) return true
+			}
+		}
+		return false
+	}
+
+	// Auto operations with batching
+	const [busy, setBusy] = React.useState<{ mode: 'expand' | 'close' | null; progress: number }>({ mode: null, progress: 0 })
+	const [snack, setSnack] = React.useState<string | null>(null)
+
+	// Optional: auto-expand once if user enabled STN simulation via persisted flag
+	React.useEffect(() => {
+		try {
+			if (localStorage.getItem('xv_stn_sim') === '1') {
+				setTimeout(() => autoExpand(), 0)
+			}
+		} catch {}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [])
+
+	function collectDecomposable(n: TableauNode, acc: TableauNode[]) {
+		if (n.ast && (isAlpha(n.ast) || isBeta(n.ast) || isDoubleNeg(n.ast) || isImplication(n.ast)) && !n.decomposed) acc.push(n)
+		n.children?.forEach(c => collectDecomposable(c, acc))
+	}
+
+	function collectLeaves(h: d3.HierarchyNode<TableauNode>, acc: d3.HierarchyNode<TableauNode>[]) {
+		if (!h.children || h.children.length === 0) acc.push(h)
+		else h.children.forEach(c => collectLeaves(c, acc))
+	}
+
+	function autoExpand() {
+		if (!root) return
+		const draft = cloneTableau(root)
+		setBusy({ mode: 'expand', progress: 5 })
+		let expandedAny = false
+		let iteration = 0
+		const step = () => {
+			const batch: TableauNode[] = []
+			collectDecomposable(draft, batch)
+			
+			if (batch.length === 0) {
+				setRoot(cloneTableau(draft))
+				setBusy({ mode: null, progress: 0 })
+				setSnack(expandedAny ? 'Auto Expand completed' : 'No decomposable nodes')
+				if (expandedAny) { try { window.dispatchEvent(new CustomEvent('stn-request-refit')) } catch {} }
+				return
+			}
+			batch.slice(0, 100).forEach(n => { if (expandBranch(n)) expandedAny = true })
+			setRoot(cloneTableau(draft))
+			setBusy(prev => ({ mode: 'expand', progress: Math.min(95, (prev.progress || 5) + 10) }))
+			// keep the current view coherent as nodes grow
+			try { window.dispatchEvent(new CustomEvent('stn-request-refit')) } catch {}
+			iteration += 1
+			requestAnimationFrame(step)
+		}
+		requestAnimationFrame(step)
+	}
+
+	function autoClose() {
+		if (!root) return
+		const draft = cloneTableau(root)
+		setBusy({ mode: 'close', progress: 5 })
+		let anyClosed = false
+		const h = d3.hierarchy<TableauNode>(draft)
+		const leaves: d3.HierarchyNode<TableauNode>[] = []
+		collectLeaves(h, leaves)
+		let index = 0
+		
+		const step = () => {
+			const end = Math.min(index + 100, leaves.length)
+			let closedThisBatch = false
+			for (let i = index; i < end; i++) {
+				if (detectClosureFor(leaves[i])) { anyClosed = true; closedThisBatch = true }
+			}
+			index = end
+			setRoot(cloneTableau(draft))
+			const progress = leaves.length === 0 ? 100 : Math.max(10, Math.floor((index / leaves.length) * 100))
+			setBusy({ mode: 'close', progress })
+			if (closedThisBatch) {
+				
+				try { window.dispatchEvent(new CustomEvent('stn-request-refit')) } catch {}
+			} else { }
+			if (index < leaves.length) {
+				requestAnimationFrame(step)
+			} else {
+				setBusy({ mode: null, progress: 0 })
+				setSnack(anyClosed ? 'Branches closed' : 'No contradictions found')
+				if (anyClosed) { try { window.dispatchEvent(new CustomEvent('stn-request-refit')) } catch {} }
+			}
+		}
+		requestAnimationFrame(step)
+	}
+
+	// Listen for external refit requests (e.g., after auto ops)
+	React.useEffect(() => {
+		function onRefit() {
+			const svg = d3.select(svgRef.current)
+			const zoomRootSel = svg.select<SVGGElement>('g.zoom-root')
+			const contentSel = svg.select<SVGGElement>('g.content')
+			if (zoomRootSel.empty() || contentSel.empty()) return
+			const doRefit = (attempt: number) => {
+				const nodeSel = contentSel.selectAll<SVGGElement, any>('g.node')
+				const nodes = nodeSel.nodes()
+				
+				if (nodes.length < 2 && attempt < 8) {
+					return requestAnimationFrame(() => doRefit(attempt + 1))
+				}
+				if (!nodes.length) return
+				// compute using the content group's bbox for accuracy
+				let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+				nodeSel.each(function(d: any){
+					if (d && typeof d.x === 'number' && typeof d.y === 'number') {
+						const r = d.depth === 0 ? 16 : 12
+						const top = d.y - 18
+						const bottom = d.y + (d.children && d.children.length > 0 ? 22 : 26)
+						minX = Math.min(minX, d.x - r)
+						maxX = Math.max(maxX, d.x + r)
+						minY = Math.min(minY, top)
+						maxY = Math.max(maxY, bottom)
+					} else {
+						const bb = (this as SVGGElement).getBBox()
+						minX = Math.min(minX, bb.x); minY = Math.min(minY, bb.y); maxX = Math.max(maxX, bb.x + bb.width); maxY = Math.max(maxY, bb.y + bb.height)
+					}
+				})
+				if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) return
+				const width = Math.max(1, maxX - minX)
+				const height = Math.max(1, maxY - minY)
+				const pad = 60
+				const k0 = Math.min(size.width / (width + pad), size.height / (height + pad))
+				const k = Math.min(1, k0)
+				const cx = minX + width / 2
+				const cy = minY + height / 2
+				const tx = (size.width / 2) - cx * k
+				const ty = (size.height / 2) - cy * k
+				// Skip if current transform is already close (tolerance 2px)
+				const current = d3.zoomTransform(svg.node() as any)
+				if (Math.abs((current.x ?? 0) - tx) < 2 && Math.abs((current.y ?? 0) - ty) < 2 && Math.abs((current.k ?? 1) - k) < 0.001) {
+					
+					return
+				}
+				
+				const zoomBehavior = d3.zoom<SVGSVGElement, unknown>().scaleExtent([0.4, 4])
+				svg.call(zoomBehavior as any)
+				svg.call(zoomBehavior.transform as any, d3.zoomIdentity.translate(tx, ty).scale(k))
+			}
+			doRefit(0)
+		}
+		window.addEventListener('stn-request-refit', onRefit)
+		return () => window.removeEventListener('stn-request-refit', onRefit)
+	}, [size.width, size.height])
+
+	// Render the tableau using d3.tree()
 	React.useEffect(() => {
 		const svg = d3.select(svgRef.current)
 		svg.selectAll('*').remove()
+		
+		// Only reset initial fit when expression/AST actually changes, not on internal state updates
+		const prevExpr = prevExpressionRef.current
+		const prevAst = prevAstIdRef.current
+		const astId = ast?.id || null
+		if (expression !== prevExpr || astId !== prevAst) {
+			initialFitDoneRef.current = false
+			prevExpressionRef.current = expression
+			prevAstIdRef.current = astId
+			
+		}
+		// Track size separately (rare resizes)
+		const prevSize = prevSizeRef.current
+		if (!prevSize || Math.abs(prevSize.width - size.width) > 20 || Math.abs(prevSize.height - size.height) > 20) {
+			prevSizeRef.current = { ...size }
+		}
 
-		if (!ast) {
+		if (!root) {
 			// Empty state
 			svg
 				.append('text')
@@ -69,24 +414,52 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 			return
 		}
 
-		const rootData = astToTableau(ast)
-		const root = d3.hierarchy<TableauNode>(rootData)
-		const treeLayout = d3.tree<TableauNode>().nodeSize([28, 80])
-		const tree = treeLayout(root)
+		const hroot = d3.hierarchy<TableauNode>(root)
+		// compute depth/height to support rendering even without children yet
+		hroot.each((d:any)=>{ d.height = d.children ? d.children.length : 0 })
+		const treeLayout = d3.tree<TableauNode>().nodeSize([28, 110])
+		const tree = treeLayout(hroot)
 
-		const g = svg
+		const thisEpoch = ++renderEpochRef.current
+		
+
+		// Zoomable container (preserve existing transform if any)
+		const previousTransform = d3.zoomTransform(svg.node() as any)
+		
+		const zoomRoot = svg.append('g').attr('class', 'zoom-root')
+		const g = zoomRoot
 			.append('g')
-			.attr('transform', `translate(${size.width / 2}, 40)`) // center horizontally, leave padding top
+			.attr('class', 'content')
+			.attr('transform', null as any)
 
-		// Links (branches)
+		// Zoom/pan behavior
+		const zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
+			.scaleExtent([0.4, 4])
+			.on('zoom', (event) => {
+				zoomRoot.attr('transform', event.transform.toString())
+			})
+		svg.call(zoomBehavior as any)
+		// apply previous transform so view does not jump on rerender
+		zoomRoot.attr('transform', previousTransform.toString())
+		svg.call(zoomBehavior.transform as any, previousTransform)
+
+		// Links (branches) - highlight path to selected node
 		g.selectAll('path.link')
 			.data(tree.links())
 			.enter()
 			.append('path')
 			.attr('class', 'link')
 			.attr('fill', 'none')
-			.attr('stroke', 'rgba(255,255,255,0.3)')
-			.attr('stroke-width', 1.5)
+			.attr('stroke', (d: any) => {
+				const sourceInPath = pathToRoot.includes(d.source.data.id)
+				const targetInPath = pathToRoot.includes(d.target.data.id)
+				return (sourceInPath && targetInPath) ? 'rgba(255,193,7,0.8)' : 'rgba(255,255,255,0.3)'
+			})
+			.attr('stroke-width', (d: any) => {
+				const sourceInPath = pathToRoot.includes(d.source.data.id)
+				const targetInPath = pathToRoot.includes(d.target.data.id)
+				return (sourceInPath && targetInPath) ? 2.5 : 1.5
+			})
 			.attr('d', (d: any) =>
 				`M${d.source.x},${d.source.y} C ${d.source.x},${(d.source.y + d.target.y) / 2} ${d.target.x},${(d.source.y + d.target.y) / 2} ${d.target.x},${d.target.y}`
 			)
@@ -100,18 +473,58 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 			.attr('class', 'node')
 			.attr('transform', (d: any) => `translate(${d.x}, ${d.y})`)
 
+		// Helper: extents from data positions; fallback to DOM bbox
+		function computeDataExtentsFromTree() {
+			const desc = tree.descendants() as any[]
+			let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+			desc.forEach(d => {
+				const r = d.depth === 0 ? 16 : 12
+				const top = d.y - 18
+				const bottom = d.y + (d.children && d.children.length > 0 ? 22 : 26)
+				minX = Math.min(minX, d.x - r)
+				maxX = Math.max(maxX, d.x + r)
+				minY = Math.min(minY, top)
+				maxY = Math.max(maxY, bottom)
+			})
+			return { minX, minY, maxX, maxY }
+		}
+
 		node
 			.append('circle')
 			.attr('r', (d: any) => (d.depth === 0 ? 16 : 12))
 			.attr('fill', (d: any) => {
 				const t = d.data.type
+				const isSelected = d.data.id === selectedNodeId
+				const isInPath = pathToRoot.includes(d.data.id)
+				
+				if (isSelected) return 'rgba(255,193,7,0.6)'
+				if (isInPath) return 'rgba(255,193,7,0.3)'
 				if (t === 'root') return 'rgba(64,196,255,0.35)'
 				if (t === 'closed') return 'rgba(255,82,82,0.35)'
 				if (t === 'open') return 'rgba(76,175,80,0.35)'
 				return 'rgba(255,255,255,0.18)'
 			})
-			.attr('stroke', 'rgba(255,255,255,0.45)')
-			.attr('stroke-width', (d: any) => (d.depth === 0 ? 2 : 1))
+			.attr('stroke', (d: any) => {
+				const isSelected = d.data.id === selectedNodeId
+				const isInPath = pathToRoot.includes(d.data.id)
+				
+				if (isSelected) return '#ffc107'
+				if (isInPath) return 'rgba(255,193,7,0.7)'
+				return 'rgba(255,255,255,0.45)'
+			})
+			.attr('stroke-width', (d: any) => {
+				const isSelected = d.data.id === selectedNodeId
+				const isInPath = pathToRoot.includes(d.data.id)
+				
+				if (isSelected) return 3
+				if (isInPath) return 2
+				return d.depth === 0 ? 2 : 1
+			})
+			.style('cursor', 'pointer')
+			.on('click', (event: any, d: any) => {
+				event.stopPropagation()
+				setSelectedNodeId(d.data.id === selectedNodeId ? null : d.data.id)
+			})
 
 		node
 			.append('text')
@@ -123,12 +536,153 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 
 		node
 			.append('text')
-			.attr('y', 24)
+			.attr('y', (d: any) => {
+				const isLeaf = !d.children || d.children.length === 0
+				return isLeaf ? 26 : 22
+			})
 			.attr('text-anchor', 'middle')
 			.attr('fill', 'rgba(255,255,255,0.45)')
+			.attr('font-size', 9)
+			.text((d: any) => (d.depth === 0 ? '' : d.data.type))
+
+		// Rule badges for decomposable nodes
+		const ruleBadges = node.filter((d: any) => !!getRuleBadge(d.data))
+		ruleBadges
+			.append('circle')
+			.attr('cx', (d: any) => (d.depth === 0 ? 12 : 9))
+			.attr('cy', (d: any) => (d.depth === 0 ? -12 : -9))
+			.attr('r', 8)
+			.attr('fill', (d: any) => getRuleBadge(d.data)?.color || '#666')
+			.attr('stroke', 'rgba(255,255,255,0.8)')
+			.attr('stroke-width', 1)
+		
+		ruleBadges
+			.append('text')
+			.attr('x', (d: any) => (d.depth === 0 ? 12 : 9))
+			.attr('y', (d: any) => (d.depth === 0 ? -8 : -5))
+			.attr('text-anchor', 'middle')
+			.attr('fill', 'white')
 			.attr('font-size', 10)
-			.text((d: any) => (d.data.type === 'root' ? 'Root' : d.data.type))
-	}, [ast, size.width, size.height, layoutMode, expression])
+			.attr('font-weight', 'bold')
+			.text((d: any) => getRuleBadge(d.data)?.text || '')
+			.append('title')
+			.text((d: any) => getRuleBadge(d.data)?.tooltip || '')
+
+		// Node menu replaces per-node D/X controls; actions are accessible via the panel
+
+		// Initial fit to contents after first render only (prevents flicker during auto ops)
+		if (!initialFitDoneRef.current) {
+			const fitWithRetries = (attempt: number) => {
+				try {
+					if (thisEpoch !== renderEpochRef.current) { return }
+					const nodes = g.selectAll<SVGGElement, any>('g.node').nodes()
+					if (!nodes.length) {
+						
+						if (attempt < 10) return requestAnimationFrame(() => fitWithRetries(attempt + 1))
+						return
+					}
+					const { minX, minY, maxX, maxY } = computeDataExtentsFromTree()
+					if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY) || maxX - minX === 0 || maxY - minY === 0) {
+						
+						if (attempt < 10) return requestAnimationFrame(() => fitWithRetries(attempt + 1))
+						return
+					}
+					const width = Math.max(1, maxX - minX)
+					const height = Math.max(1, maxY - minY)
+					const pad = 60
+					const k0 = Math.min(size.width / (width + pad), size.height / (height + pad))
+					const k = Math.min(1, k0)
+					const cx = minX + width / 2
+					const cy = minY + height / 2
+					const tx = (size.width / 2) - cx * k
+					const ty = (size.height / 2) - cy * k
+					
+					svg.call(zoomBehavior.transform as any, d3.zoomIdentity.translate(tx, ty).scale(k))
+					initialFitDoneRef.current = true
+				} catch (e) {
+					
+					if (attempt < 10) return requestAnimationFrame(() => fitWithRetries(attempt + 1))
+				}
+			}
+			requestAnimationFrame(() => fitWithRetries(0))
+		}
+
+		// Compact node menu: trigger + panel with D/X + facet icons
+		const menuTrigger = node.append('g').attr('class', 'node-menu-trigger').style('cursor', 'pointer')
+		menuTrigger.append('circle').attr('r', 3).attr('fill', '#40c4ff').attr('stroke', '#2aa4f4').append('title').text('Open node menu')
+		// Dock trigger to top-left corner with minimal padding
+		menuTrigger.attr('transform', (d: any) => { const r = d.depth === 0 ? 16 : 12; return `translate(${-r}, ${-r})` })
+
+		const panel = node.append('g').attr('class', 'node-menu-panel').style('display', 'none')
+		// Panel near top-left corner, close to node
+		panel.attr('transform', (d: any) => { const r = d.depth === 0 ? 16 : 12; return `translate(${-r - 104}, ${-r - 6})` })
+		panel.append('rect').attr('width', 110).attr('height', 24).attr('rx', 6).attr('fill', 'rgba(25,25,35,0.95)').attr('stroke', 'rgba(64,196,255,0.4)')
+
+		const pDecomp = panel.append('g').datum((d:any)=>d).attr('transform', 'translate(6,6)').style('cursor','pointer')
+		pDecomp.append('rect').attr('width', 14).attr('height', 12).attr('rx', 3).attr('fill', 'rgba(64,196,255,0.18)').attr('stroke', '#40c4ff')
+		pDecomp.append('text').attr('x', 7).attr('y', 9).attr('text-anchor', 'middle').attr('font-size', 8).attr('fill', '#40c4ff').text('D')
+		pDecomp.append('title').text('Decompose (apply α/β)')
+		pDecomp.on('click', (event: any, d: any) => { event.stopPropagation(); const h = d as d3.HierarchyNode<TableauNode>; expandBranch(h.data); setRoot(prev => (prev ? cloneTableau(prev) : prev)) })
+
+		const pClose = panel.append('g').datum((d:any)=>d).attr('transform', 'translate(24,6)').style('cursor','pointer')
+		pClose.append('rect').attr('width', 14).attr('height', 12).attr('rx', 3).attr('fill', 'rgba(255,82,82,0.18)').attr('stroke', '#ff5252')
+		pClose.append('text').attr('x', 7).attr('y', 9).attr('text-anchor', 'middle').attr('font-size', 8).attr('fill', '#ff8a80').text('X')
+		pClose.append('title').text('Close Branch (mark as contradictory/closed - turns node red)')
+		pClose.on('click', (event: any, d: any) => { 
+			event.stopPropagation(); 
+			const h = d as d3.HierarchyNode<TableauNode>; 
+			
+			// Try to detect logical contradiction first
+			const shouldClose = detectClosureFor(h)
+			if (shouldClose) {
+				// Update the root data structure and trigger re-render
+				setRoot(prev => {
+					if (!prev) return prev
+					const newRoot = cloneTableau(prev)
+					markNodeAsClosed(h.data.id, newRoot)
+					return newRoot
+				})
+			} else {
+				// If no contradiction found, allow manual closure anyway (for testing/manual tableau construction)
+				setRoot(prev => {
+					if (!prev) return prev
+					const newRoot = cloneTableau(prev)
+					markNodeAsClosed(h.data.id, newRoot)
+					return newRoot
+				})
+			}
+		})
+
+		const facetHost = panel.append('g').attr('transform', 'translate(46,4) scale(0.75)')
+		createFacetIcons(facetHost as any, (type, _opts, d: any) => {
+			setSelectedNodeForDialog(d)
+			if (type === 'venn') setVennOpen(true)
+			if (type === 'truth') setTruthOpen(true)
+			if (type === 'timeline') setTimelineOpen(true)
+			if (type === 'counter') setCounterOpen(true)
+		})
+
+		menuTrigger.on('click', function(event){
+			event.stopPropagation()
+			const group = d3.select(this.parentNode as SVGGElement)
+			const pnl = group.select<SVGGElement>('.node-menu-panel')
+			const current = pnl.style('display')
+			// hide all other panels
+			svg.selectAll('.node-menu-panel').filter(function(this: any){ return this !== pnl.node() }).style('display','none')
+			// toggle this one
+			const nextVis = current === 'none' ? 'inline' : 'none'
+			pnl.style('display', nextVis)
+			if (nextVis === 'inline') {
+				// bring the active node (and its panel) to the front so it overlays others
+				(group.node() as any)?.parentNode && group.raise()
+				pnl.raise()
+			}
+		})
+		svg.on('click', () => { 
+			svg.selectAll('.node-menu-panel').style('display', 'none')
+			setSelectedNodeId(null) // Clear selection when clicking empty canvas
+		})
+	}, [root, size.width, size.height, layoutMode, expression, selectedNodeId, pathToRoot])
 
 	return (
 		<Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }} ref={containerRef}>
@@ -150,6 +704,83 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 			<Box sx={{ flex: 1, position: 'relative' }}>
 				<svg ref={svgRef} width={size.width} height={size.height} />
 			</Box>
+
+			{/* Top-level auto operations and progress */}
+			<Box sx={{ position: 'absolute', top: 40, right: 12, display: 'flex', gap: 1, flexDirection: 'column' }}>
+				<Box sx={{ display: 'flex', gap: 1 }}>
+					<Button size="small" variant="outlined" color="secondary" onClick={autoExpand} disabled={!!busy.mode}>Auto Expand</Button>
+					<Button size="small" variant="outlined" color="secondary" onClick={autoClose} disabled={!!busy.mode}>Auto Close</Button>
+				</Box>
+				{selectedNodeId && (
+					<Box sx={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', textAlign: 'center' }}>
+						Selected: {(() => {
+							if (!root) return 'Node'
+							const findNodeById = (node: TableauNode): TableauNode | null => {
+								if (node.id === selectedNodeId) return node
+								if (node.children) {
+									for (const child of node.children) {
+										const found = findNodeById(child)
+										if (found) return found
+									}
+								}
+								return null
+							}
+							const selectedNode = findNodeById(root)
+							return selectedNode?.label || 'Node'
+						})()}
+						{pathToRoot.length > 1 && ` (Path: ${pathToRoot.length - 1} steps)`}
+					</Box>
+				)}
+			</Box>
+			{busy.mode && (
+				<Box sx={{ position: 'absolute', top: 8, left: 0, right: 0, px: 4 }}>
+					<LinearProgress variant="determinate" value={busy.progress} />
+				</Box>
+			)}
+
+			<Snackbar open={!!snack} autoHideDuration={3000} onClose={() => setSnack(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+				<Alert severity="info" variant="filled">{snack}</Alert>
+			</Snackbar>
+
+			{/* Enhanced facet dialogs (reused) */}
+			{selectedNodeForDialog && (
+				<>
+					<VennDiagramDialog
+						open={vennOpen}
+						onClose={() => setVennOpen(false)}
+						expression={expression}
+						nodeId={selectedNodeForDialog?.data?.id || selectedNodeForDialog?.id || 'node'}
+						// lightweight demo data for relevance testing
+						data={{
+							sets: [
+								{ label: 'A', items: ['a1'], color: '#20B2AA' },
+								{ label: 'B', items: ['b1'], color: '#9370DB' }
+							],
+							intersection: []
+						}}
+						examples={[{ id: 'ex1', title: 'Example', necessary: 'A', sufficient: 'B' }]}
+					/>
+					<TruthTableDialog
+						open={truthOpen}
+						onClose={() => setTruthOpen(false)}
+						expression={expression}
+						nodeId={selectedNodeForDialog?.data?.id || selectedNodeForDialog?.id || 'node'}
+						ast={ast ?? { id: 'fallback', label: 'P', children: [] } as any}
+					/>
+					<TimelineDialog
+						open={timelineOpen}
+						onClose={() => setTimelineOpen(false)}
+						expression={expression}
+						nodeId={selectedNodeForDialog?.data?.id || selectedNodeForDialog?.id || 'node'}
+					/>
+					<CounterargumentsDialog
+						open={counterOpen}
+						onClose={() => setCounterOpen(false)}
+						expression={expression}
+						nodeId={selectedNodeForDialog?.data?.id || selectedNodeForDialog?.id || 'node'}
+					/>
+				</>
+			)}
 		</Box>
 	)
 }

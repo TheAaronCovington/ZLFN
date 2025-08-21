@@ -136,8 +136,7 @@ export const CounterargumentsDialog: React.FC<CounterargumentsDialogProps> = ({
 }) => {
   const counterargumentData = data || generateSampleData(nodeId, expression)
   
-  console.debug('🔍 COUNTERARGUMENTS DIALOG - Sample data generated:', counterargumentData)
-  console.debug('🔍 COUNTERARGUMENTS DIALOG - Conflicts:', counterargumentData.conflicts)
+  
 
   const handleExport = () => {
     console.log('Exporting counterarguments analysis...')

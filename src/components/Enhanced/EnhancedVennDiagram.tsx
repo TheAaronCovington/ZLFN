@@ -46,16 +46,8 @@ export const EnhancedVennDiagram: React.FC<EnhancedVennDiagramProps> = ({
   const [animationFrame, setAnimationFrame] = useState(0)
 
   useEffect(() => {
-    console.debug('🔄 Venn diagram useEffect triggered:', { 
-      hasRef: !!svgRef.current, 
-      isAnimating, 
-      animationFrame, 
-      hoveredSet,
-      dataIntersectionLength: data.intersection?.length 
-    })
     
     if (!svgRef.current) {
-      console.debug('❌ No SVG ref, skipping render')
       return
     }
 
@@ -221,7 +213,6 @@ export const EnhancedVennDiagram: React.FC<EnhancedVennDiagramProps> = ({
 
     // Add enhanced particle effects and animations
     if (isAnimating) {
-      console.debug('🎬 Adding animation effects...')
       
       // Pulsing effect for circles - target the actual circles, not '.venn-circle' class
       svg.selectAll('circle')
@@ -238,7 +229,6 @@ export const EnhancedVennDiagram: React.FC<EnhancedVennDiagramProps> = ({
         .style('fill-opacity', 0.4)
       
       // Particle effects - always create some particles for visual feedback
-      console.debug('🎆 Creating particle effects')
       const particles = svg.append('g').attr('class', 'particles')
       
       for (let i = 0; i < 30; i++) {
@@ -300,19 +290,19 @@ export const EnhancedVennDiagram: React.FC<EnhancedVennDiagramProps> = ({
         }, i * 500)
       }
     } else {
-      console.debug('🔇 Animation not active')
+      
     }
 
   }, [data, isAnimating, animationFrame, hoveredSet])
 
   const handleAnimate = () => {
-    console.debug('🎬 Animation triggered:', { isAnimating, animationFrame })
+    
     setIsAnimating(true)
     setAnimationFrame(f => f + 1)
-    console.debug('🎬 Animation state updated:', { newAnimating: true, newFrame: animationFrame + 1 })
+    
     setTimeout(() => {
       setIsAnimating(false)
-      console.debug('🎬 Animation completed')
+      
     }, 3000)
   }
 
@@ -370,7 +360,7 @@ export const EnhancedVennDiagram: React.FC<EnhancedVennDiagramProps> = ({
             <Button
               startIcon={<ThreeDIcon />}
               onClick={() => {
-                console.debug('🎭 3D View toggled:', { current: show3D, new: !show3D })
+                
                 setShow3D(!show3D)
               }}
               sx={{ color: show3D ? '#9c27b0' : '#ffffff', borderColor: show3D ? '#9c27b0' : '#ffffff' }}

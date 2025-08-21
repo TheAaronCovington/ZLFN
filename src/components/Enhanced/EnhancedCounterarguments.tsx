@@ -91,18 +91,9 @@ export const EnhancedCounterarguments: React.FC<EnhancedCounterargumentsProps> =
   const [animationFrame, setAnimationFrame] = useState(0)
 
   useEffect(() => {
-    console.debug('🔄 Counterarguments useEffect triggered:', { 
-      hasRef: !!svgRef.current, 
-      isAnimating, 
-      animationFrame, 
-      selectedNode,
-      layoutMode,
-      nodeCount: data.nodes.length,
-      relationshipCount: data.relationships.length
-    })
     
     if (!svgRef.current) {
-      console.debug('❌ No SVG ref, skipping render')
+      
       return
     }
 
@@ -159,7 +150,6 @@ export const EnhancedCounterarguments: React.FC<EnhancedCounterargumentsProps> =
         .force('collision', d3.forceCollide().radius(30))
     } else if (layoutMode === 'hierarchical') {
       // Safe hierarchical layout without stratify
-      console.debug('🌳 Creating hierarchical layout')
       
       // Find root nodes (nodes with no incoming support links)
       const rootNodes = nodes.filter(node => 
@@ -168,7 +158,6 @@ export const EnhancedCounterarguments: React.FC<EnhancedCounterargumentsProps> =
         )
       )
       
-      console.debug('🌳 Root nodes found:', rootNodes.length)
       
       // Position nodes in layers
       const layers: ArgumentNode[][] = []
@@ -216,7 +205,6 @@ export const EnhancedCounterarguments: React.FC<EnhancedCounterargumentsProps> =
         layers[currentLayer + 1] = remainingNodes
       }
       
-      console.debug('🌳 Layers created:', layers.map(layer => layer.length))
       
       // Position nodes in layers
       const layerHeight = (HEIGHT - 100) / Math.max(1, layers.length - 1)
@@ -253,24 +241,20 @@ export const EnhancedCounterarguments: React.FC<EnhancedCounterargumentsProps> =
     const conflictGroup = svg.append('g').attr('class', 'conflicts')
     const conflictZones: any[] = []
     
-    console.debug('🔍 CONFLICT ANALYSIS - Total conflicts:', data.conflicts.length)
     
-    data.conflicts.forEach((conflict, index) => {
-      console.debug(`🔍 Processing conflict ${index}:`, conflict)
+    data.conflicts.forEach((conflict, _index) => {
       
       const conflictNodes = nodes.filter(n => conflict.nodes.includes(n.id))
-      console.debug(`🔍 Conflict ${index} - Found ${conflictNodes.length} nodes:`, conflictNodes.map(n => n.id))
       
       if (conflictNodes.length < 2) {
-        console.debug(`🔍 Conflict ${index} - SKIPPED (less than 2 nodes)`)
+        
         return
       }
 
       const conflictColor = conflict.severity === 'high' ? '#ff5252' : 
                            conflict.severity === 'medium' ? '#ff9800' : '#ffeb3b'
 
-      console.debug(`🔍 Conflict ${index} - Color: ${conflictColor}, Severity: ${conflict.severity}`)
-
+      
       // Create conflict zone background - start hidden until positioned
       const zone = conflictGroup.append('g')
         .attr('class', 'conflict-zone')
@@ -287,7 +271,7 @@ export const EnhancedCounterarguments: React.FC<EnhancedCounterargumentsProps> =
         .attr('stroke-dasharray', '5,5')
         .style('cursor', 'pointer')
         .on('click', () => {
-          console.debug(`🔍 Conflict zone clicked: ${conflict.id}`)
+          
           setFocusedConflict(conflict.id)
         })
 
@@ -301,25 +285,17 @@ export const EnhancedCounterarguments: React.FC<EnhancedCounterargumentsProps> =
         .text(`${conflict.severity.toUpperCase()} CONFLICT`)
         .style('pointer-events', 'none')
 
-      console.debug(`🔍 Conflict ${index} - Zone created, adding to array`)
+      
       conflictZones.push({ zone, circle, conflictNodes, conflictColor, conflictId: conflict.id })
     })
 
-    console.debug('🔍 Total conflict zones created:', conflictZones.length)
-
+    
     // Position conflict zones - handle both simulation and fixed layouts
     const positionConflictZones = () => {
-      console.debug('🔍 Positioning conflict zones...')
       
-      conflictZones.forEach(({ zone, circle, conflictNodes, conflictId }, index) => {
+      conflictZones.forEach(({ zone, circle, conflictNodes, conflictId: _conflictId }, _index) => {
         // Check node positions
-        const nodePositions = conflictNodes.map((d: any) => ({ 
-          id: d.id, 
-          x: d.x || d.fx || WIDTH / 2, 
-          y: d.y || d.fy || HEIGHT / 2 
-        }))
         
-        console.debug(`🔍 Conflict ${index} (${conflictId}) node positions:`, nodePositions)
         
         const avgX = d3.mean(conflictNodes, (d: any) => d.x || d.fx || WIDTH / 2) || WIDTH / 2
         const avgY = d3.mean(conflictNodes, (d: any) => d.y || d.fy || HEIGHT / 2) || HEIGHT / 2
@@ -330,27 +306,24 @@ export const EnhancedCounterarguments: React.FC<EnhancedCounterargumentsProps> =
         const constrainedX = Math.max(radius + margin, Math.min(WIDTH - radius - margin, avgX))
         const constrainedY = Math.max(radius + margin, Math.min(HEIGHT - radius - margin, avgY))
         
-        console.debug(`🔍 Conflict ${index} positioning:`, {
-          avgX, avgY, constrainedX, constrainedY, WIDTH, HEIGHT
-        })
         
         zone.attr('transform', `translate(${constrainedX}, ${constrainedY})`)
         
         // Show and animate the zone
-        console.debug(`🔍 Making conflict ${index} visible and animating`)
+        
         zone.style('opacity', 1)
         circle.transition()
           .duration(1000)
           .attr('r', 80)
           .on('end', () => {
-            console.debug(`🔍 Conflict ${index} animation completed`)
+            
           })
       })
     }
 
     // Position immediately if nodes have fixed positions (circular layout)
     if (layoutMode === 'circular') {
-      console.debug('🔍 Circular layout detected - positioning zones immediately')
+      
       setTimeout(positionConflictZones, 100) // Small delay to ensure DOM is ready
     }
 
@@ -360,12 +333,12 @@ export const EnhancedCounterarguments: React.FC<EnhancedCounterargumentsProps> =
       tickCount++
       
       if (tickCount <= 10) {
-        console.debug(`🔍 Simulation tick ${tickCount}`)
+        
       }
       
       // Wait a few ticks for nodes to settle into initial positions
       if (tickCount === 6 && layoutMode !== 'circular') {
-        console.debug('🔍 Force layout - positioning zones after simulation ticks')
+        
         positionConflictZones()
       }
       
@@ -405,8 +378,8 @@ export const EnhancedCounterarguments: React.FC<EnhancedCounterargumentsProps> =
       .attr('opacity', 0.7)
       .attr('filter', 'url(#glow-counter)')
       .style('cursor', 'pointer')
-      .on('click', function(_, d) {
-        console.debug('🔗 Link clicked:', d)
+      .on('click', function(_, _d) {
+        
         // Show relationship details
       })
       .on('mouseover', function(_, d) {
@@ -424,8 +397,9 @@ export const EnhancedCounterarguments: React.FC<EnhancedCounterargumentsProps> =
       .enter().append('g')
       .attr('class', 'argument-node')
       .style('cursor', 'pointer')
-      .on('click', function(_, d) {
-        setSelectedNode(d.id === selectedNode ? null : d.id)
+      .on('click', function(_, _d) {
+        const current: any = d3.select(this as any).datum()
+        setSelectedNode(current.id === selectedNode ? null : current.id)
       })
       .call(d3.drag<SVGGElement, ArgumentNode>()
         .on('start', (event, d) => {
@@ -483,7 +457,6 @@ export const EnhancedCounterarguments: React.FC<EnhancedCounterargumentsProps> =
 
     // Add animations if active
     if (isAnimating) {
-      console.debug('🎬 Adding counterargument animations...')
       
       // Pulsing effect for conflict nodes
       node.filter(d => data.conflicts.some(c => c.nodes.includes(d.id)))
@@ -555,12 +528,12 @@ export const EnhancedCounterarguments: React.FC<EnhancedCounterargumentsProps> =
   }, [data, isAnimating, animationFrame, selectedNode, layoutMode, show3D])
 
   const handleAnimate = () => {
-    console.debug('🎬 Counterargument animation triggered')
+    
     setIsAnimating(true)
     setAnimationFrame(f => f + 1)
     setTimeout(() => {
       setIsAnimating(false)
-      console.debug('🎬 Counterargument animation completed')
+      
     }, 4000)
   }
 
@@ -642,7 +615,7 @@ export const EnhancedCounterarguments: React.FC<EnhancedCounterargumentsProps> =
             <Button
               startIcon={<ThreeDIcon />}
               onClick={() => {
-                console.debug('🎭 3D View toggled:', { current: show3D, new: !show3D })
+                
                 setShow3D(!show3D)
               }}
               sx={{ color: show3D ? '#9c27b0' : '#ffffff', borderColor: show3D ? '#9c27b0' : '#ffffff' }}
