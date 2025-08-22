@@ -135,8 +135,8 @@ export function CompactTableauMenu({
 				<Button size="small" variant="outlined" color="primary" onClick={exportTableau}>
 					Export
 				</Button>
-				<Button size="small" variant="outlined" color="primary" component="label">
-					Import
+				<Button size="small" variant="outlined" color="primary" component="label" disabled title="Use global Import in the Logic Visualizer toolbar">
+					Import (use global)
 					<input type="file" accept=".json" onChange={importTableau} style={{ display: 'none' }} />
 				</Button>
 				

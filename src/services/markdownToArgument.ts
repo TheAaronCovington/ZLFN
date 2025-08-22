@@ -2,7 +2,7 @@
 // Integrates with the unified data model for cross-view compatibility
 
 import { parseMarkdownStructure, type MarkdownStructure, type MarkdownSection } from './markdownParser'
-import type { SharedArgument, Note } from '../context/LogicSharedContext'
+import type { SharedArgument, Note } from '../context/types'
 
 export interface MarkdownArgumentExtraction {
   arguments: SharedArgument[]

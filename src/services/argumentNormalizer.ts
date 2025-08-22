@@ -4,7 +4,7 @@
  * Handles field mapping and defaults for ZLFN/STN/ATN compatibility
  */
 
-import type { SharedArgument } from '../context/LogicSharedContext'
+import type { SharedArgument } from '../context/types'
 import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph/types'
 // Removed unused imports - these will be needed when we implement full normalization
 import { parseDocumentToGraph } from './documentParser'
@@ -214,11 +214,17 @@ export function normalizeImportedJSON(json: ImportedJSON, documentContent?: stri
       })
     }
 
-    // Create expressions from nodes (simplified)
-    const expressions = nodes
-      .filter(node => node.symbol && node.symbol !== node.id)
-      .map(node => node.symbol!)
-      .slice(0, 3) // Limit to first 3 for expression parsing
+    // Synthesize a main STN expression from supports/attacks
+    // (pickConclusionId inlined into synthesizeExpressionFromGraph)
+
+    // (symbolFor is provided by synthesizeExpressionFromGraph)
+
+    function synthesizeExpression(): string {
+      return synthesizeExpressionFromGraph(nodes, edges)
+    }
+
+    const synthesized = synthesizeExpression()
+    const expressions = [synthesized]
 
     const sharedArgument: SharedArgument = {
       id: argumentId,
@@ -227,7 +233,7 @@ export function normalizeImportedJSON(json: ImportedJSON, documentContent?: stri
         documentId: argumentId,
         content: documentContent || `# ${core.name}\n\n${core.summary || ''}`
       },
-      expressions: expressions.length > 0 ? expressions : ['P → Q'], // Fallback
+      expressions: expressions.length > 0 ? expressions : ['P → Q'],
       // Pre-populate derived data
       zlfnGraph: { nodes, edges },
       // Notes will be empty initially
@@ -361,4 +367,53 @@ function titleCaseRule(rule: string): string {
     .split(' ')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ')
+}
+
+// Exported helper for STN fallback: synthesize a propositional expression from a ZLFN graph
+export function synthesizeExpressionFromGraph(nodes: ZlfnNode[], edges: ZlfnEdge[]): string {
+  const counts: Record<string, number> = {}
+  for (const e of edges) {
+    if (e.type === 'implication' && e.to) {
+      const key = String(e.to)
+      counts[key] = (counts[key] || 0) + 1
+    }
+  }
+  let target: string | null = null
+  let max = -1
+  for (const id of Object.keys(counts)) {
+    if (counts[id] > max) { max = counts[id]; target = id }
+  }
+  if (!target && nodes.length) target = nodes[0].id
+  if (!target) return 'P → Q'
+
+  const isString = (v: unknown): v is string => typeof v === 'string' && v.length > 0
+  const supportSources = edges.filter(e => e.type === 'implication' && e.to === target && isString((e as any).from)).map(e => (e as any).from as string)
+  const attackSources = edges.filter(e => e.type === 'counterexample' && e.to === target && isString((e as any).from)).map(e => (e as any).from as string)
+
+  const symbolFor = (id: string): string => {
+    const n = nodes.find(x => x.id === id)
+    if (!n) return id
+    if ((n as any).symbol && (n as any).symbol !== n.id) return (n as any).symbol as string
+    if (n.label) return String(n.label).replace(/\s+/g, '_')
+    return id.toUpperCase()
+  }
+
+  const concl = symbolFor(target)
+  const mkConj = (ids: string[]) => ids.length > 1 ? `(${ids.map(symbolFor).join(' ∧ ')})` : (ids[0] ? symbolFor(ids[0]) : '')
+
+  const parts: string[] = []
+  if (supportSources.length) {
+    const p = mkConj(supportSources)
+    parts.push(p ? `${p} → ${concl}` : concl)
+  }
+  if (attackSources.length) {
+    const a = mkConj(attackSources)
+    parts.push(a ? `${a} → ¬${concl}` : `¬${concl}`)
+  }
+  if (!parts.length) {
+    const syms = nodes.slice(0, 3).map(n => symbolFor(n.id))
+    if (syms.length >= 2) return `(${syms.slice(0, syms.length - 1).join(' ∧ ')}) → ${syms[syms.length - 1]}`
+    return 'P → Q'
+  }
+  return parts.length === 1 ? parts[0] : `(${parts.join(' ∧ ')})`
 }

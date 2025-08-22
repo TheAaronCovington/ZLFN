@@ -7,8 +7,9 @@ const SemanticTableau = React.lazy(() => import('../components/Visualizations/Se
 const ArgumentTableau = React.lazy(() => import('../components/Visualizations/ArgumentTableau'))
 import type { ZlfnNode } from '../components/Visualizations/ZlfnGraph/types'
 import type { VennDiagramData, NecessarySufficientExample } from '../components/Visualizations/VennDiagram'
-import { parseExpressionToAst, toNNF, toCNF, astToString, type AstNodeRec } from '../services/logic'
+import { parseExpressionToAst, toNNF, toCNF, astToString, sanitizeExpressionForParser, type AstNodeRec } from '../services/logic'
 import { useLogicShared } from '../context/LogicSharedContext'
+import { parseAstInWorker } from '../services/astWorkerClient'
 import { downloadJson, readJsonFile } from '../services/io'
 import { CommandBar, ControlsDrawer, InspectorDrawer, StatusBar } from '../components/Visualizer'
 import AdvancedSearch from '../components/Search/AdvancedSearch'
@@ -29,6 +30,7 @@ const LogicVisualizer: React.FC = () => {
 		resetStates,
 		// Unified data access
 		unifiedData,
+		setUnifiedData,
 		getAstFor,
 		getZlfnGraphFor,
 		getAtnDataFor
@@ -66,14 +68,93 @@ const LogicVisualizer: React.FC = () => {
 		localStorage.setItem('xv_performance_overlay', String(showPerformanceOverlay))
 	}, [showPerformanceOverlay])
 
-	// Get data from shared context based on selected argument
+	// Get data from shared context based on selected argument (async to keep UI responsive)
 	const selectedArgumentId = unifiedData.selectedArgumentId
-	const ast = React.useMemo(() => getAstFor(selectedArgumentId), [getAstFor, selectedArgumentId])
-	const graph = React.useMemo(() => getZlfnGraphFor(selectedArgumentId), [getZlfnGraphFor, selectedArgumentId])
-	// ATN data derived via shared accessor (Phase 0 wiring)
-	const atnData = React.useMemo(() => {
-		return getAtnDataFor(selectedArgumentId)
-	}, [getAtnDataFor, selectedArgumentId])
+	const [ast, setAst] = React.useState<any>(null)
+	const [graph, setGraph] = React.useState<any>(null)
+	const [atnData, setAtnData] = React.useState<any>(null)
+
+	React.useEffect(() => {
+		let cancelled = false
+		setAst(null)
+		if (viewMode === 'tableau') {
+			const id = selectedArgumentId
+			const arg = unifiedData.arguments.find(a => a.id === id)
+			const expr = (arg?.expressions && arg.expressions[0]) || currentExpression
+			// Keep the UI's expression label in sync with the active argument
+			if (expr && expr !== currentExpression) {
+				setCurrentExpression(expr)
+			}
+			if (arg?.ast) {
+				setAst(arg.ast)
+			} else if (expr) {
+				const sanitized = sanitizeExpressionForParser(expr)
+				parseAstInWorker(sanitized).then(astResult => {
+					if (cancelled) return
+					if (!astResult) {
+						// Fallback: parse synchronously if worker produced no AST
+						const syncAst = parseExpressionToAst(sanitized)
+						if (syncAst) {
+							setAst(syncAst)
+							if (arg) {
+								setUnifiedData(prev => ({
+									...prev,
+									arguments: prev.arguments.map(a => a.id === arg.id ? { ...a, ast: syncAst } : a)
+								}))
+							}
+							return
+						}
+						// Final fallback: synthesize from graph via shared accessor
+						const out = getAstFor(id)
+						setAst(out)
+						return
+					}
+					setAst(astResult)
+					if (astResult && arg) {
+						setUnifiedData(prev => ({
+							...prev,
+							arguments: prev.arguments.map(a => a.id === arg.id ? { ...a, ast: astResult } : a)
+						}))
+					}
+				}).catch(() => {
+					const out = getAstFor(id)
+					if (!cancelled) setAst(out)
+				})
+			} else {
+				const out = getAstFor(id)
+				if (!cancelled) setAst(out)
+			}
+		}
+		return () => { cancelled = true }
+	}, [viewMode, selectedArgumentId, unifiedData.arguments, setUnifiedData, getAstFor, currentExpression, setCurrentExpression])
+
+	React.useEffect(() => {
+		let cancelled = false
+		setGraph(null)
+		if (viewMode === 'graph') {
+			const id = selectedArgumentId
+			setTimeout(() => {
+				if (cancelled) return
+				const out = getZlfnGraphFor(id)
+				if (!cancelled) setGraph(out)
+			}, 0)
+		}
+		return () => { cancelled = true }
+	}, [viewMode, selectedArgumentId, getZlfnGraphFor])
+
+	React.useEffect(() => {
+		let cancelled = false
+		setAtnData(null)
+		if (viewMode === 'argument') {
+			const id = selectedArgumentId
+			setTimeout(() => {
+				if (cancelled) return
+				const out = getAtnDataFor(id)
+				if (!cancelled) setAtnData(out)
+			}, 0)
+		}
+		return () => { cancelled = true }
+	}, [viewMode, selectedArgumentId, getAtnDataFor])
 	
 	// Demo extras and document data (kept for backward compatibility)
 	const [showDemoExtras, setShowDemoExtras] = React.useState<boolean>(() => 

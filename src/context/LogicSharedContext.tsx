@@ -3,44 +3,11 @@ import type { AstNodeRec } from '../services/logic'
 import { parseExpressionToAst, astToZlfnGraph } from '../services/logic'
 import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph/types'
 import type { ArgumentData } from '../components/Visualizations/ArgumentTableau/types'
+import type { NodeIdToActive, LogicMode, NodeState, UnifiedData } from './types'
 import { extractArgumentsFromMarkdown, updateArgumentFromMarkdown } from '../services/markdownToArgument'
-import { normalizeExpression, normalizeDocument, type ImportedJSON, normalizeImportedJSON } from '../services/argumentNormalizer'
+import { normalizeExpression, normalizeDocument, type ImportedJSON, normalizeImportedJSON, synthesizeExpressionFromGraph } from '../services/argumentNormalizer'
 
-export type NodeIdToActive = Record<string, boolean>
-export type LogicMode = 'classical' | 'epistemic' | 'deontic' | 'temporal' | 'informal' | 'paraconsistent' | 'fuzzy'
-export type NodeState = { value: 'T' | 'F' | 'B' | number; weight?: number }
-
-// Unified Data Model Types
-export type Note = {
-  id: string
-  text: string
-  createdAt: string
-  updatedAt?: string
-  author?: string
-}
-
-export type SharedArgument = {
-  id: string
-  title: string
-  // Bundled markdown document
-  markdown: { documentId: string; content: string }
-  // Canonical expression(s) for the argument
-  expressions: string[]
-  // Lazy-derived representations (computed on demand)
-  ast?: AstNodeRec
-  zlfnGraph?: { nodes: ZlfnNode[]; edges: ZlfnEdge[] }
-  atn?: ArgumentData
-  // Optional cross-reference map (nodeId -> markdownRef)
-  refs?: Record<string, string>
-  // Per-node notes
-  notes?: Record<string, Note[]>
-}
-
-export type UnifiedData = {
-  activeSource: 'document' | 'expression' | 'imported'
-  arguments: SharedArgument[]
-  selectedArgumentId: string | null
-}
+// (types moved to src/context/types.ts to satisfy Fast Refresh constraints)
 
 type LogicSharedContextValue = {
 	simulationMode: boolean
@@ -158,9 +125,29 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		
 		// Return cached AST or compute from first expression
 		if (argument.ast) return argument.ast
-		if (argument.expressions.length === 0) return null
+		// Prefer expression if present, else synthesize from ZLFN graph
+		let sourceExpression: string | null = null
+		if (argument.expressions && argument.expressions.length > 0) {
+			sourceExpression = argument.expressions[0]
+		} else if (argument.zlfnGraph && Array.isArray(argument.zlfnGraph.nodes) && Array.isArray(argument.zlfnGraph.edges)) {
+			sourceExpression = synthesizeExpressionFromGraph(argument.zlfnGraph.nodes as any, argument.zlfnGraph.edges as any)
+		}
+		if (!sourceExpression) return null
 		
-		const ast = parseExpressionToAst(argument.expressions[0])
+		let ast = parseExpressionToAst(sourceExpression)
+		// If parsing failed, try a synthesized fallback from graph
+		if (!ast && argument.zlfnGraph && Array.isArray(argument.zlfnGraph.nodes) && Array.isArray(argument.zlfnGraph.edges)) {
+			const fallbackExpr = synthesizeExpressionFromGraph(argument.zlfnGraph.nodes as any, argument.zlfnGraph.edges as any)
+			ast = parseExpressionToAst(fallbackExpr)
+			// Cache fallback expression for future use
+			if (fallbackExpr) {
+				if (!argument.expressions || argument.expressions.length === 0) {
+					argument.expressions = [fallbackExpr]
+				} else {
+					argument.expressions[0] = fallbackExpr
+				}
+			}
+		}
 		// Cache the result (mutate for performance)
 		if (ast) argument.ast = ast
 		return ast
@@ -193,23 +180,61 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		
 		const graph = getZlfnGraphFor(argumentId)
 		if (!graph) return null
+
+		// Map ZLFN → ATN
+		const toArgType = (t: string): any => {
+			switch (t) {
+				case 'conclusion': return 'claim'
+				case 'premise': return 'ground'
+				case 'term': return 'warrant'
+				case 'informal': return 'qualifier'
+				case 'fallacy': return 'rebuttal'
+				default: return 'ground'
+			}
+		}
+		const schemeFor = (rule?: string) => rule || 'Support'
 		
-		// Convert ZLFN graph to ATN data (simplified conversion for now)
-		const atnData: ArgumentData = {
-			id: argumentId,
-			name: `Argument ${argumentId}`,
-			core: {
-				id: `${argumentId}-core`,
-				argumentType: 'claim',
-				argumentId: argumentId,
-				scheme: 'Default'
-			} as ArgumentData['core'],
-			components: [],
-			relationships: [],
-			layoutMode: 'tree' as const
+		// Build nodes
+		const components: any[] = []
+		let coreNode: any | null = null
+		for (const n of graph.nodes) {
+			const argumentType = toArgType(n.type as any)
+			const mapped = {
+				...n,
+				argumentType,
+				argumentId,
+				strength: (n as any).strength ?? 80,
+				facets: { ...(n as any).facets, rebuttalRelevant: argumentType === 'rebuttal', noteRelevant: true },
+			}
+			if (argumentType === 'claim' && !coreNode) coreNode = { ...mapped, id: `${n.id}` }
+			else components.push(mapped)
+		}
+		if (!coreNode && graph.nodes.length) {
+			const n0 = graph.nodes[0]
+			coreNode = { ...n0, argumentType: 'claim', argumentId, strength: 85 }
 		}
 		
-		// Cache the result
+		// Build relationships
+		const relationships: any[] = graph.edges.map(e => {
+			const relationshipType = (e.type === 'counterexample') ? 'attack' : 'support'
+			return {
+				...e,
+				relationshipType,
+				scheme: schemeFor(e.rule),
+				confidence: e.weight ?? 70
+			}
+		})
+
+		const atnData: ArgumentData = {
+			id: argumentId,
+			name: argument.title || `Argument ${argumentId}`,
+			description: argument.markdown?.content ? argument.markdown.content.slice(0, 240) : undefined,
+			core: coreNode as any,
+			components,
+			relationships,
+			layoutMode: 'tree'
+		}
+
 		argument.atn = atnData
 		return atnData
 	}, [unifiedData.arguments, getZlfnGraphFor])

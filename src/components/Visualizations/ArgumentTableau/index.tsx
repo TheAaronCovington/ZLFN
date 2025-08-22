@@ -287,6 +287,7 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
   })
 
   const [selectedArgumentId, setSelectedArgumentId] = useState<string>(() => {
+    if (argument?.id) return argument.id
     try {
       return storage.getItem('atn_selected_argument') || 'demo-argument'
     } catch {
@@ -295,14 +296,21 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
   })
 
   const [argumentCollection] = useState<ArgumentCollection>(() => ({
-    arguments: [argument || SAMPLE_ARGUMENT],
-    selectedArgumentId: argument?.id || 'demo-argument',
+    arguments: argument ? [argument] : [SAMPLE_ARGUMENT],
+    selectedArgumentId: argument?.id || selectedArgumentId,
     globalSettings: {
       showSchemeLabels: true,
       clusterByScheme: true,
       defaultLayoutMode: 'tree'
     }
   }))
+
+  // Keep local selection in sync with externally provided argument
+  useEffect(() => {
+    if (argument?.id && argument.id !== selectedArgumentId) {
+      setSelectedArgumentId(argument.id)
+    }
+  }, [argument?.id])
 
   // Persist layout mode changes
   useEffect(() => {
@@ -667,27 +675,29 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
               Argument Tableau Network
             </Typography>
             
-            {/* Argument Selector */}
-            <FormControl size="small" sx={{ minWidth: 200 }}>
-              <InputLabel sx={{ color: 'var(--ai-text-secondary)' }}>Argument</InputLabel>
-              <Select
-                value={selectedArgumentId}
-                onChange={(e) => handleArgumentSelect(e.target.value)}
-                label="Argument"
-                sx={{ 
-                  color: 'var(--ai-text-primary)',
-                  '& .MuiOutlinedInput-notchedOutline': {
-                    borderColor: 'rgba(64,196,255,0.3)'
-                  }
-                }}
-              >
-                {argumentCollection.arguments.map(arg => (
-                  <MenuItem key={arg.id} value={arg.id}>
-                    {arg.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            {/* Argument Selector - hidden when external argument is provided */}
+            {!argument && (
+              <FormControl size="small" sx={{ minWidth: 200 }}>
+                <InputLabel sx={{ color: 'var(--ai-text-secondary)' }}>Argument</InputLabel>
+                <Select
+                  value={selectedArgumentId}
+                  onChange={(e) => handleArgumentSelect(e.target.value)}
+                  label="Argument"
+                  sx={{ 
+                    color: 'var(--ai-text-primary)',
+                    '& .MuiOutlinedInput-notchedOutline': {
+                      borderColor: 'rgba(64,196,255,0.3)'
+                    }
+                  }}
+                >
+                  {argumentCollection.arguments.map(arg => (
+                    <MenuItem key={arg.id} value={arg.id}>
+                      {arg.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
 
             {/* Layout Mode Selector */}
             <FormControl size="small" sx={{ minWidth: 150 }}>

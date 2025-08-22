@@ -4214,10 +4214,8 @@ Controls:
 
 				{/* Import / Export */}
 				<MenuItem onClick={() => { setExportDialogOpen(true); closeMenu() }}>Export Object</MenuItem>
-				<MenuItem>
-					<label style={{ cursor: 'pointer' }}>
-						Import Object JSON<input hidden type="file" accept="application/json" onChange={(e)=>{ const f=e.target.files?.[0]; if (f) onImportFull?.(f); closeMenu() }} />
-					</label>
+				<MenuItem disabled title="Use the global Import in the Logic Visualizer toolbar">
+					<label style={{ cursor: 'default' }}>Import Object JSON (use global Import)</label>
 				</MenuItem>
 				<MenuItem onClick={() => { exportSvg(); closeMenu() }}>Export SVG</MenuItem>
 				<MenuItem onClick={() => { exportPng(); closeMenu() }}>Export PNG</MenuItem>

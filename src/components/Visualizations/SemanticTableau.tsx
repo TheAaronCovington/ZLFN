@@ -48,6 +48,15 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 	const svgRef = React.useRef<SVGSVGElement | null>(null)
 	const [layoutMode, setLayoutMode] = React.useState<'tree' | 'hierarchy'>('tree')
 	const initialFitDoneRef = React.useRef<boolean>(false)
+	// Debugging toggle: set localStorage 'xv_debug_stn' = '1' or add ?stnDebug=1 to URL
+	const debugEnabled = React.useMemo(() => {
+		try {
+			const url = new URL(window.location.href)
+			if (url.searchParams.get('stnDebug') === '1') return true
+			return localStorage.getItem('xv_debug_stn') === '1'
+		} catch { return false }
+	}, [])
+	const debug = (...args: any[]) => { if (debugEnabled) console.debug('[STN]', ...args) }
 	
 	// Logic mode for advanced reasoning
 	const [logicMode, setLogicMode] = React.useState<LogicMode>(() => {
@@ -76,6 +85,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 	
 	// Local tableau state derived from AST (moved here to be available for proof validation)
 	const [root, setRoot] = React.useState<TableauNode | null>(ast ? astToTableau(ast) : null)
+	React.useEffect(() => { if (ast) debug('AST received', { label: ast.label, kids: (ast.children||[]).length, expression }) }, [ast, expression])
 	
 	// Node selection and path highlighting
 	const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null)
@@ -142,6 +152,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 			closedBranches,
 			errors
 		})
+		debug('validateTableau', { isComplete, isValid, openBranches, closedBranches, errors: errors.length })
 	}, [root])
 	
 	// Auto-validate when tableau changes
@@ -284,6 +295,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 			// STN-specific shortcuts
 			if (e.key.toLowerCase() === 'd' && selectedNodeId && root) {
 				e.preventDefault()
+				debug('keyboard D pressed', { selectedNodeId })
 				// Decompose selected node
 				const findAndExpand = (node: TableauNode): boolean => {
 					if (node.id === selectedNodeId) {
@@ -303,6 +315,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 			
 			if (e.key.toLowerCase() === 'x' && selectedNodeId && root) {
 				e.preventDefault()
+				debug('keyboard X pressed', { selectedNodeId })
 				// Close selected branch
 				setRoot(prev => {
 					if (!prev) return prev
@@ -336,7 +349,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 		
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
-	}, [selectedNodeId, root])
+	}, [selectedNodeId, root, stepMode, maxDepth])
 	
 	// Helper to find path from selected node to root
 	function findPathToRoot(nodeId: string, currentNode: TableauNode, path: string[] = []): string[] | null {
@@ -940,8 +953,25 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 		}
 	}
 
+	function nodeIsDecomposable(n: TableauNode | null | undefined): boolean {
+		if (!n || !n.ast || n.decomposed) return false
+		return isAlpha(n.ast) || isBeta(n.ast) || isDoubleNeg(n.ast) || isImplication(n.ast) || isBiconditional(n.ast) || isQuantifier(n.ast) || (n.ast.label === '¬' && !!(n.ast.children && (n.ast.children as any)[0]))
+	}
+
+	function findFirstDecomposableDescendant(n: TableauNode | null | undefined): TableauNode | null {
+		if (!n) return null
+		const q: TableauNode[] = [n]
+		while (q.length) {
+			const cur = q.shift()!
+			if (nodeIsDecomposable(cur)) return cur
+			if (cur.children) q.push(...cur.children)
+		}
+		return null
+	}
+
 	function expandBranch(target: TableauNode): boolean {
 		if (!target.ast || target.decomposed) return false
+		debug('expandBranch start', { nodeId: target.id, label: target.label, ast: target.ast?.label })
 		
 		// Create logic mode context for rule validation
 		const modes: Partial<Record<LogicMode, boolean>> = { [logicMode]: true }
@@ -959,6 +989,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 			target.ast = inner
 			target.label = inner.label || target.label
 			target.decomposed = true
+			debug('double-negation ->', target.label)
 			return true
 		}
 		
@@ -972,6 +1003,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 				const notB: AstNodeRec = { id: `neg-${b.id || Math.random().toString(36).slice(2,7)}`, label: '¬', children: [b] as any }
 				target.children = [nodeFromAst(notA), nodeFromAst(notB)]
 				target.decomposed = true
+				debug('negated conjunction -> beta split')
 				return true
 			}
 			// ¬(A ∨ B) -> ¬A & ¬B (α) — chain them so both on same branch
@@ -984,6 +1016,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 				childA.children = [childB]
 				target.children = [childA]
 				target.decomposed = true
+				debug('negated disjunction -> alpha chain')
 				return true
 			}
 			// ¬(A → B) -> A & ¬B (α) — chain
@@ -995,6 +1028,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 				childA.children = [childNotB]
 				target.children = [childA]
 				target.decomposed = true
+				debug('negated implication -> alpha chain')
 				return true
 			}
 		}
@@ -1013,9 +1047,11 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 				const childRight = nodeFromAst(right)
 				childLeft.children = [childRight]
 				target.children = [childLeft]
+				debug('alpha expansion', { left: left.label, right: right.label })
 			} else {
 				// Beta split
 				target.children = [nodeFromAst(left), nodeFromAst(right)]
+				debug('beta expansion', { left: left.label, right: right.label })
 			}
 			target.decomposed = true
 			return true
@@ -1032,6 +1068,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 				leftToRight.children = [rightToLeft]
 				target.children = [leftToRight]
 				target.decomposed = true
+				debug('biconditional -> (→)∧(→)')
 				return true
 			}
 		}
@@ -1047,6 +1084,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 				const branch2: AstNodeRec = { id: `conj_neg_${left.id}_${right.id}`, label: '∧', children: [negLeft, right] as any }
 				target.children = [nodeFromAst(branch1), nodeFromAst(branch2)]
 				target.decomposed = true
+				debug('negated biconditional -> beta split')
 				return true
 			}
 		}
@@ -1057,6 +1095,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 			if (body) {
 				target.children = [nodeFromAst(body)]
 				target.decomposed = true
+				debug('quantifier instantiation', target.ast.label)
 				return true
 			}
 		}
@@ -1072,6 +1111,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 				const newQuant: AstNodeRec = { id: `quant_${target.id}`, label: newQuantLabel, children: [negBody] as any }
 				target.children = [nodeFromAst(newQuant)]
 				target.decomposed = true
+				debug('negated quantifier flip', { from: quant.label, to: newQuant.label })
 				return true
 			}
 		}
@@ -1117,10 +1157,13 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 	const [snack, setSnack] = React.useState<string | null>(null)
 
 	// Optional: auto-expand once if user enabled STN simulation via persisted flag
+	// Limit to shallow depth on load to avoid freezing on large inputs
 	React.useEffect(() => {
 		try {
 			if (localStorage.getItem('xv_stn_sim') === '1') {
-				setTimeout(() => autoExpand(), 0)
+				const depth = Math.max(1, Math.min(maxDepth, 2))
+				setStepMode(true)
+				setTimeout(() => autoExpandToDepth(depth), 0)
 			}
 		} catch {}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1148,6 +1191,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 		const draft = cloneTableau(root)
 		const batch: TableauNode[] = []
 		collectDecomposable(draft, batch)
+		debug('stepExpand batch', batch.length, 'first', batch[0]?.ast?.label)
 		
 		if (batch.length === 0) {
 			setSnack('No more decomposable nodes')
@@ -1169,10 +1213,12 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 		setBusy({ mode: 'expand', progress: 5 })
 		let expandedAny = false
 		let iteration = 0
+		const MAX_ITERS = 200
 		
 		const step = () => {
 			const batch: TableauNode[] = []
 			collectDecomposableToDepth(draft, batch, targetDepth)
+			debug('autoExpandToDepth iter', iteration, 'batch', batch.length)
 			
 			if (batch.length === 0) {
 				setRoot(cloneTableau(draft))
@@ -1181,11 +1227,17 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 				if (expandedAny) { try { window.dispatchEvent(new CustomEvent('stn-request-refit')) } catch {} }
 				return
 			}
-			batch.slice(0, 100).forEach(n => { if (expandBranch(n)) expandedAny = true })
+			let progressed = false
+			batch.slice(0, 100).forEach(n => { if (expandBranch(n)) { expandedAny = true; progressed = true } })
 			setRoot(cloneTableau(draft))
 			setBusy(prev => ({ mode: 'expand', progress: Math.min(95, (prev.progress || 5) + 10) }))
 			try { window.dispatchEvent(new CustomEvent('stn-request-refit')) } catch {}
 			iteration += 1
+			if (iteration > MAX_ITERS || !progressed) {
+				debug('autoExpandToDepth: stopping due to guard', { iteration, progressed })
+				setBusy({ mode: null, progress: 0 })
+				return
+			}
 			requestAnimationFrame(step)
 		}
 		requestAnimationFrame(step)
@@ -1201,9 +1253,11 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 			setBusy({ mode: 'expand', progress: 5 })
 			let expandedAny = false
 			let iteration = 0
+			const MAX_ITERS = 200
 			const step = () => {
 				const batch: TableauNode[] = []
 				collectDecomposable(draft, batch)
+				debug('autoExpand iter', iteration, 'batch', batch.length)
 				
 				if (batch.length === 0) {
 					setRoot(cloneTableau(draft))
@@ -1212,11 +1266,17 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 					if (expandedAny) { try { window.dispatchEvent(new CustomEvent('stn-request-refit')) } catch {} }
 					return
 				}
-				batch.slice(0, 100).forEach(n => { if (expandBranch(n)) expandedAny = true })
+				let progressed = false
+				batch.slice(0, 100).forEach(n => { if (expandBranch(n)) { expandedAny = true; progressed = true } })
 				setRoot(cloneTableau(draft))
 				setBusy(prev => ({ mode: 'expand', progress: Math.min(95, (prev.progress || 5) + 10) }))
 				try { window.dispatchEvent(new CustomEvent('stn-request-refit')) } catch {}
 				iteration += 1
+				if (iteration > MAX_ITERS || !progressed) {
+					debug('autoExpand: stopping due to guard', { iteration, progressed })
+					setBusy({ mode: null, progress: 0 })
+					return
+				}
 				requestAnimationFrame(step)
 			}
 			requestAnimationFrame(step)
@@ -1686,7 +1746,20 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 		pDecomp.append('rect').attr('width', 14).attr('height', 12).attr('rx', 3).attr('fill', 'rgba(64,196,255,0.18)').attr('stroke', '#40c4ff')
 		pDecomp.append('text').attr('x', 7).attr('y', 9).attr('text-anchor', 'middle').attr('font-size', 8).attr('fill', '#40c4ff').text('D')
 		pDecomp.append('title').text('Decompose (apply α/β)')
-		pDecomp.on('click', (event: any, d: any) => { event.stopPropagation(); const h = d as d3.HierarchyNode<TableauNode>; expandBranch(h.data); setRoot(prev => (prev ? cloneTableau(prev) : prev)) })
+		pDecomp.on('click', (event: any, d: any) => { 
+			event.stopPropagation(); 
+			const h = d as d3.HierarchyNode<TableauNode>; 
+			debug('menu D clicked', { nodeId: h.data.id, label: h.data.label, ast: h.data.ast?.label }); 
+			let changed = expandBranch(h.data); 
+			if (!changed) {
+				const candidate = findFirstDecomposableDescendant(h.data)
+				if (candidate && candidate !== h.data) {
+					debug('expanding descendant', { nodeId: candidate.id, ast: candidate.ast?.label })
+					changed = expandBranch(candidate)
+				}
+			}
+			if (changed) setRoot(prev => (prev ? cloneTableau(prev) : prev)); else debug('expandBranch returned false (no decomposable)') 
+		})
 
 		const pClose = panel.append('g').datum((d:any)=>d).attr('transform', 'translate(24,6)').style('cursor','pointer')
 		pClose.append('rect').attr('width', 14).attr('height', 12).attr('rx', 3).attr('fill', 'rgba(255,82,82,0.18)').attr('stroke', '#ff5252')
@@ -1698,6 +1771,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 			
 			// Try to detect logical contradiction first
 			const shouldClose = detectClosureFor(h)
+			debug('menu X clicked', { nodeId: h.data.id, label: h.data.label, shouldClose })
 			if (shouldClose) {
 				// Update the root data structure and trigger re-render
 				setRoot(prev => {

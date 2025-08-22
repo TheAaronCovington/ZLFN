@@ -5,7 +5,7 @@
 
 import React from 'react'
 import { FormControl, InputLabel, Select, MenuItem, Typography } from '@mui/material'
-import type { SharedArgument } from '../../context/LogicSharedContext'
+import type { SharedArgument } from '../../context/types'
 
 export interface ArgumentSelectorProps {
   arguments: SharedArgument[]
@@ -39,7 +39,9 @@ export const ArgumentSelector: React.FC<ArgumentSelectorProps> = ({
   React.useEffect(() => {
     if (!validSelectedId && argumentList.length > 0) {
       // Auto-select first argument if no valid selection exists
-      console.log('ArgumentSelector: Auto-selecting first argument:', argumentList[0].id, 'Previous selection was:', selectedArgumentId)
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('ArgumentSelector: Auto-selecting first argument:', argumentList[0].id, 'Previous selection was:', selectedArgumentId)
+      }
       onArgumentSelect(argumentList[0].id)
     }
   }, [validSelectedId, argumentList, onArgumentSelect, selectedArgumentId])

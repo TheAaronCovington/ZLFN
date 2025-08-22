@@ -389,6 +389,20 @@ export function astToString(node: AstNodeRec): string {
   return print(node, 0)
 }
 
+// Best-effort sanitizer to make rich expressions parsable by our minimal parser
+export function sanitizeExpressionForParser(expr: string): string {
+  let s = expr
+    .replace(/=>/g, '→')
+    .replace(/->/g, '→')
+    // remove equality and comparison signs not supported by parser
+    .replace(/[=<>]+/g, '')
+    // collapse decimal points to underscores to avoid quantifier dot token
+    .replace(/(\d)\.(\d)/g, '$1_$2')
+    // remove stray punctuation
+    .replace(/[;%]/g, '')
+  return s
+}
+
 // ---------- Normalization Helpers ----------
 
 function cloneAst(node: AstNodeRec | null | undefined): AstNodeRec | null {
