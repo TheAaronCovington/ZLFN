@@ -58,7 +58,7 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 	const [modes, setModes] = useState<Partial<Record<LogicMode, boolean>>>({ classical: true })
 	const [nodeStates, setNodeStates] = useState<Record<string, NodeState>>({})
 
-	// Initialize unified data with default expression-based argument and URL param support
+	// Initialize unified data with default expression-based argument, URL params, and persisted arguments
 	const [unifiedData, setUnifiedData] = useState<UnifiedData>(() => {
 		let savedSelectedArgumentId = localStorage.getItem('xv_selected_argument_id')
 		try {
@@ -69,16 +69,33 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 			console.warn('Failed to read URL parameters:', error)
 		}
 		const savedActiveSource = localStorage.getItem('xv_active_source') as 'document' | 'expression' | 'imported' || 'expression'
-		
+
+		// Load persisted arguments (without computed caches)
+		let persistedArgs: any[] | null = null
+		try {
+			const raw = localStorage.getItem('xv_unified_arguments')
+			if (raw) persistedArgs = JSON.parse(raw)
+		} catch (e) {
+			console.warn('Failed to parse persisted arguments:', e)
+		}
+
+		const baseDefault = [{
+			id: 'default-expression',
+			title: 'Default Expression',
+			markdown: { documentId: 'default', content: '' },
+			expressions: ['(A ∧ B) → C']
+		}]
+
+		const argumentsList = Array.isArray(persistedArgs) && persistedArgs.length > 0 ? persistedArgs : baseDefault
+		// Ensure selected id exists
+		const selectedId = (savedSelectedArgumentId && argumentsList.some(a => a.id === savedSelectedArgumentId))
+			? savedSelectedArgumentId
+			: (argumentsList[0]?.id || 'default-expression')
+
 		return {
 			activeSource: savedActiveSource,
-			arguments: [{
-				id: 'default-expression',
-				title: 'Default Expression',
-				markdown: { documentId: 'default', content: '' },
-				expressions: ['(A ∧ B) → C']
-			}],
-			selectedArgumentId: savedSelectedArgumentId || 'default-expression'
+			arguments: argumentsList,
+			selectedArgumentId: selectedId
 		}
 	})
 
@@ -117,6 +134,21 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		}
 	}, [])
 
+	// Persist unifiedData.arguments to localStorage (strip computed caches)
+	useEffect(() => {
+		try {
+			const serializable = unifiedData.arguments.map(arg => ({
+				...arg,
+				// Drop computed caches that are expensive or unnecessary
+				ast: undefined,
+				atn: undefined
+			}))
+			localStorage.setItem('xv_unified_arguments', JSON.stringify(serializable))
+		} catch (e) {
+			console.warn('Failed to persist arguments:', e)
+		}
+	}, [unifiedData.arguments])
+
 	// Lazy accessors with memoization
 	const getAstFor = useCallback((argumentId: string | null): AstNodeRec | null => {
 		if (!argumentId) return null
@@ -125,21 +157,23 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		
 		// Return cached AST or compute from first expression
 		if (argument.ast) return argument.ast
-		// Prefer expression if present, else synthesize from ZLFN graph
+		// Avoid rebuilding from large cached graphs on first access; prefer expressions
 		let sourceExpression: string | null = null
 		if (argument.expressions && argument.expressions.length > 0) {
 			sourceExpression = argument.expressions[0]
 		} else if (argument.zlfnGraph && Array.isArray(argument.zlfnGraph.nodes) && Array.isArray(argument.zlfnGraph.edges)) {
+			// If persisted graph is very large, skip auto-synthesis here; caller can trigger later
+			const nodeCount = (argument.zlfnGraph.nodes as any[]).length
+			const edgeCount = (argument.zlfnGraph.edges as any[]).length
+			if (nodeCount > 300 || edgeCount > 300) return null
 			sourceExpression = synthesizeExpressionFromGraph(argument.zlfnGraph.nodes as any, argument.zlfnGraph.edges as any)
 		}
 		if (!sourceExpression) return null
 		
 		let ast = parseExpressionToAst(sourceExpression)
-		// If parsing failed, try a synthesized fallback from graph
 		if (!ast && argument.zlfnGraph && Array.isArray(argument.zlfnGraph.nodes) && Array.isArray(argument.zlfnGraph.edges)) {
 			const fallbackExpr = synthesizeExpressionFromGraph(argument.zlfnGraph.nodes as any, argument.zlfnGraph.edges as any)
 			ast = parseExpressionToAst(fallbackExpr)
-			// Cache fallback expression for future use
 			if (fallbackExpr) {
 				if (!argument.expressions || argument.expressions.length === 0) {
 					argument.expressions = [fallbackExpr]
@@ -148,7 +182,6 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 				}
 			}
 		}
-		// Cache the result (mutate for performance)
 		if (ast) argument.ast = ast
 		return ast
 	}, [unifiedData.arguments])
@@ -157,15 +190,15 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		if (!argumentId) return null
 		const argument = unifiedData.arguments.find(arg => arg.id === argumentId)
 		if (!argument) return null
-		
-		// Return cached graph or compute from AST
+		// debug removed
+		// Return cached graph if present
 		if (argument.zlfnGraph) return argument.zlfnGraph
 		
-		const ast = getAstFor(argumentId)
+		// Compute from AST only if available to avoid heavy rebuilds during selection
+		const ast = argument.ast || getAstFor(argumentId)
 		if (!ast) return null
 		
 		const graph = astToZlfnGraph(ast)
-		// Cache the result (with type assertion for compatibility)
 		if (graph) argument.zlfnGraph = graph as { nodes: ZlfnNode[]; edges: ZlfnEdge[] }
 		return graph as { nodes: ZlfnNode[]; edges: ZlfnEdge[] } | null
 	}, [unifiedData.arguments, getAstFor])
@@ -366,6 +399,7 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		const args = normalizeImportedJSON(json)
 		if (args.length === 0) return null
 		const firstId = args[0].id
+		// debug removed
 		setUnifiedData(prev => ({
 			...prev,
 			activeSource: 'imported',

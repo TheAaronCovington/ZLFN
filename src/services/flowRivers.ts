@@ -133,8 +133,10 @@ export class FlowRiversRenderer {
     const midY = (fromNode.y + toNode.y) / 2
     
     // Perpendicular offset for curve
-    const perpX = -dy / distance * controlOffset
-    const perpY = dx / distance * controlOffset
+    // Guard against zero-length edges
+    const safeDist = distance || 1
+    const perpX = -dy / safeDist * controlOffset
+    const perpY = dx / safeDist * controlOffset
     
     const controlX = midX + perpX
     const controlY = midY + perpY
@@ -270,15 +272,17 @@ export class FlowRiversRenderer {
       .attr('cx', d => {
         const path = this.pathCache.get(d.edgeId)
         if (!path) return 0
-        
-        const point = path.getPointAtLength(d.progress * path.getTotalLength())
+        const total = path.getTotalLength()
+        if (!isFinite(total) || total <= 0) return 0
+        const point = path.getPointAtLength(Math.max(0, Math.min(1, d.progress)) * total)
         return point.x
       })
       .attr('cy', d => {
         const path = this.pathCache.get(d.edgeId)
         if (!path) return 0
-        
-        const point = path.getPointAtLength(d.progress * path.getTotalLength())
+        const total = path.getTotalLength()
+        if (!isFinite(total) || total <= 0) return 0
+        const point = path.getPointAtLength(Math.max(0, Math.min(1, d.progress)) * total)
         return point.y
       })
   }

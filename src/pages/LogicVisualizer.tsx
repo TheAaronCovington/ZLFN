@@ -46,6 +46,20 @@ const LogicVisualizer: React.FC = () => {
 	const [shortcutsOpen, setShortcutsOpen] = React.useState(false)
 	const [advancedSearchOpen, setAdvancedSearchOpen] = React.useState(false)
 
+	// Advanced features and toggles
+	const [showRivers, setShowRivers] = React.useState<boolean>(() => 
+		localStorage.getItem('xv_rivers') !== '0'
+	)
+	const [bayesianEnabled, setBayesianEnabled] = React.useState<boolean>(() => 
+		localStorage.getItem('xv_bayesian') === '1'
+	)
+	const [showDemoExtras, setShowDemoExtras] = React.useState<boolean>(() => 
+		localStorage.getItem('xv_demo_extras') === '1'
+	)
+	const [useDocumentData, setUseDocumentData] = React.useState<boolean>(() => 
+		localStorage.getItem('xv_use_document') === '1'
+	)
+
 	// View mode: graph (ZLFN) | argument (ATN)
 	const [viewMode, setViewMode] = React.useState<'graph' | 'argument'>(() => {
 		try {
@@ -69,6 +83,11 @@ const LogicVisualizer: React.FC = () => {
 		localStorage.setItem('xv_performance_overlay', String(showPerformanceOverlay))
 	}, [showPerformanceOverlay])
 
+	// Persist advanced features state
+	React.useEffect(() => {
+		try { localStorage.setItem('xv_rivers', showRivers ? '1' : '0') } catch {}
+	}, [showRivers])
+
 	// Get data from shared context based on selected argument (async to keep UI responsive)
 	const selectedArgumentId = unifiedData.selectedArgumentId
 	const [graph, setGraph] = React.useState<any>(null)
@@ -78,8 +97,8 @@ const LogicVisualizer: React.FC = () => {
 
 	React.useEffect(() => {
 		let cancelled = false
-		setGraph(null)
 		if (viewMode === 'graph') {
+			setGraph(null)
 			const id = selectedArgumentId
 			setTimeout(() => {
 				if (cancelled) return
@@ -89,56 +108,7 @@ const LogicVisualizer: React.FC = () => {
 		}
 		return () => { cancelled = true }
 	}, [viewMode, selectedArgumentId, getZlfnGraphFor])
-
-	React.useEffect(() => {
-		let cancelled = false
-		setAtnData(null)
-		if (viewMode === 'argument') {
-			const id = selectedArgumentId
-			setTimeout(() => {
-				if (cancelled) return
-				const out = getAtnDataFor(id)
-				if (!cancelled) setAtnData(out)
-			}, 0)
-		}
-		return () => { cancelled = true }
-	}, [viewMode, selectedArgumentId, getAtnDataFor])
 	
-	// Demo extras and document data (kept for backward compatibility)
-	const [showDemoExtras, setShowDemoExtras] = React.useState<boolean>(() => 
-		localStorage.getItem('xv_demo_extras') === '1'
-	)
-	const [useDocumentData, setUseDocumentData] = React.useState<boolean>(() => 
-		localStorage.getItem('xv_use_document') === '1'
-	)
-
-	// Advanced Features State
-	const [showRivers, setShowRivers] = React.useState<boolean>(() => 
-		localStorage.getItem('xv_rivers') !== '0'
-	)
-	const [bayesianEnabled, setBayesianEnabled] = React.useState<boolean>(() => 
-		localStorage.getItem('xv_bayesian') === '1'
-	)
-
-	// Persist advanced features state
-	React.useEffect(() => {
-		try { localStorage.setItem('xv_rivers', showRivers ? '1' : '0') } catch {}
-	}, [showRivers])
-	
-	React.useEffect(() => {
-		try { localStorage.setItem('xv_bayesian', bayesianEnabled ? '1' : '0') } catch {}
-	}, [bayesianEnabled])
-	
-	React.useEffect(() => { 
-		try { localStorage.setItem('xv_demo_extras', showDemoExtras ? '1' : '0') } 
-		catch {} 
-	}, [showDemoExtras])
-	
-	React.useEffect(() => { 
-		try { localStorage.setItem('xv_use_document', useDocumentData ? '1' : '0') } 
-		catch {} 
-	}, [useDocumentData])
-
 	// Active data is now always from the shared context
 	const activeData = graph
 	
@@ -159,15 +129,18 @@ const LogicVisualizer: React.FC = () => {
 		} : null
 	}, [unifiedData.arguments, selectedArgumentId, graph])
 	
-	let nodes: ZlfnNode[] = activeData?.nodes || [
+	// Only show sample data when the default expression is selected and no graph is available
+	const showSample = !activeData && (unifiedData.selectedArgumentId === 'default-expression')
+	
+	let nodes: ZlfnNode[] = activeData?.nodes || (showSample ? [
 		{ id: 'P1', label: 'P1', color: '#20B2AA', type: 'premise', size: { width: 100, height: 30 }, argumentId: 'Demo' },
 		{ id: 'T1', label: 'T1', color: '#4169E1', type: 'term', size: { radius: 20 }, argumentId: 'Demo' },
 		{ id: 'C', label: 'C', color: '#9370DB', type: 'conclusion', size: { width: 100, height: 30 }, argumentId: 'Demo' },
-	]
-	let edges = (activeData?.edges || [
+	] : [])
+	let edges = (activeData?.edges || (showSample ? [
 		{ from: 'P1', to: 'T1', weight: 85, style: 'solid', rule: 'Modus Ponens' },
 		{ from: 'T1', to: 'C', weight: 75, style: 'dashed', rule: 'Hypothetical Syllogism' },
-	]) as any[]
+	] : [])) as any[]
 
 	// Add demo extras if enabled
 	if (showDemoExtras && (!graph || (Array.isArray(graph.nodes) && graph.nodes.length <= 6))) {
@@ -437,6 +410,19 @@ const LogicVisualizer: React.FC = () => {
 		}
 	}, [viewMode, nodes.length, edges.length, selectedArgumentId])
 
+	React.useEffect(() => {
+		let cancelled = false
+		if (viewMode === 'argument') {
+			const id = selectedArgumentId
+			setTimeout(() => {
+				if (cancelled) return
+				const out = getAtnDataFor(id)
+				if (!cancelled) setAtnData(out)
+			}, 0)
+		}
+		return () => { cancelled = true }
+	}, [viewMode, selectedArgumentId, getAtnDataFor])
+
 	return (
 		<Box sx={{ 
 			display: 'flex', 
@@ -586,6 +572,7 @@ const LogicVisualizer: React.FC = () => {
 						}>
 							{							viewMode === 'graph' ? (
 								<ZlfnGraphWithNotes
+									key={`${selectedArgumentId || 'default'}-${nodes.length}-${edges.length}`}
 									nodes={nodes}
 									edges={edges}
 									storageKey={selectedArgumentId || 'default'}
