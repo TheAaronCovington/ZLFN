@@ -16,6 +16,8 @@ import {
   InputLabel,
   FormControl
 } from '@mui/material'
+import ArgumentSelector from './ArgumentSelector'
+import { useLogicShared } from '../../context/LogicSharedContext'
 import {
   Search as SearchIcon,
   MoreVert as MoreVertIcon,
@@ -69,10 +71,7 @@ interface CommandBarProps {
   onToggleControls: () => void
   onToggleInspector: () => void
 
-  // Argument filter controls
-  argumentIds?: string[]
-  selectedArgumentId?: string | null
-  onSelectArgument?: (id: string | null) => void
+  // Unified argument selector (now handled internally via context)
 
   // View selector
   viewMode?: 'graph' | 'tableau' | 'argument'
@@ -102,11 +101,11 @@ export const CommandBar: React.FC<CommandBarProps> = ({
   inspectorOpen,
   onToggleControls,
   onToggleInspector,
-  argumentIds = [],
-  selectedArgumentId = null,
-  onSelectArgument
-  , viewMode = 'graph', onChangeViewMode
+  viewMode = 'graph', 
+  onChangeViewMode
 }) => {
+  // Access unified data from context
+  const { unifiedData, setSelectedArgumentId } = useLogicShared()
   const [overflowAnchor, setOverflowAnchor] = React.useState<null | HTMLElement>(null)
 
   const handleOverflowOpen = (event: React.MouseEvent<HTMLElement>) => {
@@ -127,14 +126,14 @@ export const CommandBar: React.FC<CommandBarProps> = ({
       position="static" 
       elevation={1}
       sx={{ 
-        backgroundColor: 'rgba(25, 25, 35, 0.95)',
+        backgroundColor: 'var(--ai-bg-secondary)',
         backdropFilter: 'blur(8px)',
-        borderBottom: '1px solid rgba(64, 196, 255, 0.2)'
+        borderBottom: '1px solid var(--ai-border-primary)'
       }}
     >
       <Toolbar variant="dense" sx={{ minHeight: 48, gap: 1 }}>
         {/* Search Section */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 300 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 250 }}>
           <Autocomplete
             size="small"
             options={searchOptions}
@@ -151,24 +150,36 @@ export const CommandBar: React.FC<CommandBarProps> = ({
                   minWidth: 200,
                   '& .MuiOutlinedInput-root': {
                     backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                    '& fieldset': { borderColor: 'rgba(64, 196, 255, 0.3)' },
-                    '&:hover fieldset': { borderColor: 'rgba(64, 196, 255, 0.5)' },
-                    '&.Mui-focused fieldset': { borderColor: '#40c4ff' }
+                    '& fieldset': { borderColor: 'var(--ai-border-secondary)' },
+                    '&:hover fieldset': { borderColor: 'var(--ai-border-primary)' },
+                    '&.Mui-focused fieldset': { 
+                      borderColor: 'var(--ai-cyan)',
+                      boxShadow: 'var(--ai-glow-cyan)'
+                    }
                   }
                 }}
                 InputProps={{
                   ...params.InputProps,
-                  startAdornment: <SearchIcon sx={{ color: 'rgba(255, 255, 255, 0.5)', mr: 1 }} />
+                  startAdornment: <SearchIcon sx={{ color: 'var(--ai-text-tertiary)', mr: 1 }} />,
+                  endAdornment: (
+                    <Tooltip title="Advanced Search (Ctrl+F)">
+                      <IconButton 
+                        size="small" 
+                        onClick={onAdvancedSearch} 
+                        sx={{ 
+                          color: 'var(--ai-text-secondary)',
+                          '&:hover': { color: 'var(--ai-cyan)' }
+                        }}
+                      >
+                        <SearchIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )
                 }}
               />
             )}
             freeSolo
           />
-          <Tooltip title="Advanced Search">
-            <IconButton size="small" onClick={onAdvancedSearch} sx={{ color: '#40c4ff' }}>
-              <SearchIcon />
-            </IconButton>
-          </Tooltip>
         </Box>
 
         {/* Simulation Controls */}
@@ -177,13 +188,13 @@ export const CommandBar: React.FC<CommandBarProps> = ({
             <IconButton 
               size="small" 
               onClick={onToggleSimulation}
-              sx={{ color: simulationMode ? '#ff5252' : '#4caf50' }}
+              sx={{ color: simulationMode ? 'var(--ai-red)' : 'var(--ai-green)' }}
             >
               {simulationMode ? <StopIcon /> : <PlayIcon />}
             </IconButton>
           </Tooltip>
           <Tooltip title="Reset States">
-            <IconButton size="small" onClick={onResetStates} sx={{ color: '#40c4ff' }}>
+            <IconButton size="small" onClick={onResetStates} sx={{ color: 'var(--ai-cyan)' }}>
               <RefreshIcon />
             </IconButton>
           </Tooltip>
@@ -193,17 +204,20 @@ export const CommandBar: React.FC<CommandBarProps> = ({
         <Stack direction="row" spacing={1} sx={{ mx: 2, alignItems: 'center', flexWrap: 'wrap' }}>
           {/* View selector */}
           <FormControl size="small" sx={{ minWidth: 140, mr: 1 }}>
-            <InputLabel id="view-mode-label" sx={{ color: 'rgba(255,255,255,0.8)' }}>View</InputLabel>
+            <InputLabel id="view-mode-label" sx={{ color: 'var(--ai-text-secondary)' }}>View</InputLabel>
             <Select
               labelId="view-mode-label"
               value={viewMode}
               label="View"
               onChange={(e) => onChangeViewMode?.(e.target.value as any)}
               sx={{
-                color: '#fff',
-                '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(64, 196, 255, 0.3)' },
-                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(64, 196, 255, 0.5)' },
-                '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#40c4ff' }
+                color: 'var(--ai-text-primary)',
+                '.MuiOutlinedInput-notchedOutline': { borderColor: 'var(--ai-border-secondary)' },
+                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--ai-border-primary)' },
+                '&.Mui-focused .MuiOutlinedInput-notchedOutline': { 
+                  borderColor: 'var(--ai-cyan)',
+                  boxShadow: 'var(--ai-glow-cyan)'
+                }
               }}
             >
               <MuiMenuItem value="graph">ZLFN View</MuiMenuItem>
@@ -212,67 +226,38 @@ export const CommandBar: React.FC<CommandBarProps> = ({
             </Select>
           </FormControl>
           <Tooltip title="Fit Graph">
-            <IconButton size="small" onClick={onFitGraph} sx={{ color: '#40c4ff' }}>
+            <IconButton size="small" onClick={onFitGraph} sx={{ color: 'var(--ai-cyan)' }}>
               <FitIcon />
             </IconButton>
           </Tooltip>
           <Tooltip title="Center Graph">
-            <IconButton size="small" onClick={onCenterGraph} sx={{ color: '#40c4ff' }}>
+            <IconButton size="small" onClick={onCenterGraph} sx={{ color: 'var(--ai-cyan)' }}>
               <CenterIcon />
             </IconButton>
           </Tooltip>
           <Tooltip title="Save Layout">
-            <IconButton size="small" onClick={onSaveLayout} sx={{ color: '#4caf50' }}>
+            <IconButton size="small" onClick={onSaveLayout} sx={{ color: 'var(--ai-green)' }}>
               <SaveIcon />
             </IconButton>
           </Tooltip>
           <Tooltip title="Clear Layout">
-            <IconButton size="small" onClick={onClearLayout} sx={{ color: '#ff9800' }}>
+            <IconButton size="small" onClick={onClearLayout} sx={{ color: 'var(--ai-orange)' }}>
               <ClearIcon />
             </IconButton>
           </Tooltip>
 
-          {/* Inline Args */}
-          {argumentIds.length > 0 && (
-            <Stack direction="row" spacing={0.5} sx={{ ml: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 11, opacity: 0.7 }}>Args:</span>
-              <Chip
-                size="small"
-                label="All"
-                color={!selectedArgumentId ? 'warning' : 'default'}
-                variant={!selectedArgumentId ? 'filled' : 'outlined'}
-                onClick={() => onSelectArgument?.(null)}
-              />
-              {argumentIds.map(aid => (
-                <Chip
-                  key={aid}
-                  size="small"
-                  label={aid}
-                  color={selectedArgumentId === aid ? 'warning' : 'default'}
-                  variant={selectedArgumentId === aid ? 'filled' : 'outlined'}
-                  onClick={() => onSelectArgument?.(selectedArgumentId === aid ? null : aid)}
-                />
-              ))}
-            </Stack>
+          {/* Unified Argument Selector */}
+          {unifiedData.arguments.length > 0 && (
+            <ArgumentSelector
+              arguments={unifiedData.arguments}
+              selectedArgumentId={unifiedData.selectedArgumentId}
+              onArgumentSelect={setSelectedArgumentId}
+              label="Argument"
+              size="small"
+              minWidth={180}
+            />
           )}
         </Stack>
-
-        {/* Panel Toggles */}
-        <Stack direction="row" spacing={1} sx={{ mx: 2 }}>
-          <Tooltip title={controlsOpen ? 'Close Controls' : 'Open Controls'}>
-            <IconButton size="small" onClick={onToggleControls} sx={{ color: controlsOpen ? '#ffd740' : '#40c4ff' }}>
-              <ControlsIcon />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title={inspectorOpen ? 'Close Inspector' : 'Open Inspector'}>
-            <IconButton size="small" onClick={onToggleInspector} sx={{ color: inspectorOpen ? '#ffd740' : '#40c4ff' }}>
-              <InspectorIcon />
-            </IconButton>
-          </Tooltip>
-        </Stack>
-
-        {/* Spacer */}
-        <Box sx={{ flexGrow: 1 }} />
 
         {/* Status Indicators */}
         <Stack direction="row" spacing={1} sx={{ mr: 2 }}>
@@ -289,7 +274,7 @@ export const CommandBar: React.FC<CommandBarProps> = ({
 
         {/* Overflow Menu */}
         <Tooltip title="More Actions">
-          <IconButton size="small" onClick={handleOverflowOpen} sx={{ color: '#40c4ff' }}>
+          <IconButton size="small" onClick={handleOverflowOpen} sx={{ color: 'var(--ai-cyan)' }}>
             <MoreVertIcon />
           </IconButton>
         </Tooltip>
@@ -300,12 +285,13 @@ export const CommandBar: React.FC<CommandBarProps> = ({
           onClose={handleOverflowClose}
           PaperProps={{
             sx: {
-              backgroundColor: 'rgba(25, 25, 35, 0.95)',
+              backgroundColor: 'var(--ai-bg-elevated)',
               backdropFilter: 'blur(8px)',
-              border: '1px solid rgba(64, 196, 255, 0.2)',
+              border: '1px solid var(--ai-border-primary)',
+              boxShadow: 'var(--ai-glow-cyan)',
               '& .MuiMenuItem-root': {
-                color: '#ffffff',
-                '&:hover': { backgroundColor: 'rgba(64, 196, 255, 0.1)' }
+                color: 'var(--ai-text-primary)',
+                '&:hover': { backgroundColor: 'rgba(0, 229, 255, 0.1)' }
               }
             }
           }}
@@ -342,7 +328,45 @@ export const CommandBar: React.FC<CommandBarProps> = ({
         </Menu>
       </Toolbar>
 
-      {/* No second-level toolbar; args are inline with layout controls */}
+      {/* Second-level toolbar for panel controls */}
+      <Toolbar 
+        variant="dense" 
+        sx={{ 
+          minHeight: 36, 
+          backgroundColor: 'var(--ai-bg-elevated)',
+          borderBottom: '1px solid var(--ai-border-subtle)',
+          justifyContent: 'flex-end',
+          gap: 1,
+          px: 2
+        }}
+      >
+        <Stack direction="row" spacing={1}>
+          <Tooltip title={controlsOpen ? 'Close Controls' : 'Open Controls'}>
+            <IconButton 
+              size="small" 
+              onClick={onToggleControls} 
+              sx={{ 
+                color: controlsOpen ? 'var(--ai-gold)' : 'var(--ai-cyan)',
+                '&:hover': { backgroundColor: 'rgba(0, 229, 255, 0.1)' }
+              }}
+            >
+              <ControlsIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={inspectorOpen ? 'Close Inspector' : 'Open Inspector'}>
+            <IconButton 
+              size="small" 
+              onClick={onToggleInspector} 
+              sx={{ 
+                color: inspectorOpen ? 'var(--ai-gold)' : 'var(--ai-cyan)',
+                '&:hover': { backgroundColor: 'rgba(0, 229, 255, 0.1)' }
+              }}
+            >
+              <InspectorIcon />
+            </IconButton>
+          </Tooltip>
+        </Stack>
+      </Toolbar>
     </AppBar>
   )
 }

@@ -5,10 +5,9 @@ import { Box, Snackbar, Alert, Dialog, DialogTitle, DialogContent, CircularProgr
 const ZlfnGraphWithNotes = React.lazy(() => import('../components/Visualizations/ZlfnGraphWithNotes').then(module => ({ default: module.ZlfnGraphWithNotes })))
 const SemanticTableau = React.lazy(() => import('../components/Visualizations/SemanticTableau'))
 const ArgumentTableau = React.lazy(() => import('../components/Visualizations/ArgumentTableau'))
-import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph'
+import type { ZlfnNode } from '../components/Visualizations/ZlfnGraph/types'
 import type { VennDiagramData, NecessarySufficientExample } from '../components/Visualizations/VennDiagram'
-import { parseExpressionToAst, astToZlfnGraph, toNNF, toCNF, astToString, type AstNodeRec } from '../services/logic'
-import { type DocumentGraphData } from '../services/documentParser'
+import { parseExpressionToAst, toNNF, toCNF, astToString, type AstNodeRec } from '../services/logic'
 import { useLogicShared } from '../context/LogicSharedContext'
 import { downloadJson, readJsonFile } from '../services/io'
 import { CommandBar, ControlsDrawer, InspectorDrawer, StatusBar } from '../components/Visualizer'
@@ -17,17 +16,20 @@ import { usePerformanceMonitor } from '../hooks/usePerformanceMonitor'
 import { useGlobalShortcuts, createShortcut } from '../hooks/useGlobalShortcuts'
 
 const LogicVisualizer: React.FC = () => {
-	const { 
+		const { 
 		selectedNodeId, 
 		setSelectedNodeId, 
 		currentExpression, 
 		setCurrentExpression, 
- 
 		modes, 
 		setModes,
 		simulationMode,
 		setSimulationMode,
-		resetStates
+		resetStates,
+		// Unified data access
+		unifiedData,
+		getAstFor,
+		getZlfnGraphFor
 	} = useLogicShared()
 
 	// UI State (default drawers closed unless explicitly stored as 'true')
@@ -62,15 +64,15 @@ const LogicVisualizer: React.FC = () => {
 		localStorage.setItem('xv_performance_overlay', String(showPerformanceOverlay))
 	}, [showPerformanceOverlay])
 
-	// Logic processing
-	const ast = React.useMemo<AstNodeRec | null>(() => parseExpressionToAst(currentExpression), [currentExpression])
-	const graph = React.useMemo(() => (ast ? astToZlfnGraph(ast) : null), [ast])
+	// Get data from shared context based on selected argument
+	const selectedArgumentId = unifiedData.selectedArgumentId
+	const ast = React.useMemo(() => getAstFor(selectedArgumentId), [getAstFor, selectedArgumentId])
+	const graph = React.useMemo(() => getZlfnGraphFor(selectedArgumentId), [getZlfnGraphFor, selectedArgumentId])
 	
-	// Demo and document data
+	// Demo extras and document data (kept for backward compatibility)
 	const [showDemoExtras, setShowDemoExtras] = React.useState<boolean>(() => 
 		localStorage.getItem('xv_demo_extras') === '1'
 	)
-	const [documentGraphData] = React.useState<DocumentGraphData | null>(null)
 	const [useDocumentData, setUseDocumentData] = React.useState<boolean>(() => 
 		localStorage.getItem('xv_use_document') === '1'
 	)
@@ -85,19 +87,35 @@ const LogicVisualizer: React.FC = () => {
 		catch {} 
 	}, [useDocumentData])
 
-	// Determine active data source
-	const activeData = useDocumentData && documentGraphData ? documentGraphData : 
-					   graph ? { nodes: graph.nodes as ZlfnNode[], edges: graph.edges as ZlfnEdge[] } : null
+	// Active data is now always from the shared context
+	const activeData = graph
+	
+	// Document graph data (for backward compatibility)
+	const documentGraphData = React.useMemo(() => {
+		const currentArgument = unifiedData.arguments.find(arg => arg.id === selectedArgumentId)
+		return currentArgument ? {
+			nodes: graph?.nodes || [],
+			edges: graph?.edges || [],
+			arguments: [{
+				id: currentArgument.id,
+				title: currentArgument.title,
+				type: 'formal',
+				premises: currentArgument.expressions,
+				conclusions: []
+			}],
+			documentId: currentArgument.id
+		} : null
+	}, [unifiedData.arguments, selectedArgumentId, graph])
 	
 	let nodes: ZlfnNode[] = activeData?.nodes || [
 		{ id: 'P1', label: 'P1', color: '#20B2AA', type: 'premise', size: { width: 100, height: 30 }, argumentId: 'Demo' },
 		{ id: 'T1', label: 'T1', color: '#4169E1', type: 'term', size: { radius: 20 }, argumentId: 'Demo' },
 		{ id: 'C', label: 'C', color: '#9370DB', type: 'conclusion', size: { width: 100, height: 30 }, argumentId: 'Demo' },
 	]
-	let edges: ZlfnEdge[] = activeData?.edges || [
+	let edges = (activeData?.edges || [
 		{ from: 'P1', to: 'T1', weight: 85, style: 'solid', rule: 'Modus Ponens' },
 		{ from: 'T1', to: 'C', weight: 75, style: 'dashed', rule: 'Hypothetical Syllogism' },
-	]
+	]) as any[]
 
 	// Add demo extras if enabled
 	if (showDemoExtras && (!graph || (Array.isArray(graph.nodes) && graph.nodes.length <= 6))) {
@@ -330,15 +348,30 @@ const LogicVisualizer: React.FC = () => {
 	
 	const leftMargin = controlsDrawerOpen ? getDrawerWidth('controls') : 0
 	const rightMargin = inspectorDrawerOpen ? getDrawerWidth('inspector') : 0
-	// Second toolbar height if args row present
-	const topOffset = 48
+	// Main toolbar (48px) + Second toolbar (36px) + border
+	const topOffset = 48 + 36 + 2
+
+	// Graph control handlers
+	const handleFitGraph = React.useCallback(() => {
+		// Dispatch custom event for graph components to handle
+		const event = new CustomEvent('zlfn:fit-graph')
+		window.dispatchEvent(event)
+		showInfo('Graph fitted to view', 'success')
+	}, [showInfo])
+
+	const handleCenterGraph = React.useCallback(() => {
+		// Dispatch custom event for graph components to handle
+		const event = new CustomEvent('zlfn:center-graph')
+		window.dispatchEvent(event)
+		showInfo('Graph centered', 'success')
+	}, [showInfo])
 
 	return (
 		<Box sx={{ 
 			display: 'flex', 
 			flexDirection: 'column', 
 			height: '100vh',
-			backgroundColor: '#0a0a0f'
+			backgroundColor: 'var(--ai-bg-primary)'
 		}}>
 			{/* Command Bar */}
 			<CommandBar
@@ -350,8 +383,8 @@ const LogicVisualizer: React.FC = () => {
 				simulationMode={simulationMode}
 				onToggleSimulation={() => setSimulationMode(!simulationMode)}
 				onResetStates={resetStates}
-				onFitGraph={() => showInfo('Fit Graph', 'info')}
-				onCenterGraph={() => showInfo('Center Graph', 'info')}
+				onFitGraph={handleFitGraph}
+				onCenterGraph={handleCenterGraph}
 				onSaveLayout={() => showInfo('Layout Saved', 'success')}
 				onClearLayout={() => showInfo('Layout Cleared', 'success')}
 				onExport={handleExport}
@@ -364,18 +397,6 @@ const LogicVisualizer: React.FC = () => {
 				inspectorOpen={inspectorDrawerOpen}
 				onToggleControls={() => setControlsDrawerOpen(v => !v)}
 				onToggleInspector={() => setInspectorDrawerOpen(v => !v)}
-				argumentIds={Array.from(new Set(nodes.map(n => n.argumentId).filter(Boolean) as string[]))}
-				selectedArgumentId={(() => { try { return localStorage.getItem(`xv_argument_${currentExpression}`) || null } catch { return null } })()}
-				onSelectArgument={(id) => {
-					// Persist and dispatch an event so the graph updates its filter
-					try {
-						if (id) localStorage.setItem(`xv_argument_${currentExpression}`, id)
-						else localStorage.removeItem(`xv_argument_${currentExpression}`)
-					} catch {}
-					// Fire a custom event that graph listens to via key handler already; we add a bespoke event
-					const ev = new CustomEvent('zlfn:set-argument', { detail: { id } })
-					window.dispatchEvent(ev as any)
-				}}
 				viewMode={viewMode}
 				onChangeViewMode={(m) => setViewMode(m)}
 			/>
@@ -416,9 +437,10 @@ const LogicVisualizer: React.FC = () => {
 					marginRight: rightMargin,
 					transition: 'margin 0.3s ease',
 					position: 'relative',
-					height: `calc(100vh - ${topOffset}px - 32px)`,
+					height: `calc(100vh - ${topOffset}px - 60px)`, // Account for bottom navigation
 					minWidth: 0,
-					overflow: 'hidden'
+					overflow: 'hidden',
+					width: `calc(100vw - ${leftMargin}px - ${rightMargin}px)`
 				}}>
 					{/* Drawer Toggle Buttons */}
 					{!controlsDrawerOpen && (
@@ -487,11 +509,11 @@ const LogicVisualizer: React.FC = () => {
 								<CircularProgress size={60} />
 							</Box>
 						}>
-							{viewMode === 'graph' ? (
+							{							viewMode === 'graph' ? (
 								<ZlfnGraphWithNotes
 									nodes={nodes}
 									edges={edges}
-									storageKey={currentExpression}
+									storageKey={selectedArgumentId || 'default'}
 									onInfo={showInfo}
 									centerOnNodeId={searchId || undefined}
 									centerOnNodeTrigger={searchTrigger}
@@ -501,7 +523,10 @@ const LogicVisualizer: React.FC = () => {
 									showNotesIndicators={true}
 								/>
 							) : viewMode === 'tableau' ? (
-								<SemanticTableau expression={currentExpression} ast={ast} />
+								<SemanticTableau 
+									expression={currentExpression} 
+									ast={ast} 
+								/>
 							) : (
 								<ArgumentTableau 
 									expression={currentExpression} 

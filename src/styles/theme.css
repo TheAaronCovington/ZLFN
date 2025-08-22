@@ -1,15 +1,59 @@
 :root {
-	--ai-bg-primary: #121212;
-	--ai-bg-secondary: #1e1e2f;
-	--ai-bg-elevated: #252540;
+	/* Vibrant Neon Academic Colors - Dark Theme */
+	--ai-bg-primary: #0a0a0f;
+	--ai-bg-secondary: #141420;
+	--ai-bg-elevated: #1e1e2f;
+	--ai-bg-surface: #252540;
 
-	--ai-cyan: #40c4ff;
-	--ai-green: #00e676;
-	--ai-pink: #ff4081;
-	--ai-purple: #b388ff;
+	/* Academic Color Palette */
+	--ai-cyan: #00e5ff;        /* Bright cyan for primary actions */
+	--ai-blue: #2196f3;        /* Academic blue for logic elements */
+	--ai-green: #00ff88;       /* Success/valid states */
+	--ai-orange: #ff9500;      /* Warnings/attention */
+	--ai-red: #ff3366;         /* Errors/conflicts */
+	--ai-purple: #bb86fc;      /* Secondary actions */
+	--ai-gold: #ffd700;        /* Highlights/special states */
+	--ai-pink: #ff4081;        /* Accent color */
 
-	--ai-text-primary: rgba(255, 255, 255, 0.9);
-	--ai-text-secondary: rgba(255, 255, 255, 0.7);
+	/* Text Colors */
+	--ai-text-primary: rgba(255, 255, 255, 0.95);
+	--ai-text-secondary: rgba(255, 255, 255, 0.75);
+	--ai-text-tertiary: rgba(255, 255, 255, 0.55);
+	--ai-text-disabled: rgba(255, 255, 255, 0.35);
+
+	/* Glow Effects */
+	--ai-glow-cyan: 0 0 8px rgba(0, 229, 255, 0.3);
+	--ai-glow-blue: 0 0 8px rgba(33, 150, 243, 0.3);
+	--ai-glow-green: 0 0 8px rgba(0, 255, 136, 0.3);
+	--ai-glow-orange: 0 0 8px rgba(255, 149, 0, 0.3);
+	--ai-glow-red: 0 0 8px rgba(255, 51, 102, 0.3);
+	--ai-glow-purple: 0 0 8px rgba(187, 134, 252, 0.3);
+	--ai-glow-gold: 0 0 8px rgba(255, 215, 0, 0.3);
+
+	/* Border Colors */
+	--ai-border-primary: rgba(0, 229, 255, 0.4);
+	--ai-border-secondary: rgba(255, 255, 255, 0.15);
+	--ai-border-subtle: rgba(255, 255, 255, 0.08);
+
+	/* Typography Scale */
+	--ai-font-size-xs: 0.75rem;
+	--ai-font-size-sm: 0.875rem;
+	--ai-font-size-base: 1rem;
+	--ai-font-size-lg: 1.125rem;
+	--ai-font-size-xl: 1.25rem;
+	--ai-font-size-2xl: 1.5rem;
+	--ai-font-size-3xl: 1.875rem;
+
+	/* Spacing Scale */
+	--ai-space-xs: 0.25rem;
+	--ai-space-sm: 0.5rem;
+	--ai-space-md: 1rem;
+	--ai-space-lg: 1.5rem;
+	--ai-space-xl: 2rem;
+	--ai-space-2xl: 3rem;
+
+	/* Focus Ring */
+	--ai-focus-ring: 0 0 0 2px var(--ai-cyan);
 }
 
 /* Optional: modern scrollbar to match theme */
