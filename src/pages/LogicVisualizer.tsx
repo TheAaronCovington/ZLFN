@@ -3,13 +3,12 @@ import { Box, Snackbar, Alert, Dialog, DialogTitle, DialogContent, CircularProgr
 
 // Lazy load heavy visualization components
 const ZlfnGraphWithNotes = React.lazy(() => import('../components/Visualizations/ZlfnGraphWithNotes').then(module => ({ default: module.ZlfnGraphWithNotes })))
-const SemanticTableau = React.lazy(() => import('../components/Visualizations/SemanticTableau'))
 const ArgumentTableau = React.lazy(() => import('../components/Visualizations/ArgumentTableau'))
 import type { ZlfnNode } from '../components/Visualizations/ZlfnGraph/types'
 import type { VennDiagramData, NecessarySufficientExample } from '../components/Visualizations/VennDiagram'
-import { parseExpressionToAst, toNNF, toCNF, astToString, sanitizeExpressionForParser, type AstNodeRec } from '../services/logic'
+import { parseExpressionToAst, toNNF, toCNF, astToString, type AstNodeRec } from '../services/logic'
 import { useLogicShared } from '../context/LogicSharedContext'
-import { parseAstInWorker } from '../services/astWorkerClient'
+ 
 import { downloadJson, readJsonFile } from '../services/io'
 import { CommandBar, ControlsDrawer, InspectorDrawer, StatusBar } from '../components/Visualizer'
 import AdvancedSearch from '../components/Search/AdvancedSearch'
@@ -30,8 +29,6 @@ const LogicVisualizer: React.FC = () => {
 		resetStates,
 		// Unified data access
 		unifiedData,
-		setUnifiedData,
-		getAstFor,
 		getZlfnGraphFor,
 		getAtnDataFor
 	} = useLogicShared()
@@ -49,9 +46,13 @@ const LogicVisualizer: React.FC = () => {
 	const [shortcutsOpen, setShortcutsOpen] = React.useState(false)
 	const [advancedSearchOpen, setAdvancedSearchOpen] = React.useState(false)
 
-	// View mode: graph (ZLFN) | tableau (STN) | argument (ATN)
-	const [viewMode, setViewMode] = React.useState<'graph' | 'tableau' | 'argument'>(() => {
-		try { return (localStorage.getItem('xv_view_mode') as any) || 'graph' } catch { return 'graph' }
+	// View mode: graph (ZLFN) | argument (ATN)
+	const [viewMode, setViewMode] = React.useState<'graph' | 'argument'>(() => {
+		try {
+			const saved = (localStorage.getItem('xv_view_mode') as any) || 'graph'
+			if (saved === 'argument') return 'argument'
+			return 'graph'
+		} catch { return 'graph' }
 	})
 	React.useEffect(() => { try { localStorage.setItem('xv_view_mode', viewMode) } catch {} }, [viewMode])
 
@@ -70,63 +71,10 @@ const LogicVisualizer: React.FC = () => {
 
 	// Get data from shared context based on selected argument (async to keep UI responsive)
 	const selectedArgumentId = unifiedData.selectedArgumentId
-	const [ast, setAst] = React.useState<any>(null)
 	const [graph, setGraph] = React.useState<any>(null)
 	const [atnData, setAtnData] = React.useState<any>(null)
 
-	React.useEffect(() => {
-		let cancelled = false
-		setAst(null)
-		if (viewMode === 'tableau') {
-			const id = selectedArgumentId
-			const arg = unifiedData.arguments.find(a => a.id === id)
-			const expr = (arg?.expressions && arg.expressions[0]) || currentExpression
-			// Keep the UI's expression label in sync with the active argument
-			if (expr && expr !== currentExpression) {
-				setCurrentExpression(expr)
-			}
-			if (arg?.ast) {
-				setAst(arg.ast)
-			} else if (expr) {
-				const sanitized = sanitizeExpressionForParser(expr)
-				parseAstInWorker(sanitized).then(astResult => {
-					if (cancelled) return
-					if (!astResult) {
-						// Fallback: parse synchronously if worker produced no AST
-						const syncAst = parseExpressionToAst(sanitized)
-						if (syncAst) {
-							setAst(syncAst)
-							if (arg) {
-								setUnifiedData(prev => ({
-									...prev,
-									arguments: prev.arguments.map(a => a.id === arg.id ? { ...a, ast: syncAst } : a)
-								}))
-							}
-							return
-						}
-						// Final fallback: synthesize from graph via shared accessor
-						const out = getAstFor(id)
-						setAst(out)
-						return
-					}
-					setAst(astResult)
-					if (astResult && arg) {
-						setUnifiedData(prev => ({
-							...prev,
-							arguments: prev.arguments.map(a => a.id === arg.id ? { ...a, ast: astResult } : a)
-						}))
-					}
-				}).catch(() => {
-					const out = getAstFor(id)
-					if (!cancelled) setAst(out)
-				})
-			} else {
-				const out = getAstFor(id)
-				if (!cancelled) setAst(out)
-			}
-		}
-		return () => { cancelled = true }
-	}, [viewMode, selectedArgumentId, unifiedData.arguments, setUnifiedData, getAstFor, currentExpression, setCurrentExpression])
+	// STN removed: no AST derivation effect for tableau
 
 	React.useEffect(() => {
 		let cancelled = false
@@ -350,7 +298,6 @@ const LogicVisualizer: React.FC = () => {
 	const handleExport = () => {
 		const data = {
 			expression: currentExpression,
-			ast: ast ?? undefined,
 			graph: graph ?? undefined,
 			selectedNodeId,
 			modes,
@@ -652,15 +599,10 @@ const LogicVisualizer: React.FC = () => {
 									showRivers={showRivers}
 									bayesianEnabled={bayesianEnabled}
 								/>
-							) : viewMode === 'tableau' ? (
-								<SemanticTableau 
-									expression={currentExpression} 
-									ast={ast} 
-								/>
 							) : (
 								<ArgumentTableau 
 									expression={currentExpression} 
-									ast={ast}
+									ast={null}
 									argument={atnData as any}
 									onNodeSelect={(node) => {
 										// Handle ATN node selection

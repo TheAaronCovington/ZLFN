@@ -18,7 +18,6 @@ export default defineConfig({
           // Application chunks
           'visualizations': [
             './src/components/Visualizations/ZlfnGraph.tsx',
-            './src/components/Visualizations/SemanticTableau.tsx',
             './src/components/Visualizations/VennDiagram.tsx',
             './src/components/Visualizations/TruthTable.tsx'
           ],

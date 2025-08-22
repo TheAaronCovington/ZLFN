@@ -80,8 +80,8 @@ interface CommandBarProps {
   // Unified argument selector (now handled internally via context)
 
   // View selector
-  viewMode?: 'graph' | 'tableau' | 'argument'
-  onChangeViewMode?: (mode: 'graph' | 'tableau' | 'argument') => void
+  viewMode?: 'graph' | 'argument'
+  onChangeViewMode?: (mode: 'graph' | 'argument') => void
 }
 
 export const CommandBar: React.FC<CommandBarProps> = ({
@@ -231,7 +231,6 @@ export const CommandBar: React.FC<CommandBarProps> = ({
               }}
             >
               <MuiMenuItem value="graph">ZLFN View</MuiMenuItem>
-              <MuiMenuItem value="tableau">Tableau View</MuiMenuItem>
               <MuiMenuItem value="argument">Argument View</MuiMenuItem>
             </Select>
           </FormControl>
