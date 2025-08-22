@@ -43,25 +43,26 @@ const AccordionMarkdownRenderer: React.FC<{
       rehypePlugins={[...rehypePlugins]}
       components={{
         // Skip headings if requested (they're in accordion titles)
-        h1: skipHeadings ? () => null : ({ children }) => <Typography variant="h5" sx={{ color: '#40c4ff', mb: 1, mt: 2, fontWeight: 600 }}>{children}</Typography>,
-        h2: skipHeadings ? () => null : ({ children }) => <Typography variant="h6" sx={{ color: '#8ad7ff', mb: 1, mt: 2, fontWeight: 600 }}>{children}</Typography>,
-        h3: skipHeadings ? () => null : ({ children }) => <Typography variant="subtitle1" sx={{ color: '#b3e5ff', mb: 1, mt: 2, fontWeight: 600 }}>{children}</Typography>,
-        h4: skipHeadings ? () => null : ({ children }) => <Typography variant="subtitle2" sx={{ color: '#cfe9ff', mb: 1, mt: 1.5, fontWeight: 600 }}>{children}</Typography>,
-        h5: skipHeadings ? () => null : ({ children }) => <Typography variant="body1" sx={{ color: '#e1f5fe', mb: 1, mt: 1, fontWeight: 600 }}>{children}</Typography>,
-        h6: skipHeadings ? () => null : ({ children }) => <Typography variant="body2" sx={{ color: '#f3e5f5', mb: 1, fontWeight: 600 }}>{children}</Typography>,
+        h1: skipHeadings ? () => null : ({ children }) => <Typography variant="h5" sx={{ color: 'var(--ai-cyan)', mb: 1, mt: 2, fontWeight: 700 }}>{children}</Typography>,
+        h2: skipHeadings ? () => null : ({ children }) => <Typography variant="h6" sx={{ color: 'var(--ai-blue)', mb: 1, mt: 2, fontWeight: 600 }}>{children}</Typography>,
+        h3: skipHeadings ? () => null : ({ children }) => <Typography variant="subtitle1" sx={{ color: 'var(--ai-text-primary)', mb: 1, mt: 2, fontWeight: 600 }}>{children}</Typography>,
+        h4: skipHeadings ? () => null : ({ children }) => <Typography variant="subtitle2" sx={{ color: 'var(--ai-text-secondary)', mb: 1, mt: 1.5, fontWeight: 600 }}>{children}</Typography>,
+        h5: skipHeadings ? () => null : ({ children }) => <Typography variant="body1" sx={{ color: 'var(--ai-text-secondary)', mb: 1, mt: 1, fontWeight: 600 }}>{children}</Typography>,
+        h6: skipHeadings ? () => null : ({ children }) => <Typography variant="body2" sx={{ color: 'var(--ai-text-tertiary)', mb: 1, fontWeight: 600 }}>{children}</Typography>,
         p: ({ children }) => <Typography variant="body2" sx={{ mb: 1.5, lineHeight: 1.6 }}>{children}</Typography>,
         ul: ({ children }) => <Box component="ul" sx={{ mb: 1.5, pl: 2, '& li': { mb: 0.5 } }}>{children}</Box>,
         ol: ({ children }) => <Box component="ol" sx={{ mb: 1.5, pl: 2, '& li': { mb: 0.5 } }}>{children}</Box>,
         li: ({ children }) => <Typography component="li" variant="body2" sx={{ mb: 0.5, lineHeight: 1.6 }}>{children}</Typography>,
         blockquote: ({ children }) => (
           <Box sx={{ 
-            borderLeft: '4px solid rgba(64,196,255,0.5)',
+            borderLeft: '4px solid var(--ai-cyan)',
             pl: 2,
             py: 1,
             mb: 1.5,
-            backgroundColor: 'rgba(64,196,255,0.05)',
-            borderRadius: '0 4px 4px 0',
-            fontStyle: 'italic'
+            backgroundColor: 'var(--ai-bg-surface)',
+            borderRadius: '0 8px 8px 0',
+            fontStyle: 'italic',
+            boxShadow: 'var(--ai-glow-cyan)'
           }}>
             {children}
           </Box>
@@ -71,18 +72,24 @@ const AccordionMarkdownRenderer: React.FC<{
             <Box component="table" sx={{ 
               width: '100%', 
               borderCollapse: 'collapse',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              boxShadow: 'var(--ai-glow-cyan)',
               '& th, & td': {
-                border: '1px solid rgba(64,196,255,0.3)',
+                border: '1px solid var(--ai-border-secondary)',
                 padding: '8px 12px',
                 textAlign: 'left'
               },
               '& th': {
-                backgroundColor: 'rgba(64,196,255,0.1)',
-                color: '#40c4ff',
+                background: 'linear-gradient(135deg, var(--ai-cyan), var(--ai-blue))',
+                color: 'var(--ai-bg-primary)',
                 fontWeight: 600
               },
               '& td': {
-                backgroundColor: 'rgba(64,196,255,0.02)'
+                backgroundColor: 'var(--ai-bg-elevated)'
+              },
+              '& tr:nth-child(even) td': {
+                backgroundColor: 'var(--ai-bg-surface)'
               }
             }}>
               {children}
@@ -94,13 +101,15 @@ const AccordionMarkdownRenderer: React.FC<{
           if (!className) {
             return (
               <Box component="code" sx={{ 
-                backgroundColor: 'rgba(64,196,255,0.15)', 
-                color: '#40c4ff',
+                backgroundColor: 'var(--ai-bg-surface)', 
+                color: 'var(--ai-pink)',
                 px: 0.5,
                 py: 0.2,
                 borderRadius: 0.5,
                 fontSize: 13,
-                fontFamily: 'monospace'
+                fontFamily: 'JetBrains Mono, Fira Code, monospace',
+                border: '1px solid var(--ai-border-secondary)',
+                fontWeight: 500
               }}>
                 {children}
               </Box>
@@ -115,40 +124,51 @@ const AccordionMarkdownRenderer: React.FC<{
             return (
               <Box sx={{ mb: 1.5 }}>
                 <Box sx={{ 
-                  backgroundColor: 'rgba(0,0,0,0.4)', 
-                  border: '2px solid rgba(64,196,255,0.5)',
-                  borderRadius: 1,
+                  backgroundColor: 'var(--ai-bg-elevated)', 
+                  border: '2px solid var(--ai-border-primary)',
+                  borderRadius: 2,
                   p: 1.5,
-                  fontFamily: 'monospace',
+                  fontFamily: 'JetBrains Mono, Fira Code, monospace',
                   fontSize: 14,
                   overflow: 'auto',
                   position: 'relative',
+                  boxShadow: 'var(--ai-glow-cyan)',
                   '&::before': {
                     content: '"Expression"',
                     position: 'absolute',
                     top: -10,
                     left: 12,
-                    backgroundColor: 'rgba(20,25,35,1)',
-                    color: '#40c4ff',
+                    backgroundColor: 'var(--ai-bg-primary)',
+                    color: 'var(--ai-cyan)',
                     fontSize: 11,
                     fontWeight: 600,
                     padding: '2px 8px',
-                    borderRadius: 1
+                    borderRadius: 1,
+                    border: '1px solid var(--ai-border-primary)'
                   }
                 }}>
-                  <pre style={{ margin: 0, color: '#00e676' }}>{content}</pre>
+                  <pre style={{ margin: 0, color: 'var(--ai-green)' }}>{content}</pre>
                   <button 
                     onClick={() => setCurrentExpression(content)}
                     style={{ 
                       marginTop: 8,
-                      padding: '4px 8px', 
-                      borderRadius: 4, 
-                      border: '1px solid #40c4ff', 
-                      backgroundColor: 'rgba(64,196,255,0.1)', 
-                      color: '#40c4ff', 
+                      padding: '6px 12px', 
+                      borderRadius: 6, 
+                      border: '1px solid var(--ai-cyan)', 
+                      backgroundColor: 'rgba(0, 229, 255, 0.1)', 
+                      color: 'var(--ai-cyan)', 
                       cursor: 'pointer',
-                      fontSize: 11,
-                      fontWeight: 600
+                      fontSize: 12,
+                      fontWeight: 600,
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(0, 229, 255, 0.2)'
+                      e.currentTarget.style.transform = 'translateY(-1px)'
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(0, 229, 255, 0.1)'
+                      e.currentTarget.style.transform = 'translateY(0)'
                     }}
                   >
                     Use Expression
@@ -160,16 +180,17 @@ const AccordionMarkdownRenderer: React.FC<{
           
           return (
             <Box sx={{ 
-              backgroundColor: 'rgba(0,0,0,0.4)', 
-              border: '1px solid rgba(64,196,255,0.3)',
-              borderRadius: 1,
+              backgroundColor: 'var(--ai-bg-elevated)', 
+              border: '1px solid var(--ai-border-primary)',
+              borderRadius: 2,
               p: 1.5,
               mb: 1.5,
-              fontFamily: 'monospace',
+              fontFamily: 'JetBrains Mono, Fira Code, monospace',
               fontSize: 13,
-              overflow: 'auto'
+              overflow: 'auto',
+              boxShadow: 'var(--ai-glow-cyan)'
             }}>
-              <pre style={{ margin: 0 }}>{children}</pre>
+              <pre style={{ margin: 0, color: 'var(--ai-text-primary)' }}>{children}</pre>
             </Box>
           )
         }
@@ -225,13 +246,13 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
         id: section.id,
         title: (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-            {section.hasLogicContent && <ScienceIcon sx={{ color: '#00e676', fontSize: 18 }} />}
+            {section.hasLogicContent && <ScienceIcon sx={{ color: 'var(--ai-green)', fontSize: 18 }} />}
             <Typography 
               variant={section.level === 1 ? "h6" : section.level === 2 ? "subtitle1" : "subtitle2"} 
               sx={{ 
                 flex: 1, 
                 fontWeight: 600,
-                color: section.level === 1 ? '#40c4ff' : section.level === 2 ? '#8ad7ff' : '#b3e5ff'
+                color: section.level === 1 ? 'var(--ai-cyan)' : section.level === 2 ? 'var(--ai-blue)' : 'var(--ai-text-primary)'
               }}
             >
               {section.title}
@@ -243,10 +264,11 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
                     size="small" 
                     label={`${section.expressionCount} expr`}
                     sx={{ 
-                      backgroundColor: 'rgba(0,230,118,0.15)', 
-                      color: '#00e676', 
+                      backgroundColor: 'rgba(0, 255, 136, 0.15)', 
+                      color: 'var(--ai-green)', 
                       fontSize: 10,
-                      height: 18
+                      height: 18,
+                      border: '1px solid rgba(0, 255, 136, 0.3)'
                     }} 
                   />
                 )}
@@ -255,10 +277,11 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
                     size="small" 
                     label={`${section.argumentCount} args`}
                     sx={{ 
-                      backgroundColor: 'rgba(255,193,7,0.15)', 
-                      color: '#ffc107', 
+                      backgroundColor: 'rgba(255, 149, 0, 0.15)', 
+                      color: 'var(--ai-orange)', 
                       fontSize: 10,
-                      height: 18
+                      height: 18,
+                      border: '1px solid rgba(255, 149, 0, 0.3)'
                     }} 
                   />
                 )}
@@ -374,24 +397,42 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
         
         {/* Document Stats */}
         {markdownStructure && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
-            <Typography variant="caption" sx={{ color: '#8ad7ff' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1, flexWrap: 'wrap' }}>
+            <Typography variant="caption" sx={{ color: 'var(--ai-text-secondary)' }}>
               Document Overview:
             </Typography>
             <Chip 
               size="small" 
               label={`${markdownStructure.totalHeadings} sections`}
-              sx={{ fontSize: 10, height: 18, backgroundColor: 'rgba(64,196,255,0.15)', color: '#40c4ff' }}
+              sx={{ 
+                fontSize: 10, 
+                height: 20, 
+                backgroundColor: 'rgba(0, 229, 255, 0.15)', 
+                color: 'var(--ai-cyan)',
+                border: '1px solid rgba(0, 229, 255, 0.3)'
+              }}
             />
             <Chip 
               size="small" 
               label={`${markdownStructure.expressions.length} expressions`}
-              sx={{ fontSize: 10, height: 18, backgroundColor: 'rgba(0,230,118,0.15)', color: '#00e676' }}
+              sx={{ 
+                fontSize: 10, 
+                height: 20, 
+                backgroundColor: 'rgba(0, 255, 136, 0.15)', 
+                color: 'var(--ai-green)',
+                border: '1px solid rgba(0, 255, 136, 0.3)'
+              }}
             />
             <Chip 
               size="small" 
               label={`${markdownStructure.sections.filter(s => s.hasLogicContent).length} logic sections`}
-              sx={{ fontSize: 10, height: 18, backgroundColor: 'rgba(255,193,7,0.15)', color: '#ffc107' }}
+              sx={{ 
+                fontSize: 10, 
+                height: 20, 
+                backgroundColor: 'rgba(255, 149, 0, 0.15)', 
+                color: 'var(--ai-orange)',
+                border: '1px solid rgba(255, 149, 0, 0.3)'
+              }}
             />
           </Box>
         )}
