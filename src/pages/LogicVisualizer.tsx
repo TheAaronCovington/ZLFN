@@ -467,7 +467,7 @@ const LogicVisualizer: React.FC = () => {
 				display: 'flex', 
 				flexGrow: 1,
 				position: 'relative',
-				overflow: 'hidden',
+				overflow: 'auto',
 				width: '100vw',
 				maxWidth: '100vw'
 			}}>
@@ -500,7 +500,7 @@ const LogicVisualizer: React.FC = () => {
 					position: 'relative',
 					height: `calc(100vh - ${topOffset}px - 60px)`, // Account for bottom navigation
 					minWidth: 0,
-					overflow: 'hidden',
+					overflow: 'auto',
 					width: `calc(100vw - ${leftMargin}px - ${rightMargin}px)`
 				}}>
 					{/* Drawer Toggle Buttons */}
@@ -563,7 +563,7 @@ const LogicVisualizer: React.FC = () => {
 						width: '100%', 
 						height: '100%', 
 						position: 'relative',
-						overflow: 'hidden'
+						overflow: 'auto'
 					}}>
 						<React.Suspense fallback={
 							<Box display="flex" justifyContent="center" alignItems="center" height="100%">

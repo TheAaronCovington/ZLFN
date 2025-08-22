@@ -203,7 +203,7 @@ export function renderZones(
 ) {
   const visibleZones = zones.filter(z => z.visible !== false)
 
-  const zoneSelection = g.selectAll<SVGRectElement, any>('.zone')
+  const zoneSelection = g.selectAll<SVGRectElement, any>('rect.zone')
     .data(visibleZones, (d: any) => d.id)
 
   zoneSelection.exit().remove()

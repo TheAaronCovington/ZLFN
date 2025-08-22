@@ -5,7 +5,7 @@
   background: var(--ai-bg-primary); 
   border-radius: 12px; 
   position: relative; 
-  overflow: hidden; 
+  overflow: auto; 
   border: 1px solid var(--ai-border-secondary);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
@@ -13,6 +13,7 @@
 .zlfn-svg { 
   background: var(--ai-bg-primary); 
   border-radius: 12px; 
+  display: block;
 }
 
 .stn-container,

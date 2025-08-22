@@ -515,13 +515,13 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	// default zones
 	const defaultZones: ZlfnZone[] = useMemo(
 		() => [
-			{ id: 'arguments', name: 'Arguments', color: '#9e9e9e', xRange: [40, 160], yRange: [110, 220] },
-			{ id: 'premises', name: 'Premises', color: '#20B2AA', xRange: [180, 460], yRange: [110, 530] },
-			{ id: 'terms', name: 'Terms', color: '#4169E1', xRange: [500, 820], yRange: [110, 530] },
-			{ id: 'conclusions', name: 'Conclusions', color: '#9370DB', xRange: [860, 1180], yRange: [110, 530] },
-			{ id: 'fallacies', name: 'Fallacies', color: '#DC143C', xRange: [1220, 1380], yRange: [110, 360] },
-			{ id: 'informal', name: 'Informal', color: '#ffb74d', xRange: [180, 460], yRange: [540, 620] },
-			{ id: 'temporal', name: 'Temporal', color: '#64b5f6', xRange: [500, 820], yRange: [540, 620] },
+			{ id: 'arguments', name: 'Arguments', color: '#9e9e9e', xRange: [40, 160], yRange: [110, 260] },
+			{ id: 'premises', name: 'Premises', color: '#20B2AA', xRange: [180, 460], yRange: [110, 900] },
+			{ id: 'terms', name: 'Terms', color: '#4169E1', xRange: [500, 820], yRange: [110, 900] },
+			{ id: 'conclusions', name: 'Conclusions', color: '#9370DB', xRange: [860, 1180], yRange: [110, 900] },
+			{ id: 'fallacies', name: 'Fallacies', color: '#DC143C', xRange: [1220, 1380], yRange: [110, 900] },
+			{ id: 'informal', name: 'Informal', color: '#ffb74d', xRange: [180, 460], yRange: [920, 1080] },
+			{ id: 'temporal', name: 'Temporal', color: '#64b5f6', xRange: [500, 820], yRange: [920, 1080] },
 		],
 		[]
 	)
