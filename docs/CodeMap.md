@@ -1,6 +1,6 @@
 # ZLFN/STN/ATN Codebase Map
 
-**Version**: 1.3  
+**Version**: 1.2  
 **Last Updated**: 2024-12-19  
 **Purpose**: Comprehensive mapping of features to files for maintainability and refactoring
 
@@ -714,3 +714,78 @@ Vendor Chunks:
 ---
 
 *This CodeMap will be updated as refactoring progresses to maintain accurate feature-to-file mappings.*
+
+---
+
+## UI Update Plan – Addendum (ZLFN)
+
+This addendum proposes three incremental enhancements to the ZLFN experience that integrate with the existing architecture and UI patterns. Each item includes clear acceptance criteria and verification steps.
+
+### 1) Markdown → Graph Wiring (Document-driven ZLFN)
+- Objective: Activate document-driven graph generation using the existing `parseDocumentToGraph` service so the "Use Document Data" toggle displays nodes/edges derived from markdown.
+- Scope:
+  - `src/pages/LogicVisualizer.tsx`
+    - Add `setDocumentGraphData` and call `parseDocumentToGraph(documentId)` when the user selects a document (via `LibrarySidebar`).
+    - When document data loads successfully, set `useDocumentData = true` and reflect in localStorage.
+    - Ensure `activeData` chooses `documentGraphData` when `useDocumentData` is true, else fallback to `astToZlfnGraph(ast)`.
+  - `src/components/Layout/LibrarySidebar.tsx`
+    - On document selection, surface `documentId` to `LogicVisualizer` (prop or context event) to trigger parsing.
+  - ZLFN integration
+    - Existing `markdownRef` support remains unchanged; references continue to render indicators and tooltips.
+- Acceptance Criteria:
+  - Toggling "Use Document Data" shows a graph derived from the chosen markdown document.
+  - Nodes generated from markdown include `markdownRef` where applicable, and the reference indicator is visible and clickable.
+  - Switching back to expression view restores the AST-derived graph.
+- Verification Steps:
+  1. Open the app; select a document from the Library sidebar.
+  2. Confirm a graph renders with nodes/edges matching parsed content.
+  3. Toggle "Use Document Data" off/on and verify the data source switches correctly.
+  4. Hover/click a node with a reference and confirm the indicator/tooltip appears; open Inspector and verify reference metadata.
+
+### 2) ZLFN "Flow Rivers" for Clustered Connections (Optional Visual Layer)
+- Objective: Reduce visual clutter by bundling related edges into curved "rivers" with subtle gradient styling and a legend; user-controlled via a toggle.
+- Scope:
+  - `src/components/Visualizations/ZlfnGraph.tsx`
+    - Add a `showRivers` UI toggle (persisted alongside existing flags).
+    - Compute clusters by `edge.clusterKey` (fallback: rule/category) and render bundled paths behind standard edges.
+    - Use `<defs><linearGradient/></defs>` for a soft gradient stroke and wider stroke width; label clusters minimally.
+  - `src/components/Visualizer/CommandBar.tsx`
+    - Add a menu item/checkbox to toggle "Flow Rivers".
+  - Legend
+    - Extend the existing legend/status area to show a small "Rivers" key when active.
+- Acceptance Criteria:
+  - When enabled, visually grouped paths appear as bundled rivers without obscuring node shapes or zone boundaries.
+  - Standard edge interactions remain fully functional; rivers are decorative and non-interactive.
+  - Performance remains smooth on medium graphs (≤ 150 nodes, ≤ 250 edges).
+- Verification Steps:
+  1. Enable "Flow Rivers" in the toolbar; confirm bundled curves render behind edges.
+  2. Toggle off; rivers disappear and only standard edges remain.
+  3. Zoom/pan; verify gradients and labels scale appropriately without artifacts.
+
+### 3) Bayesian Inference Mode (Optional)
+- Objective: Provide an optional probabilistic evaluation mode that computes posterior likelihoods for node truth values from incoming edges.
+- Scope:
+  - `src/context/LogicSharedContext.tsx`
+    - Add `bayesianMode` to `modes` with persistence (localStorage), default off.
+  - `src/services/inference.ts`
+    - Add an optional Bayesian evaluator used when `bayesianMode` is true; treat edge weights as priors/likelihood hints and combine per-node (naïve independence assumption).
+    - Map posterior ∈ [0,1] to node styling (existing glow/gradient scale) without breaking classical/other modes.
+  - `src/components/Visualizer/ControlsDrawer.tsx`
+    - Add a toggle under Logic Modes for Bayesian Mode.
+- Acceptance Criteria:
+  - With Bayesian Mode off, current behavior is unchanged.
+  - With Bayesian Mode on, nodes display probability-driven styling; status reflects counts/thresholded activity.
+  - Toggling the mode is instantaneous and reversible within the same session.
+- Verification Steps:
+  1. Enable Bayesian Mode; confirm node fills/glows shift to probability-based gradients.
+  2. Toggle nodes in Simulation Mode; observe posterior updates and stable rendering.
+  3. Disable Bayesian Mode; verify return to deterministic evaluation.
+
+### Risks & Mitigations
+- Rendering cost for rivers on dense graphs → Guard with toggle and render behind a size threshold; reuse path caches.
+- Document parsing errors → Keep try/catch with user feedback; fall back to expression view.
+- Bayesian assumptions → Clearly mark the mode as experimental/approximate and keep off by default.
+
+### Rollout & Flags
+- All features ship behind toggles: `useDocumentData`, `showRivers`, `bayesianMode`.
+- No breaking changes to existing shortcuts, dialogs, or interactions.
