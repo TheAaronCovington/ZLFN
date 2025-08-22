@@ -34,6 +34,8 @@ import { performanceOptimizer, type OptimizedGraphData } from '../../services/pe
 import { usePerformanceMonitor } from '../../hooks/usePerformanceMonitor'
 import { PerformanceOverlay } from '../Performance'
 import { VennDiagramDialog, TruthTableDialog, TimelineDialog, CounterargumentsDialog } from '../Enhanced'
+import { useFlowRivers } from '../../hooks/useFlowRivers'
+import { useBayesianMode, formatProbability } from '../../hooks/useBayesianMode'
 // Enhanced dialog types imported above
 
 // AST-based evaluator (no eval) - COMMENTED OUT
@@ -184,6 +186,49 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	const [statusText, setStatusText] = useState<string>('')
 	const [notesCount, setNotesCount] = useState<number>(0)
 	const [showLegend, setShowLegend] = useState<boolean>(() => localStorage.getItem('xv_legend') === '1')
+	
+	// Flow Rivers integration
+	const flowRivers = useFlowRivers(svgRef, {
+		enabled: showRivers,
+		animationSpeed: 1,
+		particleCount: 3,
+		particleSize: 4,
+		showStrength: true,
+		colorScheme: 'default',
+		opacity: 0.7
+	})
+
+	// Sync showRivers state with Flow Rivers
+	useEffect(() => {
+		if (flowRivers.updateConfig) {
+			flowRivers.updateConfig({ enabled: showRivers })
+		}
+	}, [showRivers, flowRivers.updateConfig])
+
+	// Bayesian reasoning mode
+	const [bayesianEnabled, setBayesianEnabled] = useState<boolean>(() => 
+		localStorage.getItem(`xv_bayesian_${storageKey||'default'}`) === '1'
+	)
+	const bayesian = useBayesianMode(nodes, edges, {
+		enabled: bayesianEnabled,
+		showProbabilities: true,
+		showConfidence: true,
+		autoUpdate: true
+	})
+
+	// Persist Bayesian mode state
+	useEffect(() => {
+		try { 
+			localStorage.setItem(`xv_bayesian_${storageKey||'default'}`, bayesianEnabled ? '1' : '0') 
+		} catch {}
+	}, [bayesianEnabled, storageKey])
+
+	// Sync Bayesian enabled state
+	useEffect(() => {
+		if (bayesian.updateConfig) {
+			bayesian.updateConfig({ enabled: bayesianEnabled })
+		}
+	}, [bayesianEnabled, bayesian.updateConfig])
 	const [dynamicFit, setDynamicFit] = useState<boolean>(() => localStorage.getItem('xv_dynamic_fit') === '1')
 	const [snapEnabled, setSnapEnabled] = useState<boolean>(() => localStorage.getItem('xv_snap') !== '0')
 	const [batchDialogOpen, setBatchDialogOpen] = useState(false)
@@ -507,6 +552,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			if (e.key.toLowerCase() === 'd') { e.preventDefault(); const next = !dynamicFit; setDynamicFit(next); try { localStorage.setItem('xv_dynamic_fit', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Dynamic fit on' : 'Dynamic fit off') }
 			if (e.key.toLowerCase() === 'u') { e.preventDefault(); setShowClusters(v=>!v) }
 			if (e.key.toLowerCase() === 'g') { e.preventDefault(); setShowRivers(v=>!v) }
+			if (e.key.toLowerCase() === 'b') { e.preventDefault(); setBayesianEnabled(v=>!v); onInfo?.(`Bayesian mode ${!bayesianEnabled ? 'enabled' : 'disabled'}`) }
 			if (e.key.toLowerCase() === 'i') { e.preventDefault(); setHideNonPath(v=>!v); onInfo?.('Toggled isolate path') }
 			if (e.key.toLowerCase() === 'v') { e.preventDefault(); resetZoom() }
 			if (e.key.toLowerCase() === 'y') { e.preventDefault(); clearLayout() }
@@ -1179,6 +1225,12 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		}
 		
 		const startOptimization = performance.now()
+		
+		// Update Flow Rivers with current graph data
+		if (showRivers && flowRivers.updateGraph) {
+			flowRivers.updateGraph(nodesWithArgs, linkData)
+		}
+		
 		simulation.on('tick', () => {
 			const tickStart = performance.now()
 			tickCount++
@@ -1560,7 +1612,14 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			.attr('fill', '#fff')
 			.attr('data-base-size', 10)
 			.attr('font-weight', 'bold')
-			.text(d => d.symbol || d.label || d.id)
+			.text(d => {
+				const baseText = d.symbol || d.label || d.id
+				if (bayesianEnabled && bayesian.isEnabled) {
+					const probability = bayesian.getNodeProbability(d.id)
+					return `${baseText}\n${formatProbability(probability)}`
+				}
+				return baseText
+			})
 		nodeEnter.append('text')
 			.attr('class', 'pin-marker')
 			.attr('y', -14)
@@ -3984,6 +4043,21 @@ Controls:
 									Rivers
 								</Button>
 								<Button 
+									variant={bayesianEnabled ? 'contained' : 'outlined'}
+									onClick={() => setBayesianEnabled(s => !s)}
+									sx={{ 
+										backgroundColor: bayesianEnabled ? 'var(--ai-purple)' : 'transparent',
+										borderColor: 'var(--ai-purple)',
+										color: bayesianEnabled ? 'white' : 'var(--ai-purple)',
+										'&:hover': {
+											backgroundColor: bayesianEnabled ? 'var(--ai-purple)' : 'rgba(187, 134, 252, 0.1)',
+											borderColor: 'var(--ai-purple)'
+										}
+									}}
+								>
+									Bayesian
+								</Button>
+								<Button 
 									variant={pathHighlight ? 'contained' : 'outlined'}
 									onClick={() => {
 										setPathHighlight(s => {
@@ -4156,6 +4230,7 @@ Controls:
 				<MenuItem onClick={() => { const next = !hierarchyMode; setHierarchyMode(next); try { localStorage.setItem('xv_hierarchy', next ? '1' : '0') } catch {}; onInfo?.(next ? 'Hierarchy mode on' : 'Hierarchy mode off'); closeMenu() }}>Hierarchy Mode</MenuItem>
 				<MenuItem onClick={() => { setShowClusters(s=>!s); closeMenu() }}>{showClusters ? 'Hide Clusters' : 'Show Clusters'}</MenuItem>
 				<MenuItem onClick={() => { setShowRivers(s=>!s); closeMenu() }}>{showRivers ? 'Hide Rivers' : 'Show Rivers'}</MenuItem>
+				<MenuItem onClick={() => { setBayesianEnabled(s=>!s); closeMenu() }}>{bayesianEnabled ? 'Disable Bayesian Mode' : 'Enable Bayesian Mode'}</MenuItem>
 				<MenuItem onClick={() => { setPathHighlight(s=>{ const next = !s; onInfo?.(next ? 'Path highlight on' : 'Path highlight off'); return next }); closeMenu() }}>{pathHighlight ? 'Disable Path Highlight' : 'Enable Path Highlight'}</MenuItem>
 				<MenuItem onClick={() => { setHideNonPath(s=>!s); onInfo?.('Toggled Isolate Path'); closeMenu() }}>{hideNonPath ? 'Show All Paths' : 'Isolate Path'}</MenuItem>
 				<MenuItem onClick={() => { const next = !showInformalZone; setShowInformalZone(next); closeMenu() }}>{showInformalZone ? 'Hide Informal Zone' : 'Show Informal Zone'}</MenuItem>
