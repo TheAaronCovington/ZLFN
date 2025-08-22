@@ -3379,6 +3379,18 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		onInfo?.('Centered on path')
 	}
 
+	// Respond to global toolbar events: fit and center
+	useEffect(() => {
+		const onFit = () => fitToContents()
+		const onCenter = () => centerOnSelection()
+		window.addEventListener('zlfn:fit-graph', onFit as EventListener)
+		window.addEventListener('zlfn:center-graph', onCenter as EventListener)
+		return () => {
+			window.removeEventListener('zlfn:fit-graph', onFit as EventListener)
+			window.removeEventListener('zlfn:center-graph', onCenter as EventListener)
+		}
+	}, [selectedNodeId, size.width, size.height])
+
 	// export SVG utility
 	const exportSvg = () => {
 		if (!svgRef.current) return

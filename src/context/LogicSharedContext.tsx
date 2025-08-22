@@ -4,7 +4,7 @@ import { parseExpressionToAst, astToZlfnGraph } from '../services/logic'
 import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph/types'
 import type { ArgumentData } from '../components/Visualizations/ArgumentTableau/types'
 import { extractArgumentsFromMarkdown, updateArgumentFromMarkdown } from '../services/markdownToArgument'
-import { normalizeExpression, type ImportedJSON, normalizeImportedJSON } from '../services/argumentNormalizer'
+import { normalizeExpression, normalizeDocument, type ImportedJSON, normalizeImportedJSON } from '../services/argumentNormalizer'
 
 export type NodeIdToActive = Record<string, boolean>
 export type LogicMode = 'classical' | 'epistemic' | 'deontic' | 'temporal' | 'informal' | 'paraconsistent' | 'fuzzy'
@@ -98,7 +98,9 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 			const url = new URL(window.location.href)
 			const argParam = url.searchParams.get('arg')
 			if (argParam) savedSelectedArgumentId = argParam
-		} catch {}
+		} catch (error) {
+			console.warn('Failed to read URL parameters:', error)
+		}
 		const savedActiveSource = localStorage.getItem('xv_active_source') as 'document' | 'expression' | 'imported' || 'expression'
 		
 		return {
@@ -133,14 +135,18 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 				const url = new URL(window.location.href)
 				url.searchParams.set('arg', id)
 				window.history.replaceState({}, '', url.toString())
-			} catch {}
+			} catch (error) {
+				console.warn('Failed to update URL parameters:', error)
+			}
 		} else {
 			localStorage.removeItem('xv_selected_argument_id')
 			try {
 				const url = new URL(window.location.href)
 				url.searchParams.delete('arg')
 				window.history.replaceState({}, '', url.toString())
-			} catch {}
+			} catch (error) {
+				console.warn('Failed to update URL parameters:', error)
+			}
 		}
 	}, [])
 
@@ -197,7 +203,7 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 				argumentType: 'claim',
 				argumentId: argumentId,
 				scheme: 'Default'
-			} as any,
+			} as ArgumentData['core'],
 			components: [],
 			relationships: [],
 			layoutMode: 'tree' as const
@@ -215,32 +221,57 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     // (moved below after addImportedJSONArguments initialization)
 
-	// Markdown document management methods
-	const loadMarkdownDocument = useCallback((documentId: string, content: string, title?: string) => {
-		const extraction = extractArgumentsFromMarkdown(documentId, content, title)
-		
-		setUnifiedData(prev => {
-			// Remove existing arguments from this document
-			const filteredArguments = prev.arguments.filter(arg => 
-				!arg.markdown.documentId || arg.markdown.documentId !== documentId
-			)
+	// Markdown document management methods - aligned with parseDocumentToGraph via normalizeDocument
+	const loadMarkdownDocument = useCallback(async (documentId: string, content: string, title?: string) => {
+		try {
+			// Use normalizeDocument to align with parseDocumentToGraph workflow
+			const normalizedArguments = await normalizeDocument(documentId, content)
 			
-			// Add new arguments from the document
-			const newArguments = [...filteredArguments, ...extraction.arguments]
+			setUnifiedData(prev => {
+				// Remove existing arguments from this document
+				const filteredArguments = prev.arguments.filter(arg => 
+					!arg.markdown.documentId || arg.markdown.documentId !== documentId
+				)
+				
+				// Add new arguments from the document
+				const newArguments = [...filteredArguments, ...normalizedArguments]
+				
+				// Select the first document argument if none selected or if current selection was from this document
+				let newSelectedId = prev.selectedArgumentId
+				if (!newSelectedId || prev.arguments.find(arg => arg.id === newSelectedId)?.markdown.documentId === documentId) {
+					newSelectedId = normalizedArguments.length > 0 ? normalizedArguments[0].id : null
+				}
+				
+				return {
+					...prev,
+					activeSource: 'document',
+					arguments: newArguments,
+					selectedArgumentId: newSelectedId
+				}
+			})
+		} catch (error) {
+			console.error('Failed to load markdown document:', error)
+			// Fallback to the original extraction method
+			const extraction = extractArgumentsFromMarkdown(documentId, content, title)
 			
-			// Select the first document argument if none selected or if current selection was from this document
-			let newSelectedId = prev.selectedArgumentId
-			if (!newSelectedId || prev.arguments.find(arg => arg.id === newSelectedId)?.markdown.documentId === documentId) {
-				newSelectedId = extraction.arguments.length > 0 ? extraction.arguments[0].id : null
-			}
-			
-			return {
-				...prev,
-				activeSource: 'document',
-				arguments: newArguments,
-				selectedArgumentId: newSelectedId
-			}
-		})
+			setUnifiedData(prev => {
+				const filteredArguments = prev.arguments.filter(arg => 
+					!arg.markdown.documentId || arg.markdown.documentId !== documentId
+				)
+				const newArguments = [...filteredArguments, ...extraction.arguments]
+				let newSelectedId = prev.selectedArgumentId
+				if (!newSelectedId || prev.arguments.find(arg => arg.id === newSelectedId)?.markdown.documentId === documentId) {
+					newSelectedId = extraction.arguments.length > 0 ? extraction.arguments[0].id : null
+				}
+				
+				return {
+					...prev,
+					activeSource: 'document',
+					arguments: newArguments,
+					selectedArgumentId: newSelectedId
+				}
+			})
+		}
 	}, [])
 
 	const updateMarkdownDocument = useCallback((documentId: string, content: string) => {
@@ -297,7 +328,11 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 				selectedArgumentId: newArg.id
 			}
 		})
-		try { localStorage.setItem('xv_selected_argument_id', newArg.id) } catch {}
+		try { 
+			localStorage.setItem('xv_selected_argument_id', newArg.id) 
+		} catch (error) {
+			console.warn('Failed to save selected argument ID to localStorage:', error)
+		}
 		return newArg.id
 	}, [])
 
@@ -313,7 +348,11 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 			selectedArgumentId: selectFirst ? firstId : prev.selectedArgumentId
 		}))
 		if (selectFirst) {
-			try { localStorage.setItem('xv_selected_argument_id', firstId) } catch {}
+			try { 
+				localStorage.setItem('xv_selected_argument_id', firstId) 
+			} catch (error) {
+				console.warn('Failed to save selected argument ID to localStorage:', error)
+			}
 		}
 		return firstId
 	}, [])
@@ -322,7 +361,7 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 	useEffect(() => {
 		const handleAddImported = (e: Event) => {
 			const detail = (e as CustomEvent<ImportedJSON>).detail
-			if (detail && (detail as any).arguments) {
+			if (detail && 'arguments' in detail) {
 				addImportedJSONArguments(detail, true)
 			}
 		}

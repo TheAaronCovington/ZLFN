@@ -320,10 +320,14 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
     onArgumentSelect?.(selectedArgumentId)
   }, [selectedArgumentId, onArgumentSelect])
 
-  // Get current argument data
+  // Get current argument data - wire to shared data if available
   const currentArgument = useMemo(() => {
+    // Use shared data argument if provided, otherwise fall back to collection or sample
+    if (argument) {
+      return argument
+    }
     return argumentCollection.arguments.find(arg => arg.id === selectedArgumentId) || SAMPLE_ARGUMENT
-  }, [argumentCollection, selectedArgumentId])
+  }, [argument, argumentCollection, selectedArgumentId])
 
   // Convert to ATN format (adapt existing data if needed)
   const atnNodes = useMemo(() => {

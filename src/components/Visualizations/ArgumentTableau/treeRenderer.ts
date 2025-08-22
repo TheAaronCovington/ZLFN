@@ -49,11 +49,15 @@ export function initializeTreeSVG(
 
   const g = svg.append('g')
 
-  // Initialize zoom behavior
+  // Initialize zoom behavior with strength/conflict overlay updates
   const zoom = d3.zoom<SVGSVGElement, unknown>()
     .scaleExtent([0.1, 4])
     .on('zoom', (event) => {
       g.attr('transform', event.transform)
+      
+      // Update overlay visibility based on zoom level for better performance
+      const scale = event.transform.k
+      updateOverlayVisibility(g, scale)
     })
 
   svg.call(zoom)
@@ -631,4 +635,35 @@ export function renderHierarchicalLayout(
     nodeSelection
       .attr('transform', (d: any) => `translate(${d.x}, ${d.y})`)
   })
+}
+
+/**
+ * Update overlay visibility based on zoom level
+ */
+function updateOverlayVisibility(
+  g: d3.Selection<SVGGElement, unknown, null, undefined>,
+  scale: number
+): void {
+  // Show/hide strength indicators based on zoom level
+  g.selectAll('.strength-indicator')
+    .style('opacity', scale > 0.5 ? 1 : 0)
+    .style('display', scale > 0.3 ? 'block' : 'none')
+  
+  // Show/hide conflict overlays based on zoom level  
+  g.selectAll('.conflict-overlay')
+    .style('opacity', scale > 0.4 ? 0.8 : 0)
+    .style('display', scale > 0.2 ? 'block' : 'none')
+    
+  // Show/hide scheme labels based on zoom level
+  g.selectAll('.scheme-label')
+    .style('opacity', scale > 0.7 ? 1 : 0)
+    .style('display', scale > 0.5 ? 'block' : 'none')
+    
+  // Adjust node detail level
+  g.selectAll('.node-detail')
+    .style('opacity', scale > 0.8 ? 1 : 0)
+    
+  // Adjust text size based on zoom
+  g.selectAll('.node-label')
+    .style('font-size', `${Math.max(10, 12 * scale)}px`)
 }

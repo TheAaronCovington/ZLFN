@@ -6,10 +6,13 @@
   color: var(--ai-text-primary);
   line-height: 1.7;
   font-size: var(--ai-font-size-base);
-  max-width: 1200px;
+  width: min(90vw, 1200px);
   margin: 0 auto;
   padding: var(--ai-space-xl) var(--ai-space-2xl);
-  width: 100%;
+}
+
+@media (min-width: 1200px) {
+  .document-viewer { width: 70vw; max-width: 1200px; }
 }
 
 /* Document Header */

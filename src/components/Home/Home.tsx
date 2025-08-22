@@ -32,46 +32,68 @@ const Home: React.FC = () => {
 
   return (
     <div className="home">
-      <div className="hero-section">
-        <h1 className="hero-title">Welcome to Xervean</h1>
+      <section className="hero-section" aria-labelledby="hero-title">
+        <h1 id="hero-title" className="hero-title">Welcome to Xervean</h1>
         <p className="hero-subtitle">
           Explore philosophical arguments and logical reasoning
         </p>
-      </div>
+      </section>
       
-      <div style={{ marginBottom: '2rem' }}>
-        <ZlfnGraph nodes={sampleNodes} edges={sampleEdges} />
-      </div>
+      <section aria-labelledby="demo-graph-title" style={{ marginBottom: '2rem' }}>
+        <h2 id="demo-graph-title" className="sr-only">Interactive Logic Graph Demo</h2>
+        <div role="img" aria-label="Sample ZLFN logic graph showing connected nodes A, B, and C">
+          <ZlfnGraph nodes={sampleNodes} edges={sampleEdges} />
+        </div>
+      </section>
 
-      <div style={{ marginBottom: '2rem' }}>
-        <VennDiagram title="Necessary & Sufficient" data={vennData} type="necessary-sufficient" examples={vennExamples} />
-      </div>
+      <section aria-labelledby="demo-venn-title" style={{ marginBottom: '2rem' }}>
+        <h2 id="demo-venn-title" className="sr-only">Venn Diagram Demo</h2>
+        <div role="img" aria-label="Venn diagram demonstrating necessary and sufficient conditions">
+          <VennDiagram title="Necessary & Sufficient" data={vennData} type="necessary-sufficient" examples={vennExamples} />
+        </div>
+      </section>
 
-      <div className="documents-grid">
-        <div className="document-card">
+      <section className="documents-grid" aria-labelledby="documents-title">
+        <h2 id="documents-title" className="sr-only">Available Documents</h2>
+        <article className="document-card">
           <h3>TAG Critique</h3>
           <p>A comprehensive critique of the Transcendental Argument for God</p>
-          <Link to="/document/TAG_Critique" className="card-link">
+          <Link 
+            to="/document/TAG_Critique" 
+            className="card-link"
+            aria-label="Read TAG Critique document"
+            tabIndex={0}
+          >
             Read Document →
           </Link>
-        </div>
+        </article>
         
-        <div className="document-card">
+        <article className="document-card">
           <h3>Logic Demo</h3>
           <p>Demonstrations and examples of logical reasoning</p>
-          <Link to="/document/logic_demo" className="card-link">
+          <Link 
+            to="/document/logic_demo" 
+            className="card-link"
+            aria-label="Read Logic Demo document"
+            tabIndex={0}
+          >
             Read Document →
           </Link>
-        </div>
+        </article>
         
-        <div className="document-card">
+        <article className="document-card">
           <h3>Test Document</h3>
           <p>Test document for exploring the document viewer</p>
-          <Link to="/document/test" className="card-link">
+          <Link 
+            to="/document/test" 
+            className="card-link"
+            aria-label="Read Test document"
+            tabIndex={0}
+          >
             Read Document →
           </Link>
-        </div>
-      </div>
+        </article>
+      </section>
     </div>
   )
 }

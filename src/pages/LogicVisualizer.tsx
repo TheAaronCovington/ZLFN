@@ -397,6 +397,18 @@ const LogicVisualizer: React.FC = () => {
 		showInfo('Graph centered', 'success')
 	}, [showInfo])
 
+	// Auto-fit on dataset changes (Phase 1)
+	React.useEffect(() => {
+		if (viewMode === 'graph' && (nodes.length > 0 || edges.length > 0)) {
+			// Small delay to allow graph to render before fitting
+			const timer = setTimeout(() => {
+				const event = new CustomEvent('zlfn:fit-graph')
+				window.dispatchEvent(event)
+			}, 300)
+			return () => clearTimeout(timer)
+		}
+	}, [viewMode, nodes.length, edges.length, selectedArgumentId])
+
 	return (
 		<Box sx={{ 
 			display: 'flex', 

@@ -1258,7 +1258,7 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 		requestAnimationFrame(step)
 	}
 
-	// Listen for external refit requests (e.g., after auto ops)
+			// Listen for external refit requests (e.g., after auto ops) with stable recentering
 	React.useEffect(() => {
 		function onRefit() {
 			const svg = d3.select(svgRef.current)
@@ -1299,16 +1299,20 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 				const cy = minY + height / 2
 				const tx = (size.width / 2) - cx * k
 				const ty = (size.height / 2) - cy * k
-				// Skip if current transform is already close (tolerance 2px)
+				// Skip if current transform is already close (tolerance 5px for stability)
 				const current = d3.zoomTransform(svg.node() as any)
-				if (Math.abs((current.x ?? 0) - tx) < 2 && Math.abs((current.y ?? 0) - ty) < 2 && Math.abs((current.k ?? 1) - k) < 0.001) {
+				if (Math.abs((current.x ?? 0) - tx) < 5 && Math.abs((current.y ?? 0) - ty) < 5 && Math.abs((current.k ?? 1) - k) < 0.01) {
 					
 					return
 				}
 				
 				const zoomBehavior = d3.zoom<SVGSVGElement, unknown>().scaleExtent([0.4, 4])
 				svg.call(zoomBehavior as any)
-				svg.call(zoomBehavior.transform as any, d3.zoomIdentity.translate(tx, ty).scale(k))
+				// Use smooth transition for stable recentering during auto expand/close
+				svg.transition()
+					.duration(400)
+					.ease(d3.easeQuadInOut)
+					.call(zoomBehavior.transform as any, d3.zoomIdentity.translate(tx, ty).scale(k))
 			}
 			doRefit(0)
 		}
@@ -1738,9 +1742,13 @@ export const SemanticTableau: React.FC<SemanticTableauProps> = ({ expression, as
 				pnl.raise()
 			}
 		})
-		svg.on('click', () => { 
-			svg.selectAll('.node-menu-panel').style('display', 'none')
-			setSelectedNodeId(null) // Clear selection when clicking empty canvas
+		// Enhanced canvas-click deselect with proper event handling
+		svg.on('click', (event) => { 
+			// Only deselect if clicking directly on the SVG background (not on nodes or panels)
+			if (event.target === svg.node() || event.target.tagName === 'svg') {
+				svg.selectAll('.node-menu-panel').style('display', 'none')
+				setSelectedNodeId(null) // Clear selection when clicking empty canvas
+			}
 		})
 	}, [root, size.width, size.height, layoutMode, expression, selectedNodeId, pathToRoot])
 

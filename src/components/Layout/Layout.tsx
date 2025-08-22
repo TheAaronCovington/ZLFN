@@ -28,34 +28,65 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   }, [])
   return (
     <div className="layout">
-      <header className="header">
-        <nav className="navbar">
-          <Link to="/" className="logo">
+      <header className="header" role="banner">
+        <nav className="navbar" role="navigation" aria-label="Main navigation">
+          <Link 
+            to="/" 
+            className="logo" 
+            aria-label="Xervean Logic Explorer - Home"
+            tabIndex={0}
+          >
             <span className="logo-text">Xervean</span>
             <span className="logo-subtitle">Logic Explorer</span>
           </Link>
-          <div className="nav-links">
-            <NavLink to="/" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <HomeIcon sx={{ fontSize: 18, mr: 0.5 }} />
+          <div className="nav-links" role="menubar">
+            <NavLink 
+              to="/" 
+              className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+              role="menuitem"
+              aria-label="Navigate to Home page"
+              tabIndex={0}
+            >
+              <HomeIcon sx={{ fontSize: 18, mr: 0.5 }} aria-hidden="true" />
               Home
             </NavLink>
-            <NavLink to="/viz/zlfn" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <HubIcon sx={{ fontSize: 18, mr: 0.5 }} />
+            <NavLink 
+              to="/viz/zlfn" 
+              className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+              role="menuitem"
+              aria-label="Navigate to ZLFN Graph visualization"
+              tabIndex={0}
+            >
+              <HubIcon sx={{ fontSize: 18, mr: 0.5 }} aria-hidden="true" />
               ZLFN
             </NavLink>
-            <NavLink to="/viz/venn" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Venn</NavLink>
-            <NavLink to="/viz" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <ArticleIcon sx={{ fontSize: 18, mr: 0.5 }} />
+            <NavLink 
+              to="/viz/venn" 
+              className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+              role="menuitem"
+              aria-label="Navigate to Venn Diagram visualization"
+              tabIndex={0}
+            >
+              Venn
+            </NavLink>
+            <NavLink 
+              to="/viz" 
+              className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+              role="menuitem"
+              aria-label="Navigate to Logic Visualizer"
+              tabIndex={0}
+            >
+              <ArticleIcon sx={{ fontSize: 18, mr: 0.5 }} aria-hidden="true" />
               Visualizer
             </NavLink>
             {/* Documents dropdown removed; documents will be selected from the sidebar */}
-            <Box>
+            <Box role="complementary" aria-label="Document library">
               <LibrarySidebar />
             </Box>
           </div>
         </nav>
       </header>
-      <main className="main-content">
+      <main className="main-content" role="main" id="main-content" tabIndex={-1}>
         {children}
       </main>
       <Paper sx={{ position: 'fixed', bottom: 0, left: 0, right: 0 }} elevation={6}>

@@ -28,6 +28,22 @@ export const ArgumentSelector: React.FC<ArgumentSelectorProps> = ({
   showTitle = false,
   title
 }) => {
+  // Ensure selectedArgumentId exists in the argumentList, otherwise use empty string
+  const validSelectedId = React.useMemo(() => {
+    if (!selectedArgumentId) return ''
+    const exists = argumentList.some(arg => arg.id === selectedArgumentId)
+    return exists ? selectedArgumentId : ''
+  }, [selectedArgumentId, argumentList])
+
+  // Auto-select first argument if current selection is invalid and arguments are available
+  React.useEffect(() => {
+    if (!validSelectedId && argumentList.length > 0) {
+      // Auto-select first argument if no valid selection exists
+      console.log('ArgumentSelector: Auto-selecting first argument:', argumentList[0].id, 'Previous selection was:', selectedArgumentId)
+      onArgumentSelect(argumentList[0].id)
+    }
+  }, [validSelectedId, argumentList, onArgumentSelect, selectedArgumentId])
+
   const handleChange = (event: { target: { value: string } }) => {
     onArgumentSelect(event.target.value)
   }
@@ -45,7 +61,7 @@ export const ArgumentSelector: React.FC<ArgumentSelectorProps> = ({
           {label}
         </InputLabel>
         <Select
-          value={selectedArgumentId || ''}
+          value={validSelectedId}
           onChange={handleChange}
           label={label}
           sx={{ 

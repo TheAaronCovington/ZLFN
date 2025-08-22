@@ -15,15 +15,46 @@ const DockBar: React.FC = () => {
 
 	return (
 		<SpeedDial
-			ariaLabel="Quick actions"
+			ariaLabel="Quick navigation actions"
 			sx={{ position: 'fixed', bottom: 88, right: 24 }}
 			icon={<SpeedDialIcon openIcon={<ScienceIcon />} />}
+			role="navigation"
 		>
-			<SpeedDialAction icon={<HomeIcon />} tooltipTitle="Home" onClick={() => navigate('/')} />
-			<SpeedDialAction icon={<ArticleIcon />} tooltipTitle="Documents" onClick={() => navigate('/document/TAG_Critique')} />
-			<SpeedDialAction icon={<HubIcon />} tooltipTitle="ZLFN" onClick={() => navigate('/viz/zlfn')} />
-			<SpeedDialAction icon={<DonutLargeIcon />} tooltipTitle="Venn" onClick={() => navigate('/viz/venn')} />
-			<SpeedDialAction icon={<FunctionsIcon />} tooltipTitle={simulationMode ? 'Disable Simulation' : 'Enable Simulation'} onClick={() => { const next = !simulationMode; setSimulationMode(next); if (!next) resetStates() }} />
+			<SpeedDialAction 
+				icon={<HomeIcon />} 
+				tooltipTitle="Navigate to Home page" 
+				onClick={() => navigate('/')}
+				aria-label="Go to Home page"
+				FabProps={{ 'aria-label': 'Go to Home page' } as any}
+			/>
+			<SpeedDialAction 
+				icon={<ArticleIcon />} 
+				tooltipTitle="View Documents" 
+				onClick={() => navigate('/document/TAG_Critique')}
+				aria-label="View document library"
+				FabProps={{ 'aria-label': 'View document library' } as any}
+			/>
+			<SpeedDialAction 
+				icon={<HubIcon />} 
+				tooltipTitle="Open ZLFN Graph Visualizer" 
+				onClick={() => navigate('/viz/zlfn')}
+				aria-label="Open ZLFN Graph visualization"
+				FabProps={{ 'aria-label': 'Open ZLFN Graph visualization' } as any}
+			/>
+			<SpeedDialAction 
+				icon={<DonutLargeIcon />} 
+				tooltipTitle="Open Venn Diagram Visualizer" 
+				onClick={() => navigate('/viz/venn')}
+				aria-label="Open Venn Diagram visualization"
+				FabProps={{ 'aria-label': 'Open Venn Diagram visualization' } as any}
+			/>
+			<SpeedDialAction 
+				icon={<FunctionsIcon />} 
+				tooltipTitle={simulationMode ? 'Disable Simulation Mode' : 'Enable Simulation Mode'} 
+				onClick={() => { const next = !simulationMode; setSimulationMode(next); if (!next) resetStates() }}
+				aria-label={simulationMode ? 'Disable simulation mode' : 'Enable simulation mode'}
+				FabProps={{ 'aria-label': simulationMode ? 'Disable simulation mode' : 'Enable simulation mode' } as any}
+			/>
 		</SpeedDial>
 	)
 }

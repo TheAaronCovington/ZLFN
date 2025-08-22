@@ -403,7 +403,7 @@ class PerformanceOptimizer {
       forces: {
         charge: { strength: -300, distanceMax: 500 },
         link: { distance: 100, strength: 0.1 },
-        collision: { radius: 30, strength: 0.7 }
+        collision: { radius: 35, strength: 0.8 }
       }
     };
 
@@ -428,7 +428,8 @@ class PerformanceOptimizer {
           forces: {
             ...baseParams.forces,
             charge: { strength: -150, distanceMax: 300 },
-            link: { distance: 80, strength: 0.05 }
+            link: { distance: 80, strength: 0.05 },
+            collision: { radius: 30, strength: 0.7 }
           }
         };
       
@@ -442,7 +443,7 @@ class PerformanceOptimizer {
             ...baseParams.forces,
             charge: { strength: -100, distanceMax: 200 },
             link: { distance: 60, strength: 0.02 },
-            collision: { radius: 20, strength: 0.5 }
+            collision: { radius: 25, strength: 0.6 }
           }
         };
       
