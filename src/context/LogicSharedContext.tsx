@@ -4,6 +4,7 @@ import { parseExpressionToAst, astToZlfnGraph } from '../services/logic'
 import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph/types'
 import type { ArgumentData } from '../components/Visualizations/ArgumentTableau/types'
 import { extractArgumentsFromMarkdown, updateArgumentFromMarkdown } from '../services/markdownToArgument'
+import { normalizeExpression, type ImportedJSON, normalizeImportedJSON } from '../services/argumentNormalizer'
 
 export type NodeIdToActive = Record<string, boolean>
 export type LogicMode = 'classical' | 'epistemic' | 'deontic' | 'temporal' | 'informal' | 'paraconsistent' | 'fuzzy'
@@ -73,6 +74,10 @@ type LogicSharedContextValue = {
 	updateMarkdownDocument: (documentId: string, content: string) => void
 	removeDocument: (documentId: string) => void
 	setActiveSource: (source: 'document' | 'expression' | 'imported') => void
+
+	// Normalization helpers
+	addExpressionArgument: (expression: string, title?: string) => string
+	addImportedJSONArguments: (json: ImportedJSON, selectFirst?: boolean) => string | null
 }
 
 const LogicSharedContext = createContext<LogicSharedContextValue | null>(null)
@@ -86,9 +91,14 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 	const [modes, setModes] = useState<Partial<Record<LogicMode, boolean>>>({ classical: true })
 	const [nodeStates, setNodeStates] = useState<Record<string, NodeState>>({})
 
-	// Initialize unified data with default expression-based argument
+	// Initialize unified data with default expression-based argument and URL param support
 	const [unifiedData, setUnifiedData] = useState<UnifiedData>(() => {
-		const savedSelectedArgumentId = localStorage.getItem('xv_selected_argument_id')
+		let savedSelectedArgumentId = localStorage.getItem('xv_selected_argument_id')
+		try {
+			const url = new URL(window.location.href)
+			const argParam = url.searchParams.get('arg')
+			if (argParam) savedSelectedArgumentId = argParam
+		} catch {}
 		const savedActiveSource = localStorage.getItem('xv_active_source') as 'document' | 'expression' | 'imported' || 'expression'
 		
 		return {
@@ -118,8 +128,19 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		setUnifiedData(prev => ({ ...prev, selectedArgumentId: id }))
 		if (id) {
 			localStorage.setItem('xv_selected_argument_id', id)
+			// update URL param
+			try {
+				const url = new URL(window.location.href)
+				url.searchParams.set('arg', id)
+				window.history.replaceState({}, '', url.toString())
+			} catch {}
 		} else {
 			localStorage.removeItem('xv_selected_argument_id')
+			try {
+				const url = new URL(window.location.href)
+				url.searchParams.delete('arg')
+				window.history.replaceState({}, '', url.toString())
+			} catch {}
 		}
 	}, [])
 
@@ -192,6 +213,8 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		localStorage.setItem('xv_active_source', unifiedData.activeSource)
 	}, [unifiedData.activeSource])
 
+    // (moved below after addImportedJSONArguments initialization)
+
 	// Markdown document management methods
 	const loadMarkdownDocument = useCallback((documentId: string, content: string, title?: string) => {
 		const extraction = extractArgumentsFromMarkdown(documentId, content, title)
@@ -263,6 +286,50 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		}))
 	}, [])
 
+	// Add a new argument based on a single logic expression and select it
+	const addExpressionArgument = useCallback((expression: string, title?: string): string => {
+		const newArg = normalizeExpression(expression, title)
+		setUnifiedData(prev => {
+			return {
+				...prev,
+				activeSource: 'expression',
+				arguments: [...prev.arguments, newArg],
+				selectedArgumentId: newArg.id
+			}
+		})
+		try { localStorage.setItem('xv_selected_argument_id', newArg.id) } catch {}
+		return newArg.id
+	}, [])
+
+	// Add imported JSON arguments after normalization
+	const addImportedJSONArguments = useCallback((json: ImportedJSON, selectFirst: boolean = true): string | null => {
+		const args = normalizeImportedJSON(json)
+		if (args.length === 0) return null
+		const firstId = args[0].id
+		setUnifiedData(prev => ({
+			...prev,
+			activeSource: 'imported',
+			arguments: [...prev.arguments, ...args],
+			selectedArgumentId: selectFirst ? firstId : prev.selectedArgumentId
+		}))
+		if (selectFirst) {
+			try { localStorage.setItem('xv_selected_argument_id', firstId) } catch {}
+		}
+		return firstId
+	}, [])
+
+	// Global event listeners for cross-component actions (e.g., import JSON)
+	useEffect(() => {
+		const handleAddImported = (e: Event) => {
+			const detail = (e as CustomEvent<ImportedJSON>).detail
+			if (detail && (detail as any).arguments) {
+				addImportedJSONArguments(detail, true)
+			}
+		}
+		window.addEventListener('xv:add-imported-json', handleAddImported as EventListener)
+		return () => window.removeEventListener('xv:add-imported-json', handleAddImported as EventListener)
+	}, [addImportedJSONArguments])
+
 	const value = useMemo<LogicSharedContextValue>(
 		() => ({ 
 			simulationMode, setSimulationMode, nodeIdToActive, setNodeIdToActive, resetStates, 
@@ -270,12 +337,14 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 			expressionHighlightNonce, bumpExpressionHighlight, modes, setModes, nodeStates, setNodeStates,
 			unifiedData, setUnifiedData, setSelectedArgumentId,
 			getAstFor, getZlfnGraphFor, getAtnDataFor,
-			loadMarkdownDocument, updateMarkdownDocument, removeDocument, setActiveSource
+			loadMarkdownDocument, updateMarkdownDocument, removeDocument, setActiveSource,
+			addExpressionArgument, addImportedJSONArguments
 		}),
 		[simulationMode, nodeIdToActive, resetStates, selectedNodeId, currentExpression, 
 		 expressionHighlightNonce, bumpExpressionHighlight, modes, nodeStates, unifiedData,
 		 setSelectedArgumentId, getAstFor, getZlfnGraphFor, getAtnDataFor,
-		 loadMarkdownDocument, updateMarkdownDocument, removeDocument, setActiveSource]
+		 loadMarkdownDocument, updateMarkdownDocument, removeDocument, setActiveSource,
+		 addExpressionArgument, addImportedJSONArguments]
 	)
 
 	return <LogicSharedContext.Provider value={value}>{children}</LogicSharedContext.Provider>

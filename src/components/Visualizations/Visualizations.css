@@ -1,0 +1,721 @@
+/* Core Visualization Containers */
+.zlfn-graph-container { 
+  width: 100%; 
+  height: 100%; 
+  background: var(--ai-bg-primary); 
+  border-radius: 12px; 
+  position: relative; 
+  overflow: hidden; 
+  border: 1px solid var(--ai-border-secondary);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.zlfn-svg { 
+  background: var(--ai-bg-primary); 
+  border-radius: 12px; 
+}
+
+.stn-container,
+.atn-container {
+  width: 100%;
+  height: 100%;
+  background: var(--ai-bg-primary);
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--ai-border-secondary);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* ZLFN Visualization Layers */
+.nodes .node { 
+  cursor: pointer; 
+  transition: all 0.3s ease;
+}
+
+.nodes .node:hover {
+  filter: drop-shadow(0 0 8px rgba(0, 229, 255, 0.6));
+}
+
+.nodes .node-label { 
+  fill: var(--ai-text-primary); 
+  font-size: 13px; 
+  font-weight: 600; 
+  pointer-events: none; 
+  text-anchor: middle; 
+  paint-order: stroke fill; 
+  stroke: rgba(0,0,0,.55); 
+  stroke-width: 1px; 
+}
+
+.links .link { 
+  stroke: var(--ai-cyan); 
+  stroke-width: 2; 
+  fill: none; 
+  transition: all 0.3s ease;
+}
+
+.links .link:hover {
+  stroke: var(--ai-green);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 4px rgba(0, 255, 136, 0.5));
+}
+
+.links .rivers .river { 
+  stroke: var(--ai-pink); 
+  stroke-width: 3; 
+  fill: none; 
+  opacity: .7; 
+  filter: drop-shadow(0 0 4px rgba(255,64,129,.5)); 
+  animation: riverFlow 3s ease-in-out infinite alternate;
+}
+
+@keyframes riverFlow {
+  0% { opacity: 0.5; }
+  100% { opacity: 0.9; }
+}
+
+.zones .zone { 
+  fill-opacity: .1; 
+  stroke-width: 2; 
+  stroke-dasharray: 5 5; 
+  transition: all 0.3s ease;
+}
+
+.zones .zone:hover {
+  fill-opacity: 0.2;
+  stroke-width: 3;
+}
+
+.zones .zone-label { 
+  fill: var(--ai-text-primary); 
+  font-weight: 700; 
+  text-anchor: middle; 
+  font-size: 14px; 
+  text-shadow: 0 0 6px rgba(0,229,255,.4); 
+  filter: drop-shadow(0 0 2px rgba(0,0,0,.8));
+}
+
+.facet-icons { 
+  opacity: .95; 
+  transition: opacity 0.3s ease;
+}
+
+.facet-icons:hover {
+  opacity: 1;
+}
+
+/* STN (Semantic Tableau Network) Styling */
+.stn-node {
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.stn-node:hover {
+  filter: drop-shadow(0 0 8px rgba(0, 229, 255, 0.6));
+}
+
+.stn-node.open {
+  fill: var(--ai-green);
+  stroke: var(--ai-border-primary);
+  stroke-width: 2;
+}
+
+.stn-node.closed {
+  fill: var(--ai-red);
+  stroke: var(--ai-border-primary);
+  stroke-width: 2;
+}
+
+.stn-node.satisfiable {
+  fill: var(--ai-cyan);
+  stroke: var(--ai-border-primary);
+  stroke-width: 2;
+}
+
+.stn-link { 
+  stroke: rgba(255,255,255,.35); 
+  stroke-width: 1.8; 
+  fill: none; 
+  transition: all 0.3s ease;
+}
+
+.stn-link:hover {
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.4));
+}
+
+.stn-link.alpha { 
+  stroke: var(--ai-blue); 
+  stroke-width: 2.2; 
+  marker-end: url(#alpha-arrow);
+}
+
+.stn-link.beta { 
+  stroke: var(--ai-orange); 
+  stroke-dasharray: 6 4; 
+  marker-end: url(#beta-arrow);
+}
+
+.stn-link.implication { 
+  stroke: var(--ai-purple); 
+  stroke-dasharray: 10 3; 
+  marker-end: url(#implication-arrow);
+}
+
+.stn-link.double-negation { 
+  stroke: var(--ai-green); 
+  stroke-dasharray: 3 3; 
+  marker-end: url(#negation-arrow);
+}
+
+.stn-link.quantifier { 
+  stroke: #673ab7; 
+  stroke-dasharray: 8 2 2 2; 
+  marker-end: url(#quantifier-arrow);
+}
+
+.stn-link.biconditional { 
+  stroke: var(--ai-pink); 
+  marker-end: url(#biconditional-arrow);
+}
+
+.stn-link.golden-path { 
+  stroke: var(--ai-gold); 
+  stroke-width: 3; 
+  filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.5));
+  animation: goldenPulse 2s ease-in-out infinite alternate;
+}
+
+@keyframes goldenPulse {
+  0% { stroke-width: 3; opacity: 0.8; }
+  100% { stroke-width: 4; opacity: 1; }
+}
+
+.stn-label { 
+  fill: var(--ai-text-primary); 
+  font-size: 13px; 
+  font-weight: 600; 
+  text-anchor: middle; 
+  paint-order: stroke fill; 
+  stroke: rgba(0,0,0,.55); 
+  stroke-width: 1px; 
+}
+
+.stn-type { 
+  fill: var(--ai-text-tertiary); 
+  font-size: 9px; 
+  text-anchor: middle; 
+  font-weight: 500;
+}
+
+/* STN Rule Badges */
+.stn-rule-badge {
+  fill: var(--ai-bg-elevated);
+  stroke: var(--ai-border-primary);
+  stroke-width: 1;
+  rx: 8;
+  ry: 8;
+}
+
+.stn-rule-text {
+  fill: var(--ai-cyan);
+  font-size: 10px;
+  font-weight: 600;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.stn-rule-badge.alpha {
+  fill: rgba(33, 150, 243, 0.2);
+  stroke: var(--ai-blue);
+}
+
+.stn-rule-badge.beta {
+  fill: rgba(255, 149, 0, 0.2);
+  stroke: var(--ai-orange);
+}
+
+.stn-rule-badge.alpha .stn-rule-text {
+  fill: var(--ai-blue);
+}
+
+.stn-rule-badge.beta .stn-rule-text {
+  fill: var(--ai-orange);
+}
+
+/* ATN (Argument Tableau Network) Styling */
+
+/* ATN Nodes */
+.atn-node {
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.atn-node:hover {
+  filter: drop-shadow(0 0 8px rgba(64, 196, 255, 0.6));
+}
+
+.atn-node.argument {
+  fill: rgba(64, 196, 255, 0.8);
+  stroke: #40c4ff;
+  stroke-width: 2;
+}
+
+.atn-node.premise {
+  fill: rgba(33, 150, 243, 0.8);
+  stroke: var(--ai-blue);
+  stroke-width: 2;
+}
+
+.atn-node.conclusion {
+  fill: rgba(0, 255, 136, 0.8);
+  stroke: var(--ai-green);
+  stroke-width: 2;
+}
+
+.atn-node.selected {
+  stroke-width: 3;
+  filter: drop-shadow(0 0 12px rgba(64, 196, 255, 0.8));
+}
+
+/* ATN Links - Tree/Hierarchical Layout */
+.tree-link { 
+  stroke: rgba(64,196,255,.6); 
+  stroke-width: 2; 
+  fill: none; 
+  marker-end: url(#support-arrow); 
+  transition: all 0.3s ease;
+}
+
+.tree-link:hover {
+  stroke-width: 3;
+  filter: drop-shadow(0 0 4px rgba(64, 196, 255, 0.5));
+}
+
+.tree-node .node-label, 
+.hierarchical-node .node-label { 
+  fill: var(--ai-text-primary); 
+  font-size: 12px; 
+  font-weight: 600; 
+  paint-order: stroke fill;
+  stroke: rgba(0,0,0,.6);
+  stroke-width: 1px;
+}
+
+.hierarchical-link {
+  stroke-width: 2;
+  fill: none;
+  transition: all 0.3s ease;
+}
+
+.hierarchical-link:hover {
+  stroke-width: 3;
+}
+
+.hierarchical-link.support { 
+  stroke: var(--ai-green); 
+  marker-end: url(#support-arrow);
+}
+
+.hierarchical-link.attack { 
+  stroke: var(--ai-red); 
+  marker-end: url(#attack-arrow);
+}
+
+.hierarchical-link.undercut { 
+  stroke: var(--ai-orange); 
+  marker-end: url(#undercut-arrow);
+}
+
+/* ATN Non-Hierarchical Edges */
+.non-hierarchical-edge {
+  stroke-width: 2;
+  fill: none;
+  transition: all 0.3s ease;
+}
+
+.non-hierarchical-edge:hover {
+  stroke-width: 3;
+}
+
+.non-hierarchical-edge.attack { 
+  stroke: var(--ai-red); 
+  stroke-dasharray: 6 3; 
+  marker-end: url(#attack-arrow);
+}
+
+.non-hierarchical-edge.undercut { 
+  stroke: var(--ai-orange); 
+  stroke-dasharray: 4 2; 
+  marker-end: url(#undercut-arrow);
+}
+
+/* ATN Table Layout */
+.atn-table-container {
+  background: var(--ai-bg-elevated);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.atn-header-row { 
+  display: grid; 
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr; 
+  gap: 1px; 
+  background: rgba(64,196,255,0.3); 
+  padding: 12px; 
+  position: sticky; 
+  top: 0; 
+  z-index: 10; 
+  border-bottom: 2px solid rgba(64,196,255,0.5); 
+}
+
+.atn-header-cell { 
+  background: var(--ai-bg-secondary); 
+  border-radius: 4px; 
+  font-weight: 600; 
+  text-align: center; 
+  padding: 8px; 
+  color: var(--ai-cyan);
+  font-size: var(--ai-font-size-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.atn-row { 
+  display: grid; 
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr; 
+  gap: 1px; 
+  padding: 12px; 
+  border-bottom: 1px solid rgba(64,196,255,0.2); 
+  transition: background-color var(--ai-transition-fast); 
+}
+
+.atn-row:nth-child(odd) { 
+  background: var(--ai-bg-primary); 
+}
+
+.atn-row:nth-child(even) { 
+  background: rgba(64,196,255,0.05); 
+}
+
+.atn-row:hover { 
+  background: rgba(64,196,255,0.1); 
+  box-shadow: inset 0 0 10px rgba(64,196,255,0.2);
+}
+
+.atn-cell { 
+  padding: 8px; 
+  color: var(--ai-text-primary);
+}
+
+/* ATN Badges */
+.atn-badge { 
+  display: inline-block; 
+  padding: 4px 8px; 
+  border-radius: 12px; 
+  font-size: 11px; 
+  font-weight: 600; 
+  color: #fff; 
+  margin: 2px;
+}
+
+.atn-badge.type { 
+  text-transform: uppercase; 
+  letter-spacing: 0.5px;
+}
+
+.atn-badge.support { 
+  background: var(--ai-green); 
+  box-shadow: var(--ai-glow-green);
+}
+
+.atn-badge.attack { 
+  background: var(--ai-red); 
+  box-shadow: var(--ai-glow-red);
+}
+
+.atn-badge.undercut { 
+  background: var(--ai-orange); 
+  box-shadow: var(--ai-glow-orange);
+}
+
+.atn-scheme { 
+  display: inline-block; 
+  background: rgba(64,196,255,0.2); 
+  color: #40c4ff; 
+  padding: 2px 6px; 
+  border-radius: 8px; 
+  font-size: 10px; 
+  margin: 2px; 
+  border: 1px solid rgba(64,196,255,0.4);
+}
+
+/* ATN Summary */
+.atn-summary { 
+  margin-top: 20px; 
+  padding: 16px; 
+  background: var(--ai-bg-secondary); 
+  border: 1px solid rgba(64,196,255,0.3); 
+  border-radius: 8px; 
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.atn-summary h3 { 
+  margin: 0 0 12px 0; 
+  color: #40c4ff; 
+  font-size: 16px; 
+  font-weight: 600;
+}
+
+.atn-summary-stat { 
+  display: flex; 
+  justify-content: space-between; 
+  margin: 4px 0; 
+  font-size: 12px; 
+  color: var(--ai-text-secondary);
+}
+
+.atn-summary-stat .stat-value {
+  color: var(--ai-cyan);
+  font-weight: 600;
+}
+
+/* Shared VIS Engine Layers - Cross-Graph Coverage */
+.nodes .node { 
+  cursor: pointer; 
+  transition: all 0.3s ease;
+}
+
+.nodes .node:hover {
+  filter: drop-shadow(0 0 8px rgba(0, 229, 255, 0.6));
+}
+
+.nodes .node-label { 
+  fill: var(--ai-text-primary); 
+  font-size: 12px; 
+  font-weight: 600; 
+  pointer-events: none; 
+  text-anchor: middle; 
+}
+
+.links .link { 
+  stroke: var(--ai-cyan); 
+  stroke-width: 2; 
+  fill: none; 
+  transition: all 0.3s ease;
+}
+
+.links .link:hover {
+  stroke: var(--ai-green);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 4px rgba(0, 255, 136, 0.5));
+}
+
+.links .rivers .river { 
+  stroke: var(--ai-pink); 
+  stroke-width: 3; 
+  fill: none; 
+  opacity: 0.7; 
+  filter: drop-shadow(0 0 4px rgba(255, 64, 129, 0.5)); 
+}
+
+.zones .zone { 
+  fill-opacity: 0.1; 
+  stroke-width: 2; 
+  stroke-dasharray: 5 5; 
+}
+
+.zones .zone-label { 
+  fill: var(--ai-text-primary); 
+  font-weight: 600; 
+  text-anchor: middle; 
+}
+
+.facet-icons { 
+  opacity: 0.95; 
+}
+
+.facet-overlay { 
+  background: rgba(10,10,15,0.9); 
+  border: 1px solid var(--ai-border-primary); 
+  border-radius: 8px; 
+}
+
+/* Minimap */
+.minimap { 
+  position: absolute; 
+  bottom: 20px; 
+  right: 20px; 
+  width: 200px; 
+  height: 150px; 
+  background: var(--ai-bg-elevated); 
+  border: 2px solid var(--ai-border-primary); 
+  border-radius: 8px; 
+  box-shadow: var(--ai-glow-cyan); 
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.minimap:hover {
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.4);
+}
+
+.minimap-viewport { 
+  fill: none; 
+  stroke: var(--ai-cyan); 
+  stroke-width: 2; 
+  stroke-dasharray: 4 2; 
+  transition: all 0.3s ease;
+}
+
+.minimap-content {
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+.minimap:hover .minimap-content {
+  opacity: 1;
+}
+
+/* Edge Labels (Pills) */
+.link-labels .label-bg { 
+  fill: var(--ai-bg-elevated); 
+  stroke: var(--ai-border-primary); 
+  stroke-width: 1; 
+  rx: 8; 
+  ry: 8; 
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.link-labels .label-text { 
+  fill: var(--ai-cyan); 
+  font-size: 11px; 
+  font-weight: 600; 
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+/* Interactive States */
+.node.selected {
+  stroke: var(--ai-gold);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 12px rgba(255, 215, 0, 0.6));
+}
+
+.link.highlighted {
+  stroke: var(--ai-gold);
+  stroke-width: 4;
+  filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.5));
+}
+
+.zone.active {
+  fill-opacity: 0.2;
+  stroke: var(--ai-cyan);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 8px rgba(0, 229, 255, 0.4));
+}
+
+/* Loading States */
+.visualization-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background: var(--ai-bg-primary);
+  color: var(--ai-text-secondary);
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--ai-border-secondary);
+  border-top: 3px solid var(--ai-cyan);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Error States */
+.visualization-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background: var(--ai-bg-primary);
+  color: var(--ai-text-secondary);
+  text-align: center;
+  padding: var(--ai-space-xl);
+}
+
+.error-icon {
+  font-size: 3rem;
+  color: var(--ai-red);
+  margin-bottom: var(--ai-space-md);
+}
+
+.error-message {
+  font-size: var(--ai-font-size-lg);
+  color: var(--ai-text-primary);
+  margin-bottom: var(--ai-space-sm);
+}
+
+.error-details {
+  font-size: var(--ai-font-size-sm);
+  color: var(--ai-text-tertiary);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .minimap {
+    width: 150px;
+    height: 100px;
+    bottom: 10px;
+    right: 10px;
+  }
+  
+  .nodes .node-label {
+    font-size: 10px;
+  }
+  
+  .stn-label {
+    font-size: 11px;
+  }
+  
+  .atn-header-row,
+  .atn-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  
+  .atn-header-cell,
+  .atn-cell {
+    padding: 6px;
+    font-size: var(--ai-font-size-xs);
+  }
+  
+  .link-labels .label-text {
+    font-size: 9px;
+  }
+}
+
+/* Print Styles */
+@media print {
+  .minimap {
+    display: none;
+  }
+  
+  .zlfn-graph-container,
+  .stn-container,
+  .atn-container {
+    box-shadow: none;
+    border: 1px solid #ccc;
+  }
+}
+

@@ -1,0 +1,30 @@
+/* Temporary neutralizer to override any inline presentation attributes during clean-slate phase */
+
+/* Base */
+html, body, #root {
+  background: transparent !important;
+  color: inherit !important;
+}
+
+/* SVG: remove fills, strokes, glows, markers to default browser values */
+svg *, svg {
+  fill: none !important;
+  stroke: #b3b3b3 !important;
+  stroke-width: 1 !important;
+  stroke-opacity: 1 !important;
+  fill-opacity: 0 !important;
+  filter: none !important;
+  text-shadow: none !important;
+  /* allow markers again so arrows render */
+  /* marker: none !important; */
+  /* marker-start: none !important; */
+  /* marker-mid: none !important; */
+  /* marker-end: none !important; */
+  shape-rendering: geometricPrecision !important;
+}
+
+/* Buttons/inputs minimal reset (let MUI handle layout; we neutralize decorative effects) */
+button, [role="button"] {
+  box-shadow: none !important;
+}
+

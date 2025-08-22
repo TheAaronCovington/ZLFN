@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import * as d3 from 'd3'
 import { Button, Stack } from '@mui/material'
-import './VennDiagram.css'
+// styles removed for clean slate; will be reintroduced via new spec imports
 import { Legend, createColorLegend } from '../UI/Legend'
 
 export type VennSet = {

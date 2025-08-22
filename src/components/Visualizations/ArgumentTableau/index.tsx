@@ -251,6 +251,7 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
   expression: _expression,
   ast: _ast,
   compact = false,
+  argument,
   onArgumentSelect,
   onNodeSelect,
   onEdgeSelect,
@@ -294,8 +295,8 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
   })
 
   const [argumentCollection] = useState<ArgumentCollection>(() => ({
-    arguments: [SAMPLE_ARGUMENT],
-    selectedArgumentId: 'demo-argument',
+    arguments: [argument || SAMPLE_ARGUMENT],
+    selectedArgumentId: argument?.id || 'demo-argument',
     globalSettings: {
       showSchemeLabels: true,
       clusterByScheme: true,

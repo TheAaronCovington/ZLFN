@@ -1,12 +1,12 @@
 import React from 'react'
-import { Link } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 import { BottomNavigation, BottomNavigationAction, Paper, Box } from '@mui/material'
 import HomeIcon from '@mui/icons-material/Home'
 import ArticleIcon from '@mui/icons-material/Article'
 import HubIcon from '@mui/icons-material/Hub'
 import LibrarySidebar from './LibrarySidebar'
 import DockBar from './DockBar'
-import './Layout.css'
+// styles removed for clean slate; will be reintroduced via new spec imports
 
 const PINS_KEY = 'xv_pins'
 
@@ -35,19 +35,19 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <span className="logo-subtitle">Logic Explorer</span>
           </Link>
           <div className="nav-links">
-            <Link to="/" className="nav-link">
+            <NavLink to="/" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               <HomeIcon sx={{ fontSize: 18, mr: 0.5 }} />
               Home
-            </Link>
-            <Link to="/viz/zlfn" className="nav-link">
+            </NavLink>
+            <NavLink to="/viz/zlfn" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               <HubIcon sx={{ fontSize: 18, mr: 0.5 }} />
               ZLFN
-            </Link>
-            <Link to="/viz/venn" className="nav-link">Venn</Link>
-            <Link to="/viz" className="nav-link">
+            </NavLink>
+            <NavLink to="/viz/venn" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Venn</NavLink>
+            <NavLink to="/viz" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               <ArticleIcon sx={{ fontSize: 18, mr: 0.5 }} />
               Visualizer
-            </Link>
+            </NavLink>
             {/* Documents dropdown removed; documents will be selected from the sidebar */}
             <Box>
               <LibrarySidebar />

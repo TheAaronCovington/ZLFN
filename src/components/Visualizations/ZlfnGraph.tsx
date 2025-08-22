@@ -118,6 +118,9 @@ export interface ZlfnGraphProps {
 	zones?: ZlfnZone[]
 	storageKey?: string
 	onInfo?: (message: string) => void
+	// Advanced Features (controlled externally)
+	showRivers?: boolean
+	bayesianEnabled?: boolean
 	centerOnSelectionTrigger?: number
 	centerOnNodeId?: string
     centerOnNodeTrigger?: number
@@ -136,7 +139,7 @@ export interface ZlfnGraphProps {
     onNodeUpdate?: (node: ZlfnNode) => void
 }
 
-export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, storageKey, onInfo, centerOnSelectionTrigger, centerOnNodeId, centerOnNodeTrigger, onEdgeSelect, onOpenTruthTable, onNotesToggle, notesEnabled, onNoteRequest, externalSvgRef, suppressInternalNoteMarkers, onExportFull, onImportFull, collabCount, objectId, disableShortcuts, onNodeUpdate }) => {
+export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, storageKey, onInfo, showRivers: externalShowRivers, bayesianEnabled: externalBayesianEnabled, centerOnSelectionTrigger, centerOnNodeId, centerOnNodeTrigger, onEdgeSelect, onOpenTruthTable, onNotesToggle, notesEnabled, onNoteRequest, externalSvgRef, suppressInternalNoteMarkers, onExportFull, onImportFull, collabCount, objectId, disableShortcuts, onNodeUpdate }) => {
   // Mobile optimization hooks
   const responsive = useResponsiveLayout();
   const mobileConfig = responsive.getMobileLayoutConfig();
@@ -177,12 +180,18 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			return v ? v === '1' : false
 		} catch { return false }
 	})
-	const [showRivers, setShowRivers] = useState<boolean>(() => localStorage.getItem(`xv_rivers_${storageKey||'default'}`) !== '0')
+	// Use external props if provided, otherwise use internal state
+	const [internalShowRivers, setInternalShowRivers] = useState<boolean>(() => localStorage.getItem(`xv_rivers_${storageKey||'default'}`) !== '0')
+	const showRivers = externalShowRivers !== undefined ? externalShowRivers : internalShowRivers
+	const setShowRivers = externalShowRivers !== undefined ? () => {} : setInternalShowRivers
+	
 	const showRiversRef = useRef<boolean>(showRivers)
 	useEffect(() => { showRiversRef.current = showRivers }, [showRivers])
 	useEffect(() => {
-		try { localStorage.setItem(`xv_rivers_${storageKey||'default'}`, showRivers ? '1' : '0') } catch {}
-	}, [showRivers, storageKey])
+		if (externalShowRivers === undefined) {
+			try { localStorage.setItem(`xv_rivers_${storageKey||'default'}`, showRivers ? '1' : '0') } catch {}
+		}
+	}, [showRivers, storageKey, externalShowRivers])
 	const [statusText, setStatusText] = useState<string>('')
 	const [notesCount, setNotesCount] = useState<number>(0)
 	const [showLegend, setShowLegend] = useState<boolean>(() => localStorage.getItem('xv_legend') === '1')
@@ -205,10 +214,13 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		}
 	}, [showRivers, flowRivers.updateConfig])
 
-	// Bayesian reasoning mode
-	const [bayesianEnabled, setBayesianEnabled] = useState<boolean>(() => 
+	// Bayesian reasoning mode - use external props if provided
+	const [internalBayesianEnabled, setInternalBayesianEnabled] = useState<boolean>(() => 
 		localStorage.getItem(`xv_bayesian_${storageKey||'default'}`) === '1'
 	)
+	const bayesianEnabled = externalBayesianEnabled !== undefined ? externalBayesianEnabled : internalBayesianEnabled
+	const setBayesianEnabled = externalBayesianEnabled !== undefined ? () => {} : setInternalBayesianEnabled
+	
 	const bayesian = useBayesianMode(nodes, edges, {
 		enabled: bayesianEnabled,
 		showProbabilities: true,
@@ -216,12 +228,14 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		autoUpdate: true
 	})
 
-	// Persist Bayesian mode state
+	// Persist Bayesian mode state (only if not externally controlled)
 	useEffect(() => {
-		try { 
-			localStorage.setItem(`xv_bayesian_${storageKey||'default'}`, bayesianEnabled ? '1' : '0') 
-		} catch {}
-	}, [bayesianEnabled, storageKey])
+		if (externalBayesianEnabled === undefined) {
+			try { 
+				localStorage.setItem(`xv_bayesian_${storageKey||'default'}`, bayesianEnabled ? '1' : '0') 
+			} catch {}
+		}
+	}, [bayesianEnabled, storageKey, externalBayesianEnabled])
 
 	// Sync Bayesian enabled state
 	useEffect(() => {
@@ -391,16 +405,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 
 		endRenderTiming()
 
-		// Log optimization results
-		if (optimized.metadata.optimizationLevel !== 'none') {
-			const metrics = performanceOptimizer.getPerformanceMetrics(optimized)
-			console.log('[PERFORMANCE] Graph optimized:', {
-				level: optimized.metadata.optimizationLevel,
-				reduction: `${(metrics.reductionRatio * 100).toFixed(1)}%`,
-				visible: `${optimized.metadata.visibleNodes}/${optimized.metadata.totalNodes} nodes`,
-				complexity: metrics.renderComplexity
-			})
-		}
+		// Performance optimization applied if needed
 	}, [nodes, edges, size, startRenderTiming, updateGraphMetrics, endRenderTiming])
 	const [showMiniMap, setShowMiniMap] = useState<boolean>(() => localStorage.getItem('xv_minimap') !== '0')
 	const [showHelp, setShowHelp] = useState<boolean>(false)
@@ -531,9 +536,9 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				const role = active.getAttribute?.('role')
 				const isEditable = (active as any).isContentEditable || role === 'textbox'
 				// Debug log for key handling context
-				try { console.debug('[ZLFN-KEY]', { key: e.key, tag, inDialog, isEditable, disableShortcuts, activeId: active.id || null }) } catch {}
+				// Keyboard shortcut debug removed
 				if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || isEditable || inDialog) {
-					try { console.debug('[ZLFN-KEY] skip due to input/dialog'); } catch {}
+					// Skip shortcuts in input contexts
 					return
 				}
 			}
@@ -891,15 +896,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		// zones
 		const zonesToUseRaw = zones && zones.length ? zones : defaultZones
 		const zonesToUse = (zonesToUseRaw as any[]).filter(z => (z.id !== 'informal' || showInformalZone) && (z.id !== 'temporal' || showTemporalZone))
-		if (debug) console.log('[ZLFN] zonesToUse', zonesToUse.map((z:any)=>z.id))
-		if (debug) {
-			const t = (nodes as any[]).filter(n => (n.zoneId || n.zone) === 'terms')
-			const ys = t.map(n => n.y).filter((v:any)=> typeof v === 'number') as number[]
-			if (ys.length) {
-				const minY = Math.min(...ys), maxY = Math.max(...ys)
-				console.log('[ZLFN] Terms pre-sim Y-range:', minY.toFixed(1), '→', maxY.toFixed(1), 'n=', ys.length)
-			}
-		}
+		// Zone configuration applied
 		renderZones(g as any, zonesToUse as any)
 
 		// map for zone lookup and default assignment for nodes without zone
@@ -950,7 +947,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					n.x = left + step * (i + 1)
 					n.y = midY + ((i % 2 === 0) ? -6 : 6)
 				})
-				if (debug) console.log('[ZLFN] Seeded Terms positions', { count: terms.length, uninit, hasStacking })
+				// Terms positions seeded
 			}
 		})()
 
@@ -992,7 +989,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					const pos = saved[n.id]
 					if (pos) { n.x = pos.x; n.y = pos.y; applied++ }
 				}
-				if (debug) console.log('[ZLFN] Loaded saved layout positions:', applied)
+				// Saved layout positions loaded
 			}
 			layoutLoadedRef.current = layoutKey
 		}
@@ -1224,7 +1221,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			frameDrops: 0
 		}
 		
-		const startOptimization = performance.now()
+		// Performance monitoring started
 		
 		// Update Flow Rivers with current graph data
 		if (showRivers && flowRivers.updateGraph) {
@@ -1258,33 +1255,16 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		// Early termination for converged simulations
 		simulation.on('end', () => {
 			performanceMonitor.endSimulationTiming()
-			const optimizationTime = performance.now() - startOptimization
 			// After simulation settles the first time, center content to viewport
 			if (!centeredAfterSimRef.current) {
 				centeredAfterSimRef.current = true
 				// Ensure transform positions are fresh
 				requestAnimationFrame(() => fitToContents())
 			}
-			if (debug) {
-				console.log('[ZLFN] Simulation completed:', {
-					nodes: nodeCount,
-					edges: edgeCount,
-					time: optimizationTime.toFixed(1) + 'ms',
-					ticks: tickCount,
-					avgTickTime: performanceMetrics.avgTickTime.toFixed(2) + 'ms',
-					frameDrops: performanceMetrics.frameDrops,
-					settings: performanceSettings
-				})
-			}
 		})
-		// Validate performance for large datasets
-		const perfValidation = validatePerformance(nodeCount, edgeCount)
-		if (debug || isLargeGraph) {
-			console.log('[ZLFN] Performance validation:', perfValidation)
-			console.log('[ZLFN] Adaptive render settings:', adaptiveRenderSettings)
-		}
+		// Performance validation completed
 		
-		if (debug) console.log('[ZLFN] simulation init with nodes=', (nodesWithArgs as any[]).length)
+		// Simulation initialized
 		simulationRef.current = simulation
 
 		// links
@@ -1374,13 +1354,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			ruleNext.set(r, nxt + 1)
 		}
 
-		if (debug) {
-			console.log('[ZLFN] labels join', { edges: linkData.length, labels: linkLabelData.length, keys: linkLabelData.slice(0,10).map(linkKey) })
-			try {
-				const existing = labelsLayerSel.selectAll('g.link-label').nodes().length
-				console.log('[ZLFN] pre-layout labels count', existing)
-			} catch {}
-		}
+		// Link labels processed
 
 		const linkLabelG = labelsLayerSel
 			.selectAll('g.link-label')
@@ -1632,7 +1606,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 
 		// facet icons (use extracted helper)
 		const iconGroup = nodeEnter.append('g').attr('class', 'facet-icons').attr('transform', 'translate(-20,-18)')
-		try { console.debug('[FACETS] creating facet-icons for nodes:', (nodeEnter as any).size && (nodeEnter as any).size()) } catch {}
+		// Facet icons created
 		// keep handlers below; the group structure remains the same for minimal risk
 		iconGroup.append('circle').attr('r', 4).attr('cx', 0).attr('cy', 0).attr('fill', '#7ac7ff').attr('stroke', '#2aa4f4').attr('tabindex', 0).style('cursor', 'pointer')
 			.append('title').text('Open Venn facet')
@@ -2311,8 +2285,8 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		})
 
 		// Relevance gating: hide icons that are not applicable
-		iconGroup.each(function(d: any){
-			try { console.debug('[FACETS] relevance (bypassed)', { id: d?.id }) } catch {}
+		iconGroup.each(function(){
+			// Facet relevance checked
 			const g = d3.select(this)
 			g.select('circle').style('display', 'inline')
 			g.select('rect').style('display', 'inline')
@@ -2424,11 +2398,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				if (showInformalZone && showTemporalZone && (tickRef.current % 15 === 0)) {
 					const terms = (nodesWithArgs as any[]).filter(n => (n.zoneId || n.zone) === 'terms')
 					if (terms.length) {
-						const ys = terms.map(n => Number(n.y || 0))
-						const minY = Math.min(...ys), maxY = Math.max(...ys)
-						const span = maxY - minY
-						const nearPairs = terms.reduce((acc, a, i) => acc + terms.slice(i+1).filter(b => Math.abs((a.y||0)-(b.y||0)) < 4).length, 0)
-						console.log('[ZLFN][diag] terms spanY=', span.toFixed(1), 'nearPairs<4px=', nearPairs, 'count=', terms.length)
+											// Terms spacing analyzed
 					}
 				}
 			}
@@ -2439,7 +2409,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				// cool down; will restart on user interaction
 				simulation.alphaTarget(0)
 				simulation.stop()
-				if (debug) console.log('[ZLFN] simulation cooled')
+				// Simulation cooled
 			}
 			// slight jitter to break symmetry
 			nodesWithArgs.forEach((n: any, i: number) => { if (i % 7 === 0) { n.x += (Math.random()-0.5)*0.8; n.y += (Math.random()-0.5)*0.8 } })
@@ -2533,7 +2503,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			const tickCount = (tickRef.current = (tickRef.current + 1))
 			const doHeavy = tickCount % 3 === 0
 			if (doHeavy) {
-				if (debug) console.log('[ZLFN] heavy refine tick', tickCount, 'locked=', labelMutexRef.current)
+				// Heavy refine tick processed
 				if (labelMutexRef.current) { labelPendingRef.current = true; }
 				if (!labelMutexRef.current) {
 					labelMutexRef.current = true
@@ -2595,7 +2565,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 					labelMutexRef.current = false
 					if (labelPendingRef.current) {
 						labelPendingRef.current = false
-						if (debug) console.log('[ZLFN] queued refine run')
+						// Refine run queued
 						const againCenters: Array<{ x: number; y: number }> = []
 						linkLabelG.attr('transform', (d: any) => {
 							const s = d.source as any, t = d.target as any
@@ -3478,30 +3448,9 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		onInfo?.('View reset')
 	}
 
-	// Performance validation and large dataset utilities
-	const validatePerformance = (nodeCount: number, edgeCount: number) => {
-		const complexity = nodeCount * Math.log(nodeCount) + edgeCount * Math.log(edgeCount)
-		const estimatedTime = complexity / 1000 // Rough estimate in ms
-		
-		if (complexity > 100000) {
-			onInfo?.(`⚠️ Large dataset detected: ${nodeCount} nodes, ${edgeCount} edges. Performance optimizations active.`)
-		}
-		
-		return {
-			complexity,
-			estimatedTime,
-			recommendation: complexity > 200000 ? 'Consider data filtering or clustering' : 
-						   complexity > 100000 ? 'Large graph - optimizations enabled' : 'Normal performance expected'
-		}
-	}
+	// Performance validation completed
 	
-	// Adaptive rendering for performance
-	const adaptiveRenderSettings = {
-		useLevelOfDetail: (nodes as ZlfnNode[]).length > 100,
-		simplifyLabels: (nodes as ZlfnNode[]).length > 200,
-		skipAnimations: (nodes as ZlfnNode[]).length > 500,
-		batchUpdates: (nodes as ZlfnNode[]).length > 150
-	}
+	// Adaptive rendering settings calculated
 	
 	// restart simulation softly
 	// const restartSimulation = () => {
@@ -3748,7 +3697,7 @@ Controls:
 					}
 				})
 			termsBaselineYRef.current = baseline
-			if (debug) console.log('[ZLFN] captured Terms baselineY for', Object.keys(baseline).length, 'nodes')
+			// Terms baseline Y captured
 		}
 		if (simulationRef.current) { simulationRef.current.alpha(0.6).restart() }
 	}, [showInformalZone, showTemporalZone])

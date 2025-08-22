@@ -14,6 +14,7 @@ import { CommandBar, ControlsDrawer, InspectorDrawer, StatusBar } from '../compo
 import AdvancedSearch from '../components/Search/AdvancedSearch'
 import { usePerformanceMonitor } from '../hooks/usePerformanceMonitor'
 import { useGlobalShortcuts, createShortcut } from '../hooks/useGlobalShortcuts'
+import type { ImportedJSON } from '../services/argumentNormalizer'
 
 const LogicVisualizer: React.FC = () => {
 		const { 
@@ -29,7 +30,8 @@ const LogicVisualizer: React.FC = () => {
 		// Unified data access
 		unifiedData,
 		getAstFor,
-		getZlfnGraphFor
+		getZlfnGraphFor,
+		getAtnDataFor
 	} = useLogicShared()
 
 	// UI State (default drawers closed unless explicitly stored as 'true')
@@ -68,6 +70,10 @@ const LogicVisualizer: React.FC = () => {
 	const selectedArgumentId = unifiedData.selectedArgumentId
 	const ast = React.useMemo(() => getAstFor(selectedArgumentId), [getAstFor, selectedArgumentId])
 	const graph = React.useMemo(() => getZlfnGraphFor(selectedArgumentId), [getZlfnGraphFor, selectedArgumentId])
+	// ATN data derived via shared accessor (Phase 0 wiring)
+	const atnData = React.useMemo(() => {
+		return getAtnDataFor(selectedArgumentId)
+	}, [getAtnDataFor, selectedArgumentId])
 	
 	// Demo extras and document data (kept for backward compatibility)
 	const [showDemoExtras, setShowDemoExtras] = React.useState<boolean>(() => 
@@ -76,6 +82,23 @@ const LogicVisualizer: React.FC = () => {
 	const [useDocumentData, setUseDocumentData] = React.useState<boolean>(() => 
 		localStorage.getItem('xv_use_document') === '1'
 	)
+
+	// Advanced Features State
+	const [showRivers, setShowRivers] = React.useState<boolean>(() => 
+		localStorage.getItem('xv_rivers') !== '0'
+	)
+	const [bayesianEnabled, setBayesianEnabled] = React.useState<boolean>(() => 
+		localStorage.getItem('xv_bayesian') === '1'
+	)
+
+	// Persist advanced features state
+	React.useEffect(() => {
+		try { localStorage.setItem('xv_rivers', showRivers ? '1' : '0') } catch {}
+	}, [showRivers])
+	
+	React.useEffect(() => {
+		try { localStorage.setItem('xv_bayesian', bayesianEnabled ? '1' : '0') } catch {}
+	}, [bayesianEnabled])
 	
 	React.useEffect(() => { 
 		try { localStorage.setItem('xv_demo_extras', showDemoExtras ? '1' : '0') } 
@@ -266,11 +289,19 @@ const LogicVisualizer: React.FC = () => {
 			if (!file) return
 			try {
 				const data = await readJsonFile(file)
-				if (data.expression) setCurrentExpression(data.expression)
-				if (data.selectedNodeId) setSelectedNodeId(data.selectedNodeId)
-				if (data.modes) setModes(data.modes)
-				if (typeof data.useDocumentData === 'boolean') setUseDocumentData(data.useDocumentData)
-				if (typeof data.showDemoExtras === 'boolean') setShowDemoExtras(data.showDemoExtras)
+				// If payload contains shared arguments, dispatch to shared context via window event
+				if ((data as ImportedJSON)?.arguments) {
+					const ev = new CustomEvent('xv:add-imported-json', { detail: data as ImportedJSON })
+					window.dispatchEvent(ev)
+				} else {
+					// Legacy UI state import
+					const legacy: any = data
+					if (legacy.expression) setCurrentExpression(legacy.expression)
+					if (legacy.selectedNodeId) setSelectedNodeId(legacy.selectedNodeId)
+					if (legacy.modes) setModes(legacy.modes)
+					if (typeof legacy.useDocumentData === 'boolean') setUseDocumentData(legacy.useDocumentData)
+					if (typeof legacy.showDemoExtras === 'boolean') setShowDemoExtras(legacy.showDemoExtras)
+				}
 				showInfo('Imported successfully', 'success')
 			} catch {
 				showInfo('Import failed', 'error')
@@ -399,6 +430,10 @@ const LogicVisualizer: React.FC = () => {
 				onToggleInspector={() => setInspectorDrawerOpen(v => !v)}
 				viewMode={viewMode}
 				onChangeViewMode={(m) => setViewMode(m)}
+				showRivers={showRivers}
+				onToggleRivers={() => setShowRivers(v => !v)}
+				bayesianEnabled={bayesianEnabled}
+				onToggleBayesian={() => setBayesianEnabled(v => !v)}
 			/>
 
 			{/* Main Content Area */}
@@ -521,6 +556,8 @@ const LogicVisualizer: React.FC = () => {
 									onOpenTruthTable={handleOpenTruthTable}
 									objectId="main-visualizer"
 									showNotesIndicators={true}
+									showRivers={showRivers}
+									bayesianEnabled={bayesianEnabled}
 								/>
 							) : viewMode === 'tableau' ? (
 								<SemanticTableau 
@@ -531,6 +568,7 @@ const LogicVisualizer: React.FC = () => {
 								<ArgumentTableau 
 									expression={currentExpression} 
 									ast={ast}
+									argument={atnData as any}
 									onNodeSelect={(node) => {
 										// Handle ATN node selection
 										showInfo(`Selected argument node: ${node.name || node.label}`)

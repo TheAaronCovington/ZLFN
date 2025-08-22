@@ -120,6 +120,8 @@ export interface ArgumentTableauProps {
   expression: string
   ast?: any // AST from logic service
   compact?: boolean
+  // Optional: unified shared-data argument to render instead of the demo
+  argument?: ArgumentData
   onArgumentSelect?: (argumentId: string) => void
   onNodeSelect?: (node: ArgumentNode) => void
   onEdgeSelect?: (edge: ArgumentEdge) => void

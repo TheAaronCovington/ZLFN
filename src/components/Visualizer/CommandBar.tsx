@@ -65,6 +65,12 @@ interface CommandBarProps {
   // Status
   isPerformanceVisible: boolean
 
+  // Advanced Features (ZLFN only)
+  showRivers?: boolean
+  onToggleRivers?: () => void
+  bayesianEnabled?: boolean
+  onToggleBayesian?: () => void
+
   // Drawers
   controlsOpen: boolean
   inspectorOpen: boolean
@@ -91,6 +97,10 @@ export const CommandBar: React.FC<CommandBarProps> = ({
   onCenterGraph,
   onSaveLayout,
   onClearLayout,
+  showRivers,
+  onToggleRivers,
+  bayesianEnabled,
+  onToggleBayesian,
   onExport,
   onImport,
   onTogglePerformance,
@@ -245,6 +255,44 @@ export const CommandBar: React.FC<CommandBarProps> = ({
               <ClearIcon />
             </IconButton>
           </Tooltip>
+
+          {/* Advanced Features (ZLFN only) */}
+          {viewMode === 'graph' && (
+            <>
+              <Tooltip title="Toggle Flow Rivers">
+                <IconButton 
+                  size="small" 
+                  onClick={onToggleRivers}
+                  sx={{ 
+                    color: showRivers ? 'var(--ai-pink)' : 'var(--ai-text-secondary)',
+                    backgroundColor: showRivers ? 'rgba(255, 64, 129, 0.1)' : 'transparent',
+                    '&:hover': {
+                      backgroundColor: 'rgba(255, 64, 129, 0.2)',
+                      color: 'var(--ai-pink)'
+                    }
+                  }}
+                >
+                  🌊
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Toggle Bayesian Mode">
+                <IconButton 
+                  size="small" 
+                  onClick={onToggleBayesian}
+                  sx={{ 
+                    color: bayesianEnabled ? 'var(--ai-purple)' : 'var(--ai-text-secondary)',
+                    backgroundColor: bayesianEnabled ? 'rgba(187, 134, 252, 0.1)' : 'transparent',
+                    '&:hover': {
+                      backgroundColor: 'rgba(187, 134, 252, 0.2)',
+                      color: 'var(--ai-purple)'
+                    }
+                  }}
+                >
+                  🧠
+                </IconButton>
+              </Tooltip>
+            </>
+          )}
 
           {/* Unified Argument Selector */}
           {unifiedData.arguments.length > 0 && (

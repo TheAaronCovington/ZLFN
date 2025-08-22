@@ -1,6 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import './Home.css'
+// styles removed for clean slate; will be reintroduced via new spec imports
 import ZlfnGraph from '../Visualizations/ZlfnGraph'
 import type { ZlfnNode, ZlfnEdge } from '../Visualizations/ZlfnGraph'
 import VennDiagram from '../Visualizations/VennDiagram'

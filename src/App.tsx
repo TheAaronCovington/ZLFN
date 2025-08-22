@@ -9,7 +9,7 @@ const VizSymbols = lazy(() => import('./pages/VizSymbols'))
 const LogicVisualizer = lazy(() => import('./pages/LogicVisualizer'))
 const Phase1Verification = lazy(() => import('./test/Phase1Verification'))
 const Phase2Demo = lazy(() => import('./pages/Phase2Demo'))
-import './App.css'
+// styles removed for clean slate; will be reintroduced via new spec imports
 
 function App() {
   return (
