@@ -3,6 +3,7 @@ import type { AstNodeRec } from '../services/logic'
 import { parseExpressionToAst, astToZlfnGraph } from '../services/logic'
 import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph/types'
 import type { ArgumentData } from '../components/Visualizations/ArgumentTableau/types'
+import { extractArgumentsFromMarkdown, updateArgumentFromMarkdown } from '../services/markdownToArgument'
 
 export type NodeIdToActive = Record<string, boolean>
 export type LogicMode = 'classical' | 'epistemic' | 'deontic' | 'temporal' | 'informal' | 'paraconsistent' | 'fuzzy'
@@ -66,6 +67,12 @@ type LogicSharedContextValue = {
 	getAstFor: (argumentId: string | null) => AstNodeRec | null
 	getZlfnGraphFor: (argumentId: string | null) => { nodes: ZlfnNode[]; edges: ZlfnEdge[] } | null
 	getAtnDataFor: (argumentId: string | null) => ArgumentData | null
+	
+	// Markdown document management
+	loadMarkdownDocument: (documentId: string, content: string, title?: string) => void
+	updateMarkdownDocument: (documentId: string, content: string) => void
+	removeDocument: (documentId: string) => void
+	setActiveSource: (source: 'document' | 'expression' | 'imported') => void
 }
 
 const LogicSharedContext = createContext<LogicSharedContextValue | null>(null)
@@ -185,17 +192,90 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		localStorage.setItem('xv_active_source', unifiedData.activeSource)
 	}, [unifiedData.activeSource])
 
+	// Markdown document management methods
+	const loadMarkdownDocument = useCallback((documentId: string, content: string, title?: string) => {
+		const extraction = extractArgumentsFromMarkdown(documentId, content, title)
+		
+		setUnifiedData(prev => {
+			// Remove existing arguments from this document
+			const filteredArguments = prev.arguments.filter(arg => 
+				!arg.markdown.documentId || arg.markdown.documentId !== documentId
+			)
+			
+			// Add new arguments from the document
+			const newArguments = [...filteredArguments, ...extraction.arguments]
+			
+			// Select the first document argument if none selected or if current selection was from this document
+			let newSelectedId = prev.selectedArgumentId
+			if (!newSelectedId || prev.arguments.find(arg => arg.id === newSelectedId)?.markdown.documentId === documentId) {
+				newSelectedId = extraction.arguments.length > 0 ? extraction.arguments[0].id : null
+			}
+			
+			return {
+				...prev,
+				activeSource: 'document',
+				arguments: newArguments,
+				selectedArgumentId: newSelectedId
+			}
+		})
+	}, [])
+
+	const updateMarkdownDocument = useCallback((documentId: string, content: string) => {
+		setUnifiedData(prev => {
+			const updatedArguments = prev.arguments.map(arg => {
+				if (arg.markdown.documentId === documentId) {
+					return updateArgumentFromMarkdown(arg, content)
+				}
+				return arg
+			})
+			
+			return {
+				...prev,
+				arguments: updatedArguments
+			}
+		})
+	}, [])
+
+	const removeDocument = useCallback((documentId: string) => {
+		setUnifiedData(prev => {
+			const filteredArguments = prev.arguments.filter(arg => 
+				!arg.markdown.documentId || arg.markdown.documentId !== documentId
+			)
+			
+			// If selected argument was from removed document, select first remaining
+			let newSelectedId = prev.selectedArgumentId
+			if (prev.selectedArgumentId && !filteredArguments.find(arg => arg.id === prev.selectedArgumentId)) {
+				newSelectedId = filteredArguments.length > 0 ? filteredArguments[0].id : null
+			}
+			
+			return {
+				...prev,
+				arguments: filteredArguments,
+				selectedArgumentId: newSelectedId
+			}
+		})
+	}, [])
+
+	const setActiveSource = useCallback((source: 'document' | 'expression' | 'imported') => {
+		setUnifiedData(prev => ({
+			...prev,
+			activeSource: source
+		}))
+	}, [])
+
 	const value = useMemo<LogicSharedContextValue>(
 		() => ({ 
 			simulationMode, setSimulationMode, nodeIdToActive, setNodeIdToActive, resetStates, 
 			selectedNodeId, setSelectedNodeId, currentExpression, setCurrentExpression, 
 			expressionHighlightNonce, bumpExpressionHighlight, modes, setModes, nodeStates, setNodeStates,
 			unifiedData, setUnifiedData, setSelectedArgumentId,
-			getAstFor, getZlfnGraphFor, getAtnDataFor
+			getAstFor, getZlfnGraphFor, getAtnDataFor,
+			loadMarkdownDocument, updateMarkdownDocument, removeDocument, setActiveSource
 		}),
 		[simulationMode, nodeIdToActive, resetStates, selectedNodeId, currentExpression, 
 		 expressionHighlightNonce, bumpExpressionHighlight, modes, nodeStates, unifiedData,
-		 setSelectedArgumentId, getAstFor, getZlfnGraphFor, getAtnDataFor]
+		 setSelectedArgumentId, getAstFor, getZlfnGraphFor, getAtnDataFor,
+		 loadMarkdownDocument, updateMarkdownDocument, removeDocument, setActiveSource]
 	)
 
 	return <LogicSharedContext.Provider value={value}>{children}</LogicSharedContext.Provider>

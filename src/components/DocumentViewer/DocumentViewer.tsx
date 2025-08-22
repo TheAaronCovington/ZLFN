@@ -10,6 +10,7 @@ import { useLogicShared } from '../../context/LogicSharedContext'
 import { Box, Typography, Chip } from '@mui/material'
 import { NeonAccordion, type NeonAccordionItem } from '../Accordion/NeonAccordion'
 import { parseMarkdownStructure, type MarkdownSection } from '../../services/markdownParser'
+import { ArgumentSelector } from '../Visualizer/ArgumentSelector'
 import ScienceIcon from '@mui/icons-material/Science'
 
 // Enhanced markdown renderer for accordion content
@@ -226,7 +227,15 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>('')
-  const { currentExpression, setCurrentExpression, expressionHighlightNonce } = useLogicShared()
+  const { 
+    currentExpression, 
+    setCurrentExpression, 
+    expressionHighlightNonce,
+    loadMarkdownDocument,
+    unifiedData,
+    setActiveSource,
+    setSelectedArgumentId
+  } = useLogicShared()
   const syncedDocId = React.useRef<string | null>(null)
   const [detectedExpressions, setDetectedExpressions] = useState<string[]>([])
 
@@ -332,6 +341,12 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
         if (txt) {
           setContent(txt)
           setError('')
+          
+          // Load document into shared data model
+          const documentTitle = effective.replace('_', ' ')
+          loadMarkdownDocument(effective, txt, documentTitle)
+          setActiveSource('document')
+          
           // Extract ALL expressions from fenced code blocks ```expr|expression|logic
           const regex = /```\s*(expr|expression|logic)\s+([\s\S]*?)```/gi
           const exprs: string[] = []
@@ -342,6 +357,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
           }
           const unique = Array.from(new Set(exprs))
           setDetectedExpressions(unique)
+          
           // Auto-sync first expression if different
           if (unique.length && unique[0] !== currentExpression && syncedDocId.current !== effective) {
             setCurrentExpression(unique[0])
@@ -359,7 +375,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
       }
     }
     load()
-  }, [filenameOverride, routeParams.filename, setCurrentExpression, currentExpression])
+  }, [filenameOverride, routeParams.filename, setCurrentExpression, currentExpression, loadMarkdownDocument, setActiveSource])
 
   useEffect(() => {
     // auto-scroll to active expression block when content or currentExpression changes or highlight nonce updates
@@ -433,6 +449,20 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
                 color: 'var(--ai-orange)',
                 border: '1px solid rgba(255, 149, 0, 0.3)'
               }}
+            />
+          </Box>
+        )}
+        
+        {/* Argument Selector */}
+        {unifiedData.arguments.length > 1 && (
+          <Box sx={{ mt: 2 }}>
+            <ArgumentSelector
+              arguments={unifiedData.arguments}
+              selectedArgumentId={unifiedData.selectedArgumentId}
+              onArgumentSelect={setSelectedArgumentId}
+              label="View Argument"
+              size="small"
+              minWidth={250}
             />
           </Box>
         )}
