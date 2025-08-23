@@ -6,18 +6,21 @@ import 'highlight.js/styles/atom-one-dark.css'
 import { logicRemarkPlugin } from './logicRemarkPlugin'
 import { getDocumentContent } from '../../services/docs'
 import { useLogicShared } from '../../context/LogicSharedContext'
-import { Box, Typography, Chip } from '@mui/material'
+import { Box, Typography, Chip, IconButton, Tooltip } from '@mui/material'
 import { NeonAccordion, type NeonAccordionItem } from '../Accordion/NeonAccordion'
 import { parseMarkdownStructure, type MarkdownSection } from '../../services/markdownParser'
 import { ArgumentSelector } from '../Visualizer/ArgumentSelector'
 import ScienceIcon from '@mui/icons-material/Science'
+import SettingsIcon from '@mui/icons-material/Settings'
+import SyntaxHighlightingSettings, { type SyntaxHighlightingOptions } from './SyntaxHighlightingSettings'
 
 // Enhanced markdown renderer for accordion content
 const AccordionMarkdownRenderer: React.FC<{ 
   content: string 
   skipHeadings?: boolean
   setCurrentExpression: (expr: string) => void
-}> = ({ content, skipHeadings = true, setCurrentExpression }) => {
+  syntaxOptions?: SyntaxHighlightingOptions
+}> = ({ content, skipHeadings = true, setCurrentExpression, syntaxOptions }) => {
   const [remarkPlugins, setRemarkPlugins] = useState<any[] | null>(null)
   const [rehypePlugins, setRehypePlugins] = useState<any[] | null>(null)
 
@@ -39,7 +42,7 @@ const AccordionMarkdownRenderer: React.FC<{
 
   return (
     <ReactMarkdown
-      remarkPlugins={[...remarkPlugins, logicRemarkPlugin]}
+      remarkPlugins={[...remarkPlugins, logicRemarkPlugin(syntaxOptions)]}
       rehypePlugins={[...rehypePlugins]}
       components={{
         // Skip headings if requested (they're in accordion titles)
@@ -237,6 +240,36 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
   } = useLogicShared()
   const syncedDocId = React.useRef<string | null>(null)
   const [detectedExpressions, setDetectedExpressions] = useState<string[]>([])
+  const [showSyntaxSettings, setShowSyntaxSettings] = useState(false)
+  
+  // Syntax highlighting settings with localStorage persistence
+  const [syntaxOptions, setSyntaxOptions] = useState<SyntaxHighlightingOptions>(() => {
+    try {
+      const saved = localStorage.getItem('xv_syntax_highlighting_options')
+      return saved ? JSON.parse(saved) : {
+        enableTooltips: true,
+        enableVariableMapping: true,
+        enableQuantifierHighlighting: true,
+        enablePredicateHighlighting: true
+      }
+    } catch {
+      return {
+        enableTooltips: true,
+        enableVariableMapping: true,
+        enableQuantifierHighlighting: true,
+        enablePredicateHighlighting: true
+      }
+    }
+  })
+
+  // Persist syntax options to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('xv_syntax_highlighting_options', JSON.stringify(syntaxOptions))
+    } catch (error) {
+      console.warn('Failed to save syntax highlighting options:', error)
+    }
+  }, [syntaxOptions])
 
   // Parse markdown structure for accordion rendering
   const markdownStructure = useMemo(() => {
@@ -304,6 +337,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
               content={section.content}
               skipHeadings={true}
               setCurrentExpression={setCurrentExpression}
+              syntaxOptions={syntaxOptions}
             />
 
             
@@ -407,8 +441,33 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
   return (
     <div className="document-viewer">
       <div className="document-header">
-        <Link to="/" className="back-link">← Back to Home</Link>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Link to="/" className="back-link">← Back to Home</Link>
+          <Tooltip title="Syntax Highlighting Settings">
+            <IconButton 
+              onClick={() => setShowSyntaxSettings(!showSyntaxSettings)}
+              sx={{ 
+                color: showSyntaxSettings ? 'var(--ai-cyan)' : 'var(--ai-text-secondary)',
+                '&:hover': { color: 'var(--ai-cyan)' }
+              }}
+            >
+              <SettingsIcon />
+            </IconButton>
+          </Tooltip>
+        </Box>
+        
         <h1 className="document-title">{effectiveTitle}</h1>
+        
+        {/* Syntax Highlighting Settings */}
+        {showSyntaxSettings && (
+          <Box sx={{ mb: 3 }}>
+            <SyntaxHighlightingSettings
+              options={syntaxOptions}
+              onChange={setSyntaxOptions}
+              compact={true}
+            />
+          </Box>
+        )}
         
         {/* Document Stats */}
         {markdownStructure && (
@@ -490,7 +549,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
         ) : (
           <div className="markdown-content">
             <React.Suspense fallback={<div>Loading renderer…</div>}>
-              <PluginsRenderer content={content} activeExpression={currentExpression} />
+              <PluginsRenderer content={content} activeExpression={currentExpression} syntaxOptions={syntaxOptions} />
             </React.Suspense>
           </div>
         )}
@@ -499,7 +558,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
   )
 }
 
-const PluginsRenderer: React.FC<{ content: string, activeExpression: string }> = ({ content, activeExpression }) => {
+const PluginsRenderer: React.FC<{ content: string, activeExpression: string, syntaxOptions: SyntaxHighlightingOptions }> = ({ content, activeExpression, syntaxOptions }) => {
   const [remarkPlugins, setRemarkPlugins] = useState<any[] | null>(null)
   const [rehypePlugins, setRehypePlugins] = useState<any[] | null>(null)
   const { setCurrentExpression } = useLogicShared()
@@ -520,7 +579,7 @@ const PluginsRenderer: React.FC<{ content: string, activeExpression: string }> =
 
   return (
     <ReactMarkdown 
-      remarkPlugins={[...remarkPlugins, logicRemarkPlugin]}
+      remarkPlugins={[...remarkPlugins, logicRemarkPlugin(syntaxOptions)]}
       rehypePlugins={[...rehypePlugins]}
       components={{
         h1: ({ children }) => {

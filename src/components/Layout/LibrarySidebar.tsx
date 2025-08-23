@@ -212,7 +212,7 @@ export const LibrarySidebar: React.FC = () => {
 		const argumentItems = unifiedData.arguments.map(arg => ({
 			id: arg.id,
 			label: arg.title,
-			tags: arg.markdown?.tags || [],
+			tags: [], // Tags not currently supported in unified data
 			type: 'argument' as const,
 			hasGraph: !!arg.zlfnGraph
 		}))
@@ -372,7 +372,7 @@ export const LibrarySidebar: React.FC = () => {
 									const q = query.trim().toLowerCase()
 									const hasTagFilter = selectedTags.size > 0
 									const matchesQuery = !q || arg.title.toLowerCase().includes(q) || arg.id.toLowerCase().includes(q)
-									const matchesTags = !hasTagFilter || (arg.markdown?.tags || []).some(t => selectedTags.has(t))
+									const matchesTags = !hasTagFilter // No tag filtering for arguments currently
 									const matchesPins = !onlyPins || pins.has(arg.id)
 									return matchesQuery && matchesTags && matchesPins
 								})
@@ -392,41 +392,21 @@ export const LibrarySidebar: React.FC = () => {
 												{pins.has(arg.id) && <Chip size="small" label="Pinned" />}
 											</Box>
 										} 
-										secondary={
-											<>
-												{arg.id}
-												{(arg.markdown?.tags && arg.markdown.tags.length) ? <> • {arg.markdown.tags.join(', ')}</> : null}
-											</>
-										} 
+										secondary={arg.id} 
 									/>
-									<Stack direction="row" spacing={0.5}>
-										<Tooltip title="Edit Tags">
-											<IconButton 
-												edge="end" 
-												size="small" 
-												onClick={(e) => { 
-													e.preventDefault(); 
-													e.stopPropagation(); 
-													handleEditTags(arg.id, arg.markdown?.tags || []) 
-												}}
-											>
-												<EditIcon fontSize="small" />
-											</IconButton>
-										</Tooltip>
-										<Tooltip title={pins.has(arg.id) ? "Unpin" : "Pin"}>
-											<IconButton 
-												edge="end" 
-												size="small" 
-												onClick={(e) => { 
-													e.preventDefault(); 
-													e.stopPropagation(); 
-													togglePin(arg.id) 
-												}}
-											>
-												<PushPinIcon fontSize="small" color={pins.has(arg.id) ? "primary" : "inherit"} />
-											</IconButton>
-										</Tooltip>
-									</Stack>
+									<Tooltip title={pins.has(arg.id) ? "Unpin" : "Pin"}>
+										<IconButton 
+											edge="end" 
+											size="small" 
+											onClick={(e) => { 
+												e.preventDefault(); 
+												e.stopPropagation(); 
+												togglePin(arg.id) 
+											}}
+										>
+											<PushPinIcon fontSize="small" color={pins.has(arg.id) ? "primary" : "inherit"} />
+										</IconButton>
+									</Tooltip>
 								</ListItemButton>
 							))}
 						</List>

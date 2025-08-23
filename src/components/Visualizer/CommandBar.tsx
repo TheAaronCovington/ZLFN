@@ -116,8 +116,10 @@ export const CommandBar: React.FC<CommandBarProps> = ({
   isPerformanceVisible,
   controlsOpen,
   inspectorOpen,
+  documentPanelOpen,
   onToggleControls,
   onToggleInspector,
+  onToggleDocumentPanel,
   viewMode = 'graph', 
   onChangeViewMode,
   onCreateArgument

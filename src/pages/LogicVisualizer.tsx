@@ -1,5 +1,5 @@
 import React from 'react'
-import { Box, Snackbar, Alert, Dialog, DialogTitle, DialogContent, CircularProgress, IconButton, Tooltip, Divider } from '@mui/material'
+import { Box, Snackbar, Alert, Dialog, DialogTitle, DialogContent, CircularProgress, IconButton, Tooltip } from '@mui/material'
 import ArticleIcon from '@mui/icons-material/Article'
 import CloseIcon from '@mui/icons-material/Close'
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
@@ -805,8 +805,7 @@ const LogicVisualizer: React.FC = () => {
 							}>
 								{unifiedData.selectedArgumentId && unifiedData.selectedArgumentId !== 'default-expression' ? (
 									<DocumentViewer 
-										documentId={unifiedData.selectedArgumentId}
-										onDocumentLoad={() => {}}
+										filenameOverride={unifiedData.selectedArgumentId}
 									/>
 								) : (
 									<Box sx={{ 
