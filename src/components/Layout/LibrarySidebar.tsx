@@ -211,7 +211,7 @@ export const LibrarySidebar: React.FC = () => {
 		
 		const argumentItems = unifiedData.arguments.map(arg => ({
 			id: arg.id,
-			label: arg.title,
+			label: arg.title || arg.id || 'Untitled Argument',
 			tags: [], // Tags not currently supported in unified data
 			type: 'argument' as const,
 			hasGraph: !!arg.zlfnGraph
@@ -224,16 +224,17 @@ export const LibrarySidebar: React.FC = () => {
 		const q = query.trim().toLowerCase()
 		const hasTagFilter = selectedTags.size > 0
 		return combinedData.filter(d => {
-			const matchesQuery = !q || d.label.toLowerCase().includes(q) || d.id.toLowerCase().includes(q)
+			const label = d.label || d.id || ''
+			const matchesQuery = !q || label.toLowerCase().includes(q) || (d.id || '').toLowerCase().includes(q)
 			const matchesTags = !hasTagFilter || (d.tags || []).some(t => selectedTags.has(t))
 			const matchesPins = !onlyPins || pins.has(d.id)
 			return matchesQuery && matchesTags && matchesPins
 		})
 	}, [combinedData, query, selectedTags, onlyPins, pins])
 
-	const pinnedDocs = filtered.filter(d => pins.has(d.id)).sort((a,b)=>a.label.localeCompare(b.label))
-	const recentDocs = filtered.filter(d => recents.has(d.id) && !pins.has(d.id)).sort((a,b)=>a.label.localeCompare(b.label))
-	const otherDocs = filtered.filter(d => !pins.has(d.id) && !recents.has(d.id)).sort((a,b)=>a.label.localeCompare(b.label))
+	const pinnedDocs = filtered.filter(d => pins.has(d.id)).sort((a,b)=>(a.label || '').localeCompare(b.label || ''))
+	const recentDocs = filtered.filter(d => recents.has(d.id) && !pins.has(d.id)).sort((a,b)=>(a.label || '').localeCompare(b.label || ''))
+	const otherDocs = filtered.filter(d => !pins.has(d.id) && !recents.has(d.id)).sort((a,b)=>(a.label || '').localeCompare(b.label || ''))
 
 	const onOpenDoc = (id: string) => {
 		const next = new Set<string>(recents)
@@ -371,7 +372,8 @@ export const LibrarySidebar: React.FC = () => {
 								.filter(arg => {
 									const q = query.trim().toLowerCase()
 									const hasTagFilter = selectedTags.size > 0
-									const matchesQuery = !q || arg.title.toLowerCase().includes(q) || arg.id.toLowerCase().includes(q)
+									const title = arg.title || arg.id || ''
+									const matchesQuery = !q || title.toLowerCase().includes(q) || (arg.id || '').toLowerCase().includes(q)
 									const matchesTags = !hasTagFilter // No tag filtering for arguments currently
 									const matchesPins = !onlyPins || pins.has(arg.id)
 									return matchesQuery && matchesTags && matchesPins
