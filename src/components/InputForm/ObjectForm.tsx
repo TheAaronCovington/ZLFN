@@ -1,10 +1,12 @@
 import React from 'react'
-import { Box, Tabs, Tab, TextField, Button, Accordion, AccordionSummary, AccordionDetails, Typography, Select, MenuItem, Snackbar, Slider, Checkbox } from '@mui/material'
+import { Box, Tabs, Tab, TextField, Button, Accordion, AccordionSummary, AccordionDetails, Typography, Select, MenuItem, Snackbar, Slider, Checkbox, Alert, LinearProgress } from '@mui/material'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import { debounce } from 'lodash'
 import type { ZLFNArgument, ZLFNObject } from '../../types/zlfn'
 import { createEmptyZLFNObject } from '../../types/zlfn'
 import { getCurrentAPI, apiConfig } from '../../services/apiConfig'
 import realAPI from '../../services/realAPI'
+import { zlfnObjectManager } from '../../services/zlfnObjectManager'
 
 interface ObjectFormProps {
   objectId?: string
@@ -16,6 +18,9 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
   const [activeTab, setActiveTab] = React.useState(0)
   const [error, setError] = React.useState('')
   const [formData, setFormData] = React.useState<ZLFNObject>(() => createEmptyZLFNObject(objectId || `zlfn_${Date.now()}`))
+  const [errors, setErrors] = React.useState<{ [key: string]: string }>({})
+  const [isValidating, setIsValidating] = React.useState(false)
+  const [isSubmitting, setIsSubmitting] = React.useState(false)
 
   React.useEffect(() => {
     let cancelled = false
@@ -48,9 +53,105 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
     }
   }, [initialData, objectId])
 
+  // Comprehensive validation function
+  const validateForm = React.useCallback(async (): Promise<boolean> => {
+    const newErrors: { [key: string]: string } = {}
+    
+    // Title validation
+    if (!formData.metadata?.title || formData.metadata.title.length < 1 || formData.metadata.title.length > 200) {
+      newErrors.title = 'Title must be 1-200 characters'
+    }
+    
+    // Arguments validation
+    if (!formData.zflnJson?.arguments || formData.zflnJson.arguments.length === 0) {
+      newErrors.arguments = 'At least one argument is required'
+    }
+    
+    // Validate each argument
+    formData.zflnJson?.arguments.forEach((arg, i) => {
+      if (!arg.core?.name || arg.core.name.length < 1 || arg.core.name.length > 100) {
+        newErrors[`arg${i}.core.name`] = `Argument ${i + 1} name must be 1-100 characters`
+      }
+      
+      if (!arg.zones || arg.zones.length === 0) {
+        newErrors[`arg${i}.zones`] = `Argument ${i + 1} requires at least one zone`
+      }
+      
+      // Validate nodes within zones
+      arg.zones?.forEach((zone, j) => {
+        zone.nodes?.forEach((node, k) => {
+          if (node.state && !['T', 'F', 'B'].includes(node.state)) {
+            newErrors[`arg${i}.zone${j}.node${k}.state`] = 'State must be T, F, or B'
+          }
+          
+          if (node.weight !== undefined && (node.weight < 0 || node.weight > 100)) {
+            newErrors[`arg${i}.zone${j}.node${k}.weight`] = 'Weight must be 0-100'
+          }
+        })
+      })
+      
+      // Validate argument-level dependencies
+      if (arg.dependencies && arg.dependencies.some((dep: any) => 
+        !formData.zflnJson!.arguments.some(a => 
+          a.zones.some(z => 
+            z.nodes.some(n => n.id === dep.source || n.id === dep.target)
+          )
+        )
+      )) {
+        newErrors[`arg${i}.dependencies`] = 'Invalid dependency node references'
+      }
+    })
+    
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }, [formData])
+
+  // Debounced validation for real-time feedback
+  const debouncedValidate = React.useMemo(
+    () => debounce(async () => {
+      setIsValidating(true)
+      await validateForm()
+      setIsValidating(false)
+    }, 500),
+    [validateForm]
+  )
+
+  // Trigger validation on form data changes
+  React.useEffect(() => {
+    debouncedValidate()
+    return () => {
+      debouncedValidate.cancel()
+    }
+  }, [formData, debouncedValidate])
+
   const handleSubmit = async () => {
-    const api = getCurrentAPI()
+    if (isSubmitting) return
+    
+    setIsSubmitting(true)
+    setError('')
+    
+    // Validate form before submission
+    if (!await validateForm()) {
+      setIsSubmitting(false)
+      setError('Please fix validation errors before submitting')
+      return
+    }
+    
+    let lock: { userId: string; expires: number } | null = null
+    
     try {
+      // Acquire lock for editing existing objects
+      if (objectId) {
+        const userId = `user_${Date.now()}` // In production, use actual user ID
+        const lockAcquired = zlfnObjectManager.acquireLock(objectId, userId, 30000)
+        if (!lockAcquired) {
+          throw new Error('Object is currently locked by another user')
+        }
+        lock = { userId, expires: Date.now() + 30000 }
+      }
+      
+      const api = getCurrentAPI()
+      
       if (objectId) {
         const res = await api.updateObject(objectId, formData)
         if (!res.success) throw new Error(res.error || 'Update failed')
@@ -61,9 +162,38 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
           : await api.createObject(formData.markdown, formData.zflnJson)
         if (!res.success) throw new Error(res.error || 'Create failed')
       }
+      
       onClose()
     } catch (e: any) {
       setError(e.message || 'Submission failed')
+    } finally {
+      // Release lock
+      if (lock && objectId) {
+        zlfnObjectManager.releaseLock(objectId, lock.userId)
+      }
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!objectId) return
+    
+    const confirmed = window.confirm(
+      'Are you sure you want to delete this object? This action cannot be undone.'
+    )
+    
+    if (!confirmed) return
+    
+    try {
+      setIsSubmitting(true)
+      const api = getCurrentAPI()
+      const res = await api.deleteObject(objectId)
+      if (!res.success) throw new Error(res.error || 'Delete failed')
+      onClose()
+    } catch (e: any) {
+      setError(e.message || 'Delete failed')
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -79,6 +209,34 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
 
   return (
     <Box p={2} display="flex" flexDirection="column" gap={2}>
+      {/* Mode Indicator */}
+      <Typography variant="h6" sx={{ color: 'var(--ai-text-primary)' }}>
+        {objectId ? 'Edit Object' : 'Create Object'}
+      </Typography>
+      
+      {/* Validation Progress */}
+      {isValidating && (
+        <Box>
+          <Typography variant="caption" color="textSecondary">Validating...</Typography>
+          <LinearProgress sx={{ mt: 0.5 }} />
+        </Box>
+      )}
+      
+      {/* Validation Errors Summary */}
+      {Object.keys(errors).length > 0 && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          <Typography variant="subtitle2">Please fix the following errors:</Typography>
+          <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
+            {Object.entries(errors).slice(0, 5).map(([key, message]) => (
+              <li key={key}>{message}</li>
+            ))}
+            {Object.keys(errors).length > 5 && (
+              <li>... and {Object.keys(errors).length - 5} more errors</li>
+            )}
+          </ul>
+        </Alert>
+      )}
+
       <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)}>
         <Tab label="General" />
         <Tab label="Markdown" />
@@ -88,7 +246,14 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
       {activeTab === 0 && (
         <Box display="grid" gap={2}>
           <TextField label="ID" value={formData.id} disabled fullWidth />
-          <TextField label="Title" value={formData.metadata.title || ''} onChange={(e)=>setFormData(p=>({...p, metadata:{...p.metadata, title: e.target.value}}))} fullWidth />
+          <TextField 
+            label="Title" 
+            value={formData.metadata.title || ''} 
+            onChange={(e)=>setFormData(p=>({...p, metadata:{...p.metadata, title: e.target.value}}))} 
+            fullWidth 
+            error={!!errors.title}
+            helperText={errors.title}
+          />
         </Box>
       )}
 
@@ -167,9 +332,30 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
         </Box>
       )}
 
-      <Box display="flex" gap={1}>
-        <Button variant="outlined" onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={handleSubmit}>Submit</Button>
+      <Box display="flex" gap={1} justifyContent="space-between">
+        <Box display="flex" gap={1}>
+          <Button variant="outlined" onClick={onClose} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button 
+            variant="contained" 
+            onClick={handleSubmit} 
+            disabled={isSubmitting || Object.keys(errors).length > 0}
+          >
+            {isSubmitting ? 'Submitting...' : 'Submit'}
+          </Button>
+        </Box>
+        
+        {objectId && (
+          <Button 
+            variant="outlined" 
+            color="error" 
+            onClick={handleDelete}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Deleting...' : 'Delete'}
+          </Button>
+        )}
       </Box>
 
       <Snackbar open={!!error} message={error} onClose={()=>setError('')} autoHideDuration={6000} />
