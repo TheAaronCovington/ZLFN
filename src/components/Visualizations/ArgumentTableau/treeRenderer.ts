@@ -49,6 +49,22 @@ export function initializeTreeSVG(
 
   const g = svg.append('g')
 
+  // Safe tooltip: simple HTML tooltip div managed by D3
+  try {
+    d3.select(container)
+      .append('div')
+      .attr('class', 'atn-tooltip')
+      .style('position', 'absolute')
+      .style('pointer-events', 'none')
+      .style('background', 'rgba(20,20,28,0.95)')
+      .style('border', '1px solid rgba(64,196,255,0.4)')
+      .style('border-radius', '8px')
+      .style('padding', '6px 8px')
+      .style('color', 'var(--ai-text-primary)')
+      .style('font-size', '12px')
+      .style('display', 'none')
+  } catch {}
+
   // Initialize zoom behavior with strength/conflict overlay updates
   const zoom = d3.zoom<SVGSVGElement, unknown>()
     .scaleExtent([0.1, 4])
@@ -245,8 +261,27 @@ function renderTreeLinks(
       event.stopPropagation()
       onEdgeClick?.(d.edge)
     })
-    .append('title')
-    .text(d => `${d.edge.scheme} (${d.edge.confidence}% confidence)`)
+
+  // Simple HTML tooltip handlers
+  const container = (g.node() as SVGGElement).ownerSVGElement?.parentElement as HTMLElement | undefined
+  const tip = container ? d3.select(container).select<HTMLDivElement>('.atn-tooltip') : null
+  if (tip) {
+    linkMerge
+      .on('mousemove', (event, d) => {
+        const { pageX, pageY } = event as MouseEvent
+        tip
+          .style('left', `${pageX + 12}px`)
+          .style('top', `${pageY + 12}px`)
+          .style('display', 'block')
+          .html(`${d.edge.scheme || 'Support'}<br/>Confidence: ${d.edge.confidence ?? 0}%`)
+      })
+      .on('mouseleave', () => {
+        tip.style('display', 'none')
+      })
+  } else {
+    // Fallback native title
+    linkMerge.append('title').text(d => `${d.edge.scheme} (${d.edge.confidence}% confidence)`)
+  }
 }
 
 /**

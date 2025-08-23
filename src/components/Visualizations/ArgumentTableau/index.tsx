@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react'
+import * as d3 from 'd3'
 import { 
   Box, 
   Typography, 
@@ -64,7 +65,10 @@ import {
 } from '../../Enhanced'
 import { 
   groupEdgesByScheme, 
-  applySchemeClustering
+  applySchemeClustering,
+  calculateClusterLayout,
+  renderSchemeClusterBackgrounds,
+  renderSchemeClusterLegend
 } from './schemeCluster'
 import { 
   calculateArgumentStrengths
@@ -260,6 +264,7 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
   // Refs for rendering containers
   const containerRef = useRef<HTMLDivElement>(null)
   const renderStateRef = useRef<TreeRenderState | TableRenderState | null>(null)
+  const legendRef = useRef<HTMLDivElement>(null)
 
   // Facet dialog states
   const [facetDialogs, setFacetDialogs] = useState({
@@ -273,6 +278,7 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
   // Advanced features state
   const [showSchemeClustering, setShowSchemeClustering] = useState(true)
   const [showStrengthAnalysis, setShowStrengthAnalysis] = useState(true)
+  const [highlightedScheme, setHighlightedScheme] = useState<string | null>(null)
   const [exportMenuAnchor, setExportMenuAnchor] = useState<null | HTMLElement>(null)
   const [settingsMenuAnchor, setSettingsMenuAnchor] = useState<null | HTMLElement>(null)
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
@@ -609,12 +615,63 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
           renderHierarchicalLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect, handleFacetClick)
         }
         
+        // Scheme clustering backgrounds (optional)
+        if (showSchemeClustering) {
+          const clusters = schemeClusters
+          const nodePositions = new Map<string, { x: number; y: number }>()
+          // Estimate positions by reading rendered nodes if available
+          try {
+            const nodesSel = (state.g as any).selectAll('.tree-node').data() as any[]
+            nodesSel.forEach((d: any) => {
+              const id = d?.data?.id || d?.id
+              const x = d?.x || d?.data?.x || 0
+              const y = d?.y || d?.data?.y || 0
+              if (id) nodePositions.set(id, { x, y })
+            })
+          } catch {}
+          const clusterPositions = calculateClusterLayout(clusters, (state.g as any).selectAll('.tree-node').data() as any[], config.width, config.height)
+          renderSchemeClusterBackgrounds(state.svg, clusters, clusterPositions, true)
+        }
+        
         renderStateRef.current = state
       }
     } catch (error) {
       console.error('ATN rendering error:', error)
     }
-  }, [layoutMode, currentArgument, handleNodeSelect, handleEdgeSelect])
+  }, [layoutMode, currentArgument, handleNodeSelect, handleEdgeSelect, showSchemeClustering, schemeClusters])
+
+  // Render legend and wire click-to-highlight
+  useEffect(() => {
+    if (!legendRef.current) return
+    const container = d3.select(legendRef.current)
+    if (showSchemeClustering) {
+      const onClusterClick = (cluster: any) => {
+        setHighlightedScheme(prev => (prev === cluster.scheme ? null : cluster.scheme))
+      }
+      try {
+        // @ts-ignore passing d3 selection to helper
+        renderSchemeClusterLegend(container as any, schemeClusters, onClusterClick)
+      } catch {
+        container.selectAll('*').remove()
+      }
+    } else {
+      container.selectAll('*').remove()
+    }
+  }, [schemeClusters, showSchemeClustering])
+
+  // Apply edge highlight based on selected scheme
+  useEffect(() => {
+    const state: any = renderStateRef.current
+    if (!state || !state.g) return
+    try {
+      const sel = state.g.selectAll('.tree-link')
+      if (highlightedScheme) {
+        sel.style('opacity', (d: any) => (d?.edge?.scheme === highlightedScheme ? 1 : 0.15))
+      } else {
+        sel.style('opacity', 1)
+      }
+    } catch {}
+  }, [highlightedScheme])
 
   // Handle window resize
   useEffect(() => {
@@ -783,6 +840,13 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
               />
             )}
           </Stack>
+        </Box>
+      )}
+
+      {/* Scheme Legend */}
+      {!compact && showSchemeClustering && (
+        <Box sx={{ p: 1, backgroundColor: 'var(--ai-bg-secondary)', borderBottom: '1px solid rgba(64,196,255,0.2)' }}>
+          <div ref={legendRef} />
         </Box>
       )}
 

@@ -183,6 +183,14 @@ export function normalizeImportedJSON(json: ImportedJSON, documentContent?: stri
         // Note: ATN-specific fields like relationshipType will be added during ATN conversion
       }
       
+      // Basic scheme validation (confidence >= 70 for support/attack/undercut if present)
+      const isDebatable = dep.type === 'attack' || dep.type === 'undercut'
+      const minConfidence = isDebatable ? 60 : 50
+      const conf = (dep as any).confidence as number | undefined
+      if (typeof conf === 'number' && conf < minConfidence) {
+        // Flag weak edges by style
+        normalizedEdge.style = 'dotted'
+      }
       return normalizedEdge
     })
 
