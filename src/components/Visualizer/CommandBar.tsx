@@ -33,7 +33,8 @@ import {
   Speed as SpeedIcon,
   Help as HelpIcon,
   Keyboard as KeyboardIcon,
-  Add as AddIcon
+  Add as AddIcon,
+  Article as ArticleIcon
 } from '@mui/icons-material'
 import { Tune as ControlsIcon, Visibility as InspectorIcon } from '@mui/icons-material'
 
@@ -75,8 +76,10 @@ interface CommandBarProps {
   // Drawers
   controlsOpen: boolean
   inspectorOpen: boolean
+  documentPanelOpen?: boolean
   onToggleControls: () => void
   onToggleInspector: () => void
+  onToggleDocumentPanel?: () => void
 
   // Unified argument selector (now handled internally via context)
 
@@ -462,6 +465,20 @@ export const CommandBar: React.FC<CommandBarProps> = ({
               <InspectorIcon />
             </IconButton>
           </Tooltip>
+          {onToggleDocumentPanel && (
+            <Tooltip title={documentPanelOpen ? 'Close Document Panel' : 'Open Document Panel'}>
+              <IconButton 
+                size="small" 
+                onClick={onToggleDocumentPanel} 
+                sx={{ 
+                  color: documentPanelOpen ? 'var(--ai-gold)' : 'var(--ai-cyan)',
+                  '&:hover': { backgroundColor: 'rgba(0, 229, 255, 0.1)' }
+                }}
+              >
+                <ArticleIcon />
+              </IconButton>
+            </Tooltip>
+          )}
         </Stack>
       </Toolbar>
     </AppBar>

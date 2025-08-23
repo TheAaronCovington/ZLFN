@@ -1,9 +1,13 @@
 import React from 'react'
-import { Box, Snackbar, Alert, Dialog, DialogTitle, DialogContent, CircularProgress } from '@mui/material'
+import { Box, Snackbar, Alert, Dialog, DialogTitle, DialogContent, CircularProgress, IconButton, Tooltip, Divider } from '@mui/material'
+import ArticleIcon from '@mui/icons-material/Article'
+import CloseIcon from '@mui/icons-material/Close'
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
 
 // Lazy load heavy visualization components
 const ZlfnGraphWithNotes = React.lazy(() => import('../components/Visualizations/ZlfnGraphWithNotes').then(module => ({ default: module.ZlfnGraphWithNotes })))
 const ArgumentTableau = React.lazy(() => import('../components/Visualizations/ArgumentTableau'))
+const DocumentViewer = React.lazy(() => import('../components/DocumentViewer/DocumentViewer'))
 import ObjectFormModal from '../components/InputForm/ObjectFormModal'
 import type { ZlfnNode } from '../components/Visualizations/ZlfnGraph/types'
 import type { VennDiagramData, NecessarySufficientExample } from '../components/Visualizations/VennDiagram'
@@ -47,6 +51,16 @@ const LogicVisualizer: React.FC = () => {
 	const [shortcutsOpen, setShortcutsOpen] = React.useState(false)
 	const [advancedSearchOpen, setAdvancedSearchOpen] = React.useState(false)
 	
+	// Document panel state
+	const [documentPanelOpen, setDocumentPanelOpen] = React.useState(() => 
+		localStorage.getItem('xv_document_panel') === 'true'
+	)
+	const [documentPanelWidth, setDocumentPanelWidth] = React.useState(() => {
+		const saved = localStorage.getItem('xv_document_panel_width')
+		return saved ? parseInt(saved, 10) : 33 // Default 33% width
+	})
+	const [isResizing, setIsResizing] = React.useState(false)
+	
 	// ObjectForm modal state
 	const [objectFormOpen, setObjectFormOpen] = React.useState(false)
 	const [objectFormMode, setObjectFormMode] = React.useState<'create' | 'edit'>('create')
@@ -89,10 +103,53 @@ const LogicVisualizer: React.FC = () => {
 		localStorage.setItem('xv_performance_overlay', String(showPerformanceOverlay))
 	}, [showPerformanceOverlay])
 
+	// Persist document panel state
+	React.useEffect(() => {
+		localStorage.setItem('xv_document_panel', String(documentPanelOpen))
+	}, [documentPanelOpen])
+
+	React.useEffect(() => {
+		localStorage.setItem('xv_document_panel_width', String(documentPanelWidth))
+	}, [documentPanelWidth])
+
 	// Persist advanced features state
 	React.useEffect(() => {
 		try { localStorage.setItem('xv_rivers', showRivers ? '1' : '0') } catch {}
 	}, [showRivers])
+
+	// Resize handlers for document panel
+	const handleMouseDown = React.useCallback((e: React.MouseEvent) => {
+		e.preventDefault()
+		setIsResizing(true)
+	}, [])
+
+	const handleMouseMove = React.useCallback((e: MouseEvent) => {
+		if (!isResizing) return
+		
+		const containerWidth = window.innerWidth
+		const newWidth = Math.max(20, Math.min(60, ((containerWidth - e.clientX) / containerWidth) * 100))
+		setDocumentPanelWidth(newWidth)
+	}, [isResizing])
+
+	const handleMouseUp = React.useCallback(() => {
+		setIsResizing(false)
+	}, [])
+
+	React.useEffect(() => {
+		if (isResizing) {
+			document.addEventListener('mousemove', handleMouseMove)
+			document.addEventListener('mouseup', handleMouseUp)
+			document.body.style.cursor = 'col-resize'
+			document.body.style.userSelect = 'none'
+			
+			return () => {
+				document.removeEventListener('mousemove', handleMouseMove)
+				document.removeEventListener('mouseup', handleMouseUp)
+				document.body.style.cursor = ''
+				document.body.style.userSelect = ''
+			}
+		}
+	}, [isResizing, handleMouseMove, handleMouseUp])
 
 	// Get data from shared context based on selected argument (async to keep UI responsive)
 	const selectedArgumentId = unifiedData.selectedArgumentId
@@ -364,6 +421,7 @@ const LogicVisualizer: React.FC = () => {
 	const shortcuts = React.useMemo(() => [
 		createShortcut('k', () => setAdvancedSearchOpen(true), 'Open Advanced Search', { ctrl: true }),
 		createShortcut('n', () => handleCreateArgument(), 'Create New Argument', { ctrl: true }),
+		createShortcut('d', () => setDocumentPanelOpen(v => !v), 'Toggle Document Panel'),
 		createShortcut('g', () => showInfo('View: Graph', 'info'), 'Graph View'),
 		createShortcut('f', () => showInfo('Fit Graph', 'info'), 'Fit Graph'),
 		createShortcut('c', () => showInfo('Center Graph', 'info'), 'Center Graph'),
@@ -401,6 +459,7 @@ const LogicVisualizer: React.FC = () => {
 	
 	const leftMargin = controlsDrawerOpen ? getDrawerWidth('controls') : 0
 	const rightMargin = inspectorDrawerOpen ? getDrawerWidth('inspector') : 0
+	const documentPanelWidthPx = documentPanelOpen ? (windowWidth * documentPanelWidth / 100) : 0
 	// Main toolbar (48px) + Second toolbar (36px) + border
 	const topOffset = 48 + 36 + 2
 
@@ -481,6 +540,8 @@ const LogicVisualizer: React.FC = () => {
 				onToggleRivers={() => setShowRivers(v => !v)}
 				bayesianEnabled={bayesianEnabled}
 				onToggleBayesian={() => setBayesianEnabled(v => !v)}
+				documentPanelOpen={documentPanelOpen}
+				onToggleDocumentPanel={() => setDocumentPanelOpen(v => !v)}
 				onCreateArgument={handleCreateArgument}
 			/>
 
@@ -517,13 +578,13 @@ const LogicVisualizer: React.FC = () => {
 				<Box sx={{ 
 					flexGrow: 1,
 					marginLeft: leftMargin,
-					marginRight: rightMargin,
+					marginRight: rightMargin + documentPanelWidthPx,
 					transition: 'margin 0.3s ease',
 					position: 'relative',
 					height: `calc(100vh - ${topOffset}px - 60px)`, // Account for bottom navigation
 					minWidth: 0,
 					overflow: 'auto',
-					width: `calc(100vw - ${leftMargin}px - ${rightMargin}px)`
+					width: `calc(100vw - ${leftMargin}px - ${rightMargin}px - ${documentPanelWidthPx}px)`
 				}}>
 					{/* Drawer Toggle Buttons */}
 					{!controlsDrawerOpen && (
@@ -655,6 +716,115 @@ const LogicVisualizer: React.FC = () => {
 					}}
 					onCenterOnEdge={() => showInfo('Center on edge coming soon', 'info')}
 				/>
+
+				{/* Document Panel */}
+				{documentPanelOpen && (
+					<Box sx={{
+						position: 'fixed',
+						top: topOffset,
+						right: 0,
+						width: `${documentPanelWidth}%`,
+						height: `calc(100vh - ${topOffset}px - 60px)`,
+						backgroundColor: 'var(--ai-bg-secondary)',
+						borderLeft: '1px solid var(--ai-border-primary)',
+						zIndex: 1200,
+						display: 'flex',
+						flexDirection: 'column',
+						transition: 'width 0.3s ease'
+					}}>
+						{/* Document Panel Header */}
+						<Box sx={{
+							display: 'flex',
+							alignItems: 'center',
+							justifyContent: 'space-between',
+							p: 1,
+							borderBottom: '1px solid var(--ai-border-subtle)',
+							backgroundColor: 'var(--ai-bg-elevated)'
+						}}>
+							<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+								<ArticleIcon sx={{ color: 'var(--ai-accent-primary)' }} />
+								<Box>
+									<Box sx={{ fontWeight: 600, fontSize: '14px', color: 'var(--ai-text-primary)' }}>
+										Document Viewer
+									</Box>
+									<Box sx={{ fontSize: '12px', color: 'var(--ai-text-secondary)' }}>
+										{unifiedData.selectedArgumentId || 'No document selected'}
+									</Box>
+								</Box>
+							</Box>
+							<Tooltip title="Close Document Panel">
+								<IconButton 
+									size="small" 
+									onClick={() => setDocumentPanelOpen(false)}
+									sx={{ color: 'var(--ai-text-secondary)' }}
+								>
+									<CloseIcon />
+								</IconButton>
+							</Tooltip>
+						</Box>
+
+						{/* Resize Handle */}
+						<Box
+							onMouseDown={handleMouseDown}
+							sx={{
+								position: 'absolute',
+								left: 0,
+								top: 0,
+								bottom: 0,
+								width: '4px',
+								cursor: 'col-resize',
+								backgroundColor: 'transparent',
+								'&:hover': {
+									backgroundColor: 'var(--ai-accent-primary)',
+									opacity: 0.5
+								},
+								display: 'flex',
+								alignItems: 'center',
+								justifyContent: 'center'
+							}}
+						>
+							<DragIndicatorIcon 
+								sx={{ 
+									fontSize: 16, 
+									color: 'var(--ai-text-secondary)',
+									transform: 'rotate(90deg)'
+								}} 
+							/>
+						</Box>
+
+						{/* Document Content */}
+						<Box sx={{ 
+							flexGrow: 1, 
+							overflow: 'auto',
+							p: 2
+						}}>
+							<React.Suspense fallback={
+								<Box display="flex" justifyContent="center" alignItems="center" height="200px">
+									<CircularProgress size={40} />
+								</Box>
+							}>
+								{unifiedData.selectedArgumentId && unifiedData.selectedArgumentId !== 'default-expression' ? (
+									<DocumentViewer 
+										documentId={unifiedData.selectedArgumentId}
+										onDocumentLoad={() => {}}
+									/>
+								) : (
+									<Box sx={{ 
+										textAlign: 'center', 
+										color: 'var(--ai-text-secondary)',
+										mt: 4
+									}}>
+										<ArticleIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
+										<Box sx={{ fontSize: '16px', mb: 1 }}>No Document Selected</Box>
+										<Box sx={{ fontSize: '14px' }}>
+											Select an argument to view its associated documentation
+										</Box>
+									</Box>
+								)}
+							</React.Suspense>
+						</Box>
+					</Box>
+				)}
 			</Box>
 
 			{/* Status Bar */}
@@ -719,6 +889,7 @@ const LogicVisualizer: React.FC = () => {
 					<Box sx={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 1, fontSize: 14 }}>
 						<strong>Ctrl/Cmd + K</strong><span>Open Advanced Search</span>
 						<strong>Ctrl/Cmd + N</strong><span>Create New Argument</span>
+						<strong>D</strong><span>Toggle Document Panel</span>
 						<strong>G</strong><span>Graph View</span>
 						<strong>F</strong><span>Fit Graph</span>
 						<strong>C</strong><span>Center Graph</span>
