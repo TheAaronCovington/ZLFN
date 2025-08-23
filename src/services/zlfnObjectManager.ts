@@ -15,6 +15,8 @@ import type {
   UploadValidation
 } from '../types/zlfn'
 import { createEmptyZLFNObject } from '../types/zlfn'
+import realAPI from './realAPI'
+import { apiConfig } from './apiConfig'
 
 export class ZLFNObjectManager {
   private objects: Map<string, ZLFNObject> = new Map()
@@ -47,6 +49,9 @@ export class ZLFNObjectManager {
     object.metadata.modified = new Date().toISOString()
     
     this.objects.set(id, object)
+
+    // Fire-and-forget server sync
+    this.syncCreate(object).catch(() => {})
     return object
   }
 
@@ -110,6 +115,9 @@ export class ZLFNObjectManager {
     
     object.versionHistory.push(newVersion)
     this.objects.set(id, object)
+
+    // Fire-and-forget server sync
+    this.syncUpdate(id, updates).catch(() => {})
     
     return object
   }
@@ -119,15 +127,23 @@ export class ZLFNObjectManager {
       throw new Error('Cannot delete locked object')
     }
     
-    return this.objects.delete(id)
+    const ok = this.objects.delete(id)
+    if (ok) {
+      this.syncDelete(id).catch(() => {})
+    }
+    return ok
   }
 
   // Markdown Operations
   async updateMarkdown(id: string, markdown: string, _author?: string): Promise<ZLFNObject | null> {
     const sanitized = this.sanitizeMarkdown(markdown)
-    return this.updateObject(id, { 
+    const updated = await this.updateObject(id, { 
       markdown: sanitized
     })
+    if (updated) {
+      this.syncUpdateMarkdown(id, sanitized).catch(() => {})
+    }
+    return updated
   }
 
   private sanitizeMarkdown(markdown: string): string {
@@ -724,6 +740,49 @@ export class ZLFNObjectManager {
       obj.metadata.description?.toLowerCase().includes(searchTerm) ||
       Object.values(obj.notes).some(note => note.toLowerCase().includes(searchTerm))
     )
+  }
+
+  // === Server Sync Helpers ===
+  private isServerEnabled(): boolean {
+    try {
+      return apiConfig.getConfig().useRealBackend === true
+    } catch {
+      return false
+    }
+  }
+
+  private async syncCreate(object: ZLFNObject): Promise<void> {
+    if (!this.isServerEnabled()) return
+    try {
+      await realAPI.createObject({
+        id: object.id,
+        markdown: object.markdown,
+        zflnJson: object.zflnJson,
+        notes: object.notes,
+        metadata: object.metadata
+      } as Partial<ZLFNObject>)
+    } catch {}
+  }
+
+  private async syncUpdate(id: string, updates: Partial<ZLFNObject>): Promise<void> {
+    if (!this.isServerEnabled()) return
+    try {
+      await realAPI.updateObject(id, updates)
+    } catch {}
+  }
+
+  private async syncDelete(id: string): Promise<void> {
+    if (!this.isServerEnabled()) return
+    try {
+      await realAPI.deleteObject(id)
+    } catch {}
+  }
+
+  private async syncUpdateMarkdown(id: string, markdown: string): Promise<void> {
+    if (!this.isServerEnabled()) return
+    try {
+      await realAPI.updateMarkdown(id, markdown)
+    } catch {}
   }
 }
 

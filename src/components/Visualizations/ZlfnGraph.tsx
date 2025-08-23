@@ -22,7 +22,7 @@ import SpeedIcon from '@mui/icons-material/Speed'
 import { evaluateInference, evaluateStates } from '../../services/inference'
 import { downloadJson } from '../../services/io'
 
-import { api } from '../../services/zlfnAPI'
+import { getCurrentAPI } from '../../services/apiConfig'
 import BatchOperationsDialog from '../BatchOperations/BatchOperationsDialog'
 import { parseExpressionToAst } from '../../services/logic'
 import { renderZones } from '../../vis/layers/zones'
@@ -3448,7 +3448,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			if (simulationRef.current) simulationRef.current.alpha(0.7).restart()
 			// snapshot this action for version history
 			if (objectId) {
-				try { void api.createSnapshot(objectId, 'Cleared saved layout', 'modified') } catch {}
+				try { void getCurrentAPI().createSnapshot(objectId, 'Cleared saved layout', 'modified') } catch {}
 			}
 		} catch {}
 	}
@@ -3675,7 +3675,7 @@ Controls:
 		try { 
 			localStorage.setItem(`xv_layout_${storageKey}`, JSON.stringify(data)); 
 			onInfo?.('Layout saved')
-			if (objectId) { try { void api.createSnapshot(objectId, 'Saved layout', 'modified', undefined, data) } catch {} }
+			if (objectId) { try { void getCurrentAPI().createSnapshot(objectId, 'Saved layout', 'modified', undefined, data) } catch {} }
 		} catch {}
 	}
 

@@ -11,9 +11,21 @@ export interface ZLFNNode {
   symbolic: string
   translation: string
   type: 'premise' | 'conclusion' | 'term' | 'fallacy' | 'core' | 'assumption' | 'counterexample'
+  // Legacy flags retained for backward compatibility
   vennRelevant: boolean
   timelineRelevant: boolean
-  facets: string[]
+  // New structured facets for cross-view relevance
+  facets: {
+    vennRelevant?: boolean
+    truthTableRelevant?: boolean
+    timelineRelevant?: boolean
+    counterRelevant?: boolean
+    rebuttalRelevant?: boolean
+    noteRelevant?: boolean
+  } | string[]
+  // Optional logical state and weight for ATN/ZLFN interoperability
+  state?: 'T' | 'F' | 'B'
+  weight?: number
   markdownRef?: string // Optional field for linking to markdown sections
   position?: { x: number; y: number } // D3 positioning
   metadata?: {
@@ -56,6 +68,13 @@ export interface ZLFNCore {
   summary: string
   layoutMode: 'network' | 'hierarchical' | 'circular' | 'force-directed'
   variables: Record<string, any>
+  // New mode configuration supporting ZLFN/ATN toggles and per-mode config
+  mode?: {
+    zlfMode?: boolean
+    atnMode?: boolean
+    zlfConfig?: { autoExpansion?: boolean }
+    atnConfig?: { schemePriority?: string }
+  }
   metadata: {
     confidence: number
     uncertain: string[]

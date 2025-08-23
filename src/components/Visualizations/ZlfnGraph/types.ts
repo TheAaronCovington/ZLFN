@@ -14,6 +14,9 @@ export type ZlfnNode = {
   zone?: string
   zoneId?: string
   argumentId?: string
+  // Optional logical state and weight for interoperability with ATN/ZLFN features
+  state?: 'T' | 'F' | 'B'
+  weight?: number
   layoutMode?: LayoutMode  // For Core nodes: determines arrangement pattern
   complexity?: 'simple' | 'moderate' | 'complex'  // Influences layout mode selection
   centralHub?: boolean  // Marks this as a central argument hub
@@ -23,6 +26,8 @@ export type ZlfnNode = {
     truthTableRelevant?: boolean
     timelineRelevant?: boolean
     counterRelevant?: boolean
+    rebuttalRelevant?: boolean
+    noteRelevant?: boolean
   }
   color?: string
   size?: { width: number; height: number } | { radius: number }

@@ -9,6 +9,7 @@ const VizSymbols = lazy(() => import('./pages/VizSymbols'))
 const LogicVisualizer = lazy(() => import('./pages/LogicVisualizer'))
 const Phase1Verification = lazy(() => import('./test/Phase1Verification'))
 const Phase2Demo = lazy(() => import('./pages/Phase2Demo'))
+const ObjectForm = lazy(() => import('./components/InputForm/ObjectForm'))
 // styles removed for clean slate; will be reintroduced via new spec imports
 
 function App() {
@@ -49,6 +50,7 @@ function App() {
             <Route path="/viz" element={<LogicVisualizer />} />
             <Route path="/test/phase1" element={<Phase1Verification />} />
             <Route path="/demo/phase2" element={<Phase2Demo />} />
+            <Route path="/create" element={<ObjectForm onClose={() => history.back()} />} />
             <Route path="*" element={<Home />} />
           </Routes>
         </Suspense>

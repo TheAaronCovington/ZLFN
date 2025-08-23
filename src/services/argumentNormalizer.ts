@@ -109,7 +109,12 @@ export function normalizeImportedJSON(json: ImportedJSON, documentContent?: stri
       summary: arg.core.summary || "Summary of the argument",
       layoutMode: arg.core.layoutMode || "network",
       variables: arg.core.variables || {},
-      mode: arg.core.mode || { zlfMode: false, stnMode: false, atnMode: false },
+      mode: {
+        zlfMode: arg.core.mode?.zlfMode || false,
+        atnMode: arg.core.mode?.atnMode || false,
+        zlfConfig: { autoExpansion: (arg.core as any).mode?.zlfConfig?.autoExpansion || false },
+        atnConfig: { schemePriority: (arg.core as any).mode?.atnConfig?.schemePriority || "" }
+      },
       layoutOptions: arg.core.layoutOptions || ["network", "tree", "table", "hierarchical"]
     }
 
@@ -140,10 +145,14 @@ export function normalizeImportedJSON(json: ImportedJSON, documentContent?: stri
           argumentId,
           facets: {
             vennRelevant: node.vennRelevant || false,
-            truthTableRelevant: false, // Default
+            truthTableRelevant: node as unknown as any && (node as any).truthTableRelevant || false,
             timelineRelevant: node.timelineRelevant || false,
-            counterRelevant: false
+            counterRelevant: (node as any).counterRelevant || false,
+            rebuttalRelevant: (node as any).rebuttalRelevant || false,
+            noteRelevant: true
           },
+          state: (node as any).state || 'T',
+          weight: typeof (node as any).weight === 'number' ? (node as any).weight : 50,
           color: getNodeColor(normalizeNodeType(node.type || "generic")),
           size: getNodeSize(normalizeNodeType(node.type || "generic")),
           markdownRef: node.markdownRef || undefined

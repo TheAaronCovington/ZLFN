@@ -9,7 +9,7 @@ export interface APIConfig {
 }
 
 const defaultConfig: APIConfig = {
-  useRealBackend: false, // Start with mock for safety
+  useRealBackend: true, // Activate real backend by default
   backendURL: 'http://localhost:3001/api',
   enableAuth: false, // Disable auth initially
   enableWebSocket: false // Disable WebSocket initially
