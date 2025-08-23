@@ -86,31 +86,37 @@ class RealZLFNAPI {
 
   // ZLFN Objects
   async getObject(id: string): Promise<APIResponse<ZLFNObject>> {
-    return this.request<ZLFNObject>(`/zlfn/objects/${id}`)
+    return this.request<ZLFNObject>(`/zlfn/${id}`)
   }
 
   async createObject(object: Partial<ZLFNObject>): Promise<APIResponse<ZLFNObject>> {
-    return this.request<ZLFNObject>('/zlfn/objects', {
+    return this.request<ZLFNObject>('/zlfn', {
       method: 'POST',
       body: JSON.stringify(object)
     })
   }
 
   async updateObject(id: string, updates: Partial<ZLFNObject>): Promise<APIResponse<ZLFNObject>> {
-    return this.request<ZLFNObject>(`/zlfn/objects/${id}`, {
+    return this.request<ZLFNObject>(`/zlfn/${id}`, {
       method: 'PUT',
       body: JSON.stringify(updates)
     })
   }
 
   async deleteObject(id: string): Promise<APIResponse<void>> {
-    return this.request<void>(`/zlfn/objects/${id}`, {
+    return this.request<void>(`/zlfn/${id}`, {
       method: 'DELETE'
     })
   }
 
   async listObjects(): Promise<APIResponse<ZLFNObject[]>> {
-    return this.request<ZLFNObject[]>('/zlfn/objects')
+    const resp = await this.request<any>('/zlfn')
+    if (resp.success && resp.data && (resp.data as any).success) {
+      const payload = (resp.data as any)
+      const items = Array.isArray(payload.data) ? payload.data : []
+      return { success: true, data: items as ZLFNObject[], error: null }
+    }
+    return { success: false, data: [] as any, error: resp.error || 'Failed to list objects' }
   }
 
   // Content Management
@@ -171,7 +177,7 @@ class RealZLFNAPI {
 
   async exportObject(id: string, format: string): Promise<APIResponse<Blob>> {
     try {
-      const response = await fetch(`${this.baseURL}/zlfn/objects/${id}/export?format=${format}`, {
+      const response = await fetch(`${this.baseURL}/zlfn/${id}/export?format=${format}`, {
         headers: {
           'Authorization': this.token ? `Bearer ${this.token}` : ''
         }
@@ -198,25 +204,25 @@ class RealZLFNAPI {
 
   // Notes Management
   async getNotes(objectId: string): Promise<APIResponse<Record<string, string>>> {
-    return this.request<Record<string, string>>(`/zlfn/objects/${objectId}/notes`)
+    return this.request<Record<string, string>>(`/zlfn/${objectId}/notes`)
   }
 
   async saveNote(objectId: string, nodeId: string, content: string): Promise<APIResponse<void>> {
-    return this.request<void>(`/zlfn/objects/${objectId}/notes/${nodeId}`, {
+    return this.request<void>(`/zlfn/${objectId}/notes/${nodeId}`, {
       method: 'PUT',
       body: JSON.stringify({ content })
     })
   }
 
   async deleteNote(objectId: string, nodeId: string): Promise<APIResponse<void>> {
-    return this.request<void>(`/zlfn/objects/${objectId}/notes/${nodeId}`, {
+    return this.request<void>(`/zlfn/${objectId}/notes/${nodeId}`, {
       method: 'DELETE'
     })
   }
 
   // Version Control
   async getVersionHistory(objectId: string): Promise<APIResponse<ZLFNVersion[]>> {
-    return this.request<ZLFNVersion[]>(`/zlfn/objects/${objectId}/versions`)
+    return this.request<ZLFNVersion[]>(`/zlfn/${objectId}/versions`)
   }
 
   async createSnapshot(
@@ -226,16 +232,16 @@ class RealZLFNAPI {
     author: string = 'user',
     layout?: Record<string, { x: number; y: number }>
   ): Promise<APIResponse<ZLFNVersion>> {
-    return this.request<ZLFNVersion>(`/zlfn/objects/${objectId}/versions`, {
+    return this.request<ZLFNVersion>(`/zlfn/${objectId}/snapshot`, {
       method: 'POST',
       body: JSON.stringify({ description, changeType, author, layout })
     })
   }
 
   async revertToVersion(objectId: string, versionTimestamp: string): Promise<APIResponse<ZLFNObject>> {
-    return this.request<ZLFNObject>(`/zlfn/objects/${objectId}/revert`, {
+    return this.request<ZLFNObject>(`/zlfn/${objectId}/revert`, {
       method: 'POST',
-      body: JSON.stringify({ versionTimestamp })
+      body: JSON.stringify({ timestamp: versionTimestamp })
     })
   }
 
@@ -250,23 +256,23 @@ class RealZLFNAPI {
       })
     }
 
-    return this.request<ZLFNObject[]>(`/zlfn/search?${params.toString()}`)
+    return this.request<ZLFNObject[]>(`/zlfn?${params.toString()}`)
   }
 
   // Collaboration
   async getCollaborationState(objectId: string): Promise<APIResponse<CollaborationState>> {
-    return this.request<CollaborationState>(`/zlfn/objects/${objectId}/collaboration`)
+    return this.request<CollaborationState>(`/zlfn/${objectId}/collaboration`)
   }
 
   async acquireLock(objectId: string, nodeId?: string): Promise<APIResponse<void>> {
-    return this.request<void>(`/zlfn/objects/${objectId}/lock`, {
+    return this.request<void>(`/zlfn/${objectId}/lock`, {
       method: 'POST',
       body: JSON.stringify({ nodeId })
     })
   }
 
   async releaseLock(objectId: string, nodeId?: string): Promise<APIResponse<void>> {
-    return this.request<void>(`/zlfn/objects/${objectId}/lock`, {
+    return this.request<void>(`/zlfn/${objectId}/lock`, {
       method: 'DELETE',
       body: JSON.stringify({ nodeId })
     })

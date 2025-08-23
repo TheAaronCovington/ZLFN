@@ -219,21 +219,7 @@ process.on('unhandledRejection', (reason, promise) => {
 // Start server
 const startServer = async () => {
   try {
-    // Connect to databases
-    await database.connect();
-    logger.info('Database connected successfully');
-    
-    try {
-      await redis.connect();
-      logger.info('Redis connected successfully');
-    } catch (redisError) {
-      logger.warn('Redis connection failed, continuing without Redis:', redisError.message);
-    }
-    
-    // Initialize Socket.IO
-    socketService.initialize(server);
-    
-    // Start HTTP server
+    // Start HTTP server immediately
     server.listen(config.port, () => {
       logger.info(`Server running on port ${config.port}`);
       logger.info(`Environment: ${config.nodeEnv}`);
@@ -241,6 +227,39 @@ const startServer = async () => {
       logger.info(`MongoDB URI: ${config.mongodb.uri}`);
       logger.info(`Redis: ${config.redis.host}:${config.redis.port}`);
     });
+
+    // Initialize Socket.IO
+    socketService.initialize(server);
+
+    // Connect to MongoDB asynchronously
+    database.connect()
+      .then(async () => {
+        logger.info('Database connected successfully');
+        try {
+          const { default: ZLFNObject } = await import('./models/ZLFNObject.js');
+          ZLFNObject.syncIndexes()
+            .then(() => logger.info('ZLFNObject indexes synced'))
+            .catch((idxErr) => logger.warn('Index sync skipped/failed:', idxErr?.message || idxErr));
+        } catch (idxErr) {
+          logger.warn('Index sync init failed:', idxErr?.message || idxErr);
+        }
+      })
+      .catch((dbErr) => {
+        logger.error('Initial MongoDB connect failed; will retry in background:', dbErr?.message || dbErr);
+      });
+
+    // Connect to Redis in production only; do not block startup
+    if (!config.isDevelopment) {
+      try {
+        redis.connect()
+          .then(() => logger.info('Redis connected successfully'))
+          .catch((redisError) => logger.warn('Redis connection failed, continuing without Redis:', redisError?.message || redisError));
+      } catch (redisError) {
+        logger.warn('Redis init error, continuing without Redis:', redisError?.message || redisError);
+      }
+    } else {
+      logger.info('Redis connection disabled in development');
+    }
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);

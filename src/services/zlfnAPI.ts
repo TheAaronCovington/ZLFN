@@ -340,10 +340,11 @@ class ZLFNAPIService {
   }
 
   private createErrorResponse<T>(error: string): APIResponse<T> {
+    const hint = error.includes('Mongo') || error.includes('ECONN') ? ', check MongoDB connection' : ''
     return {
       success: false,
       data: null,
-      error,
+      error: `${error}${hint}`,
       metadata: this.createMetadata()
     }
   }

@@ -731,6 +731,21 @@ export class ZLFNObjectManager {
     return Array.from(this.objects.values())
   }
 
+  // Batch operations (server-backed when available)
+  async saveBatch(objs: ZLFNObject[]): Promise<void> {
+    if (!this.isServerEnabled()) {
+      // Local cache insert
+      for (const o of objs) {
+        this.objects.set(o.id, o)
+      }
+      return
+    }
+    try {
+      // Basic parallel create/update decisions
+      await Promise.all(objs.map(o => realAPI.updateObject(o.id, o)))
+    } catch {}
+  }
+
   // Search functionality
   searchObjects(query: string): ZLFNObject[] {
     const searchTerm = query.toLowerCase()

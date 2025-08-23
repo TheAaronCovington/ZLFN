@@ -6,6 +6,7 @@ import type { ArgumentData } from '../components/Visualizations/ArgumentTableau/
 import type { NodeIdToActive, LogicMode, NodeState, UnifiedData } from './types'
 import { extractArgumentsFromMarkdown, updateArgumentFromMarkdown } from '../services/markdownToArgument'
 import { normalizeExpression, normalizeDocument, type ImportedJSON, normalizeImportedJSON, synthesizeExpressionFromGraph } from '../services/argumentNormalizer'
+import realAPI from '../services/realAPI'
 
 // (types moved to src/context/types.ts to satisfy Fast Refresh constraints)
 
@@ -98,6 +99,40 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 			selectedArgumentId: selectedId
 		}
 	})
+
+	// Load arguments from backend (MongoDB) on boot and merge into unified store
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			try {
+				const resp = await realAPI.listObjects()
+				if (!resp.success || !resp.data) return
+				const serverArgs = resp.data.map(obj => ({
+					id: obj.id,
+					title: obj.title || obj.id,
+					markdown: { documentId: obj.id, content: (obj as any).markdownContent || '' },
+					expressions: [],
+					zlfnGraph: (obj as any).zlfnJson && Array.isArray((obj as any).zlfnJson.nodes) && Array.isArray((obj as any).zlfnJson.edges)
+						? { nodes: (obj as any).zlfnJson.nodes, edges: (obj as any).zlfnJson.edges }
+						: undefined
+				}))
+				if (cancelled) return
+				setUnifiedData(prev => {
+					// de-dup by id; prefer server versions for same id
+					const map = new Map(prev.arguments.map(a => [a.id, a]))
+					for (const a of serverArgs) map.set(a.id, a)
+					const merged = Array.from(map.values())
+					// keep current selection if still present, else default to first available
+					let nextSelected = prev.selectedArgumentId
+					if (nextSelected && !merged.some(a => a.id === nextSelected)) {
+						nextSelected = merged[0]?.id || prev.selectedArgumentId
+					}
+					return { ...prev, arguments: merged, selectedArgumentId: nextSelected }
+				})
+			} catch {}
+		})()
+		return () => { cancelled = true }
+	}, [])
 
 	const resetStates = useCallback(() => {
         setNodeIdToActive({})

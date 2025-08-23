@@ -1,7 +1,8 @@
+const NODE_ENV = process.env.NODE_ENV || 'development'
 const config = {
   // Server Configuration
   port: process.env.PORT || 3001,
-  nodeEnv: process.env.NODE_ENV || 'development',
+  nodeEnv: NODE_ENV,
 
   // Database Configuration
   mongodb: {
@@ -68,8 +69,8 @@ const config = {
   },
 
   // Development flags
-  isDevelopment: process.env.NODE_ENV === 'development',
-  isProduction: process.env.NODE_ENV === 'production',
+  isDevelopment: NODE_ENV === 'development',
+  isProduction: NODE_ENV === 'production',
 }
 
-module.exports = config
+export default config

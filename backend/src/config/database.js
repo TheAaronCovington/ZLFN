@@ -21,7 +21,6 @@ class DatabaseConnection {
       const options = {
         ...config.mongodb.options,
         bufferCommands: false,
-        bufferMaxEntries: 0,
         retryWrites: true,
         w: 'majority'
       };

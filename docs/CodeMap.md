@@ -1,15 +1,15 @@
 # ZLFN/ATN Codebase Map
 
 **Version**: 2.0  
-**Last Updated**: 2024-12-22  
+**Last Updated**: 2025-08-23  
 **Purpose**: Comprehensive mapping of features to files for maintainability and refactoring
 
-## Recent Major Updates (v2.0)
-- ✅ **Phase 4 Advanced Features**: Flow Rivers, Bayesian Mode, Enhanced Export
-- ✅ **Phase 8 QA Cleanup**: Debug logs removed, TypeScript issues resolved, bundle optimized
-- ✅ **Shared Data Model**: Unified argument management across all three views
-- ✅ **UI/UX Redesign**: Vibrant academic dark theme, improved layouts
-- ✅ **Performance Optimizations**: Lazy loading, caching, efficient rendering
+## Recent Major Updates
+- ✅ STN fully removed (components, routes, tests) and references cleaned up
+- ✅ Unified data model and selector across ZLFN/ATN (`LogicSharedContext` + `ArgumentSelector`)
+- ✅ MongoDB-backed listing wired via `/api/zlfn` (client `realAPI` updated)
+- ✅ New object form routed at `/create` for creating/updating ZLFN objects
+- ✅ Flow Rivers, Bayesian Mode guarded by toggles; performance guards added
 
 ## Table of Contents
 - [Core Architecture](#core-architecture)
@@ -34,7 +34,7 @@
 - **`src/App.tsx`**: Main app shell, routing (if any)
 
 ### Main Pages
-- **`src/pages/LogicVisualizer.tsx`** *(635 lines)* ✅ **OPTIMIZED WITH LAZY LOADING**
+- **`src/pages/LogicVisualizer.tsx`** *(~725 lines)* ✅ **LAZY LOADED HEAVIES**
   - **Features**: Main application shell, view mode switching (ZLFN/ATN), drawer management
   - **Components**: CommandBar, ControlsDrawer, InspectorDrawer, StatusBar integration
   - **State**: View mode, drawer states, performance overlay, search, snackbar notifications
@@ -78,7 +78,7 @@
 ## Visualization Components
 
 ### ZLFN Graph System
-- **`src/components/Visualizations/ZlfnGraph.tsx`** *(~4400 lines)* ✅ **REFACTORED INTO MODULES**
+- **`src/components/Visualizations/ZlfnGraph.tsx`** *(~4400 lines)* ✅ **MODULED**
   - **Modular Structure**: Refactored into focused modules for better maintainability
   - **`src/components/Visualizations/ZlfnGraph/`**:
     - **`types.ts`**: Shared interfaces and type definitions
@@ -99,7 +99,7 @@
   - **State**: Notes data, notes dialogs
   - **Dependencies**: ZlfnGraph, notes hooks
 
-**Note**: Semantic Tableau Network (STN) removed as per revised design (December 22, 2024).
+**Note**: STN removed (files deleted, exports pruned, Vite chunks updated).
 
 
 ### Argument Tableau Network (ATN)
@@ -282,10 +282,13 @@
   - **Dependencies**: Markdown parser, shared argument types
 
 ### Data Management Services
+- **`src/services/realAPI.ts`**
+  - **Features**: Real backend API client (Mongo-backed)
+  - **Endpoints**: Uses `/api/zlfn` (list), `/api/zlfn/:id` (CRUD), notes/versions/snapshot/revert/export
+  - **Change**: All previous `/api/zlfn/objects...` paths updated to match backend router
+
 - **`src/services/zlfnAPI.ts`**
-  - **Features**: API client for ZLFN objects, CRUD operations
-  - **Functions**: Object management, version control, collaboration
-  - **Dependencies**: Fetch API, error handling
+  - **Features**: Wrapper/factory for current API selection
 
 - **`src/services/zlfnObjectManager.ts`**
   - **Features**: Local object management, caching, synchronization
@@ -427,9 +430,10 @@
 ## Context & State
 
 ### Shared State ✅ **MAJOR UPDATE IN v2.0**
-- **`src/context/LogicSharedContext.tsx`** *(~280 lines)* ✅ **SIGNIFICANTLY ENHANCED**
+- **`src/context/LogicSharedContext.tsx`** *(~490+ lines)* ✅ **SIGNIFICANTLY ENHANCED**
   - **Features**: Unified data model for all three views (ZLFN/STN/ATN) with shared argument management
   - **State**: Expression, modes, simulation state, node states, selection, **unified argument data**
+  - **Server Merge**: On boot fetches `/api/zlfn` and merges server objects into `unifiedData.arguments`
   - **New Types**: `SharedArgument`, `UnifiedData`, `Note` for cross-view data sharing
   - **Functions**: State setters, reset functions, **markdown document management**, **lazy accessors**
   - **Lazy Accessors**: `getAstFor`, `getZlfnGraphFor`, `getAtnDataFor` with memoization and caching
@@ -503,6 +507,11 @@
 - **`src/components/Performance/PerformanceOverlay.tsx`**
   - **Features**: Real-time performance display overlay
   - **Dependencies**: Performance monitor hook
+
+### Input Form
+- **`src/components/InputForm/ObjectForm.tsx`**
+  - **Route**: `/create` (see `src/App.tsx`)
+  - **Features**: Create/edit ZLFN objects; JSON/Markdown import; live previews
 
 ---
 
