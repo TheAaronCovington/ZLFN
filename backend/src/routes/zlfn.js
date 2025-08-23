@@ -18,22 +18,39 @@ const logger = createLogger('zlfn-routes');
 // Get all objects (with pagination and search)
 router.get('/', optionalAuth, validateSearch, async (req, res) => {
   try {
-    const { q, tags, author, limit = 20, offset = 0 } = req.query;
-    let query = {};
+    const { q, tags, author, limit = 20, offset = 0, dateFrom, dateTo } = req.query;
     
-    // Build search query
-    if (q) {
-      const searchResults = await ZLFNObject.searchContent(q, { tags, author, limit, offset });
-      return res.json({
-        success: true,
-        data: searchResults,
-        pagination: { limit, offset, hasMore: searchResults.length === limit }
-      });
+    // Create cache key from query parameters
+    const cacheKey = `search:${JSON.stringify({ q, tags, author, limit, offset, dateFrom, dateTo, userId: req.user?.id })}`;
+    
+    // Try to get cached results first
+    if (redis.isReady()) {
+      try {
+        const cached = await redis.getClient().get(cacheKey);
+        if (cached) {
+          logger.debug(`Cache hit for search: ${cacheKey}`);
+          return res.json(JSON.parse(cached));
+        }
+      } catch (cacheError) {
+        logger.warn('Cache read error:', cacheError);
+      }
     }
     
-    // Filter by tags
-    if (tags && tags.length > 0) {
-      query['metadata.tags'] = { $in: tags };
+    let query = {};
+    let searchScore = {};
+    
+    // Build text search query with scoring
+    if (q) {
+      query.$text = { $search: q };
+      searchScore = { score: { $meta: 'textScore' } };
+    }
+    
+    // Filter by tags (support array or comma-separated string)
+    if (tags) {
+      const tagArray = Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim());
+      if (tagArray.length > 0) {
+        query['metadata.tags'] = { $in: tagArray };
+      }
     }
     
     // Filter by author
@@ -41,29 +58,83 @@ router.get('/', optionalAuth, validateSearch, async (req, res) => {
       query['metadata.author'] = author;
     }
     
+    // Date range filtering
+    if (dateFrom || dateTo) {
+      query['metadata.created'] = {};
+      if (dateFrom) query['metadata.created'].$gte = new Date(dateFrom);
+      if (dateTo) query['metadata.created'].$lte = new Date(dateTo);
+    }
+    
     // Only show public objects if not authenticated
     if (!req.user) {
       query['metadata.isPublic'] = true;
     }
     
-    const objects = await ZLFNObject.find(query)
-      .select('id title metadata.created metadata.modified metadata.author metadata.tags')
-      .sort({ 'metadata.modified': -1 })
-      .skip(offset)
-      .limit(limit);
+    // Build sort criteria (text score first, then modified date)
+    let sortCriteria = { 'metadata.modified': -1 };
+    if (q) {
+      sortCriteria = { score: { $meta: 'textScore' }, 'metadata.modified': -1 };
+    }
     
-    const total = await ZLFNObject.countDocuments(query);
+    // Execute search with aggregation for better performance
+    const pipeline = [
+      { $match: query },
+      { $addFields: searchScore },
+      { $sort: sortCriteria },
+      {
+        $facet: {
+          data: [
+            { $skip: parseInt(offset) },
+            { $limit: parseInt(limit) },
+            {
+              $project: {
+                id: 1,
+                title: 1,
+                'metadata.created': 1,
+                'metadata.modified': 1,
+                'metadata.author': 1,
+                'metadata.tags': 1,
+                'metadata.description': 1,
+                score: searchScore.score ? { $meta: 'textScore' } : { $literal: 0 }
+              }
+            }
+          ],
+          totalCount: [{ $count: 'count' }]
+        }
+      }
+    ];
     
-    res.json({
+    const [result] = await ZLFNObject.aggregate(pipeline);
+    const objects = result.data;
+    const total = result.totalCount[0]?.count || 0;
+    
+    const response = {
       success: true,
       data: objects,
       pagination: {
-        limit,
-        offset,
+        limit: parseInt(limit),
+        offset: parseInt(offset),
         total,
-        hasMore: offset + limit < total
+        hasMore: parseInt(offset) + parseInt(limit) < total
+      },
+      searchMeta: {
+        query: q || null,
+        filters: { tags, author, dateFrom, dateTo },
+        executionTime: Date.now()
       }
-    });
+    };
+    
+    // Cache the results for 1 hour
+    if (redis.isReady()) {
+      try {
+        await redis.getClient().setEx(cacheKey, 3600, JSON.stringify(response));
+        logger.debug(`Cached search results: ${cacheKey}`);
+      } catch (cacheError) {
+        logger.warn('Cache write error:', cacheError);
+      }
+    }
+    
+    res.json(response);
   } catch (error) {
     logger.error('Error fetching objects:', error);
     res.status(500).json({

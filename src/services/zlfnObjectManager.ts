@@ -757,6 +757,285 @@ export class ZLFNObjectManager {
     )
   }
 
+  // === Backup System ===
+  async backup(): Promise<{ success: boolean; backupPath?: string; error?: string }> {
+    try {
+      const objects = this.getAllObjects()
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+      const backupData = {
+        timestamp,
+        version: '1.0.0',
+        objectCount: objects.length,
+        objects: objects.map(obj => ({
+          ...obj,
+          // Ensure serializable format
+          notes: Object.fromEntries(Object.entries(obj.notes)),
+          versionHistory: obj.versionHistory.map(v => ({
+            ...v,
+            notes: Object.fromEntries(Object.entries(v.notes || {}))
+          }))
+        }))
+      }
+      
+      // Create backup directory if it doesn't exist
+      const backupDir = './backups'
+      if (typeof window === 'undefined') {
+        // Node.js environment
+        const fs = await import('fs')
+        const path = await import('path')
+        const zlib = await import('zlib')
+        
+        if (!fs.existsSync(backupDir)) {
+          fs.mkdirSync(backupDir, { recursive: true })
+        }
+        
+        const backupPath = path.join(backupDir, `backup_${timestamp}.json.gz`)
+        const jsonData = JSON.stringify(backupData, null, 2)
+        
+        // Compress the backup
+        const compressed = await new Promise<Buffer>((resolve, reject) => {
+          zlib.gzip(jsonData, (err, result) => {
+            if (err) reject(err)
+            else resolve(result)
+          })
+        })
+        
+        fs.writeFileSync(backupPath, compressed)
+        
+        return {
+          success: true,
+          backupPath: backupPath
+        }
+      } else {
+        // Browser environment - use IndexedDB or localStorage
+        const backupKey = `backup_${timestamp}`
+        const compressedData = this.compressString(JSON.stringify(backupData))
+        localStorage.setItem(backupKey, compressedData)
+        
+        return {
+          success: true,
+          backupPath: backupKey
+        }
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Backup failed'
+      }
+    }
+  }
+
+  async restoreFromBackup(backupPath: string): Promise<{ success: boolean; restoredCount?: number; error?: string }> {
+    try {
+      let backupData: any
+      
+      if (typeof window === 'undefined') {
+        // Node.js environment
+        const fs = await import('fs')
+        const zlib = await import('zlib')
+        
+        if (!fs.existsSync(backupPath)) {
+          throw new Error('Backup file not found')
+        }
+        
+        const compressed = fs.readFileSync(backupPath)
+        const jsonData = await new Promise<string>((resolve, reject) => {
+          zlib.unzip(compressed, (err, result) => {
+            if (err) reject(err)
+            else resolve(result.toString())
+          })
+        })
+        
+        backupData = JSON.parse(jsonData)
+      } else {
+        // Browser environment
+        const compressedData = localStorage.getItem(backupPath)
+        if (!compressedData) {
+          throw new Error('Backup not found in localStorage')
+        }
+        
+        const jsonData = this.decompressString(compressedData)
+        backupData = JSON.parse(jsonData)
+      }
+      
+      // Validate backup format
+      if (!backupData.objects || !Array.isArray(backupData.objects)) {
+        throw new Error('Invalid backup format')
+      }
+      
+      // Clear existing objects (with confirmation in production)
+      this.objects.clear()
+      
+      // Restore objects
+      let restoredCount = 0
+      for (const objData of backupData.objects) {
+        try {
+          // Restore notes as Map
+          objData.notes = new Map(Object.entries(objData.notes || {}))
+          
+          // Restore version history notes as Maps
+          if (objData.versionHistory) {
+            objData.versionHistory = objData.versionHistory.map((v: any) => ({
+              ...v,
+              notes: new Map(Object.entries(v.notes || {}))
+            }))
+          }
+          
+          this.objects.set(objData.id, objData as ZLFNObject)
+          restoredCount++
+        } catch (objError) {
+          console.warn(`Failed to restore object ${objData.id}:`, objError)
+        }
+      }
+      
+      return {
+        success: true,
+        restoredCount
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Restore failed'
+      }
+    }
+  }
+
+  async listBackups(): Promise<{ success: boolean; backups?: Array<{ path: string; timestamp: string; size?: number }>; error?: string }> {
+    try {
+      if (typeof window === 'undefined') {
+        // Node.js environment
+        const fs = await import('fs')
+        const path = await import('path')
+        
+        const backupDir = './backups'
+        if (!fs.existsSync(backupDir)) {
+          return { success: true, backups: [] }
+        }
+        
+        const files = fs.readdirSync(backupDir)
+        const backups = files
+          .filter(file => file.startsWith('backup_') && file.endsWith('.json.gz'))
+          .map(file => {
+            const filePath = path.join(backupDir, file)
+            const stats = fs.statSync(filePath)
+            const timestamp = file.replace('backup_', '').replace('.json.gz', '')
+            
+            return {
+              path: filePath,
+              timestamp: timestamp.replace(/-/g, ':'),
+              size: stats.size
+            }
+          })
+          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        
+        return { success: true, backups }
+      } else {
+        // Browser environment
+        const backups: Array<{ path: string; timestamp: string; size?: number }> = []
+        
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i)
+          if (key && key.startsWith('backup_')) {
+            const timestamp = key.replace('backup_', '').replace(/-/g, ':')
+            const data = localStorage.getItem(key)
+            
+            backups.push({
+              path: key,
+              timestamp,
+              size: data ? data.length : 0
+            })
+          }
+        }
+        
+        backups.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        return { success: true, backups }
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to list backups'
+      }
+    }
+  }
+
+  async deleteBackup(backupPath: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (typeof window === 'undefined') {
+        // Node.js environment
+        const fs = await import('fs')
+        
+        if (fs.existsSync(backupPath)) {
+          fs.unlinkSync(backupPath)
+        }
+      } else {
+        // Browser environment
+        localStorage.removeItem(backupPath)
+      }
+      
+      return { success: true }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to delete backup'
+      }
+    }
+  }
+
+  // Simple string compression for browser environment
+  private compressString(str: string): string {
+    // Simple LZ-string-like compression for browser
+    const dict: { [key: string]: number } = {}
+    const data = str.split('')
+    const out: (string | number)[] = []
+    let dictSize = 256
+    let w = ''
+
+    for (let i = 0; i < data.length; i++) {
+      const c = data[i]
+      const wc = w + c
+      if (dict[wc]) {
+        w = wc
+      } else {
+        out.push(dict[w] ? dict[w] : w)
+        dict[wc] = dictSize++
+        w = c
+      }
+    }
+
+    if (w !== '') {
+      out.push(dict[w] ? dict[w] : w)
+    }
+
+    return JSON.stringify(out)
+  }
+
+  private decompressString(compressed: string): string {
+    const data = JSON.parse(compressed)
+    const dict: { [key: number]: string } = {}
+    let dictSize = 256
+    let w = String(data[0])
+    let result = w
+    
+    for (let i = 1; i < data.length; i++) {
+      const k = data[i]
+      let entry: string
+      
+      if (dict[k]) {
+        entry = dict[k]
+      } else if (k === dictSize) {
+        entry = w + w.charAt(0)
+      } else {
+        throw new Error('Invalid compressed data')
+      }
+      
+      result += entry
+      dict[dictSize++] = w + entry.charAt(0)
+      w = entry
+    }
+    
+    return result
+  }
+
   // === Server Sync Helpers ===
   private isServerEnabled(): boolean {
     try {
