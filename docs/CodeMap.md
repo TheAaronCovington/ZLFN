@@ -8,7 +8,7 @@
 - ✅ STN fully removed (components, routes, tests) and references cleaned up
 - ✅ Unified data model and selector across ZLFN/ATN (`LogicSharedContext` + `ArgumentSelector`)
 - ✅ MongoDB-backed listing wired via `/api/zlfn` (client `realAPI` updated)
-- ✅ New object form routed at `/create` for creating/updating ZLFN objects
+- ✅ Object form integrated as a modal (`ObjectFormModal`) with CommandBar FAB and Ctrl/Cmd+N shortcut
 - ✅ Flow Rivers, Bayesian Mode guarded by toggles; performance guards added
 
 ## Table of Contents
@@ -54,7 +54,7 @@
 ### Command & Control Layer
 - **`src/components/Visualizer/CommandBar.tsx`** *(~350 lines)*
   - **Features**: Top toolbar, search, simulation controls, layout actions, view mode toggle (ZLFN/ATN)
-  - **Components**: Search autocomplete, argument filter, performance toggle, help/shortcuts
+  - **Components**: Search autocomplete, argument filter, performance toggle, help/shortcuts, **Create Argument FAB (Add icon)**
   - **State**: Menu anchors, search state
   - **Dependencies**: MUI components, icons
 
@@ -89,6 +89,10 @@
     - **`index.ts`**: Consolidated exports
   - **Features**: D3 force-directed graph, node/edge rendering, interactions, facets
   - **Components**: Graph canvas, node shapes, edge lines, facet overlays (Venn, Truth, Timeline, Counter)
+  - **Recent Changes**:
+    - Case-insensitive zone canonicalization; synonyms (`main/core/arguments`, `premise/premises`, etc.)
+    - Arguments zone height mirrors Fallacies zone; argument chip is non-core; collision covers chip
+    - Debug logging for zone filtering (dev only)
   - **State**: Simulation, selection, zoom/pan, facet dialogs, performance optimization
   - **Logic**: D3 force simulation, drag/drop, keyboard navigation, export SVG/PNG
   - **Dependencies**: D3, performance optimizer, enhanced dialogs, batch operations
@@ -285,7 +289,7 @@
 - **`src/services/realAPI.ts`**
   - **Features**: Real backend API client (Mongo-backed)
   - **Endpoints**: Uses `/api/zlfn` (list), `/api/zlfn/:id` (CRUD), notes/versions/snapshot/revert/export
-  - **Change**: All previous `/api/zlfn/objects...` paths updated to match backend router
+  - **Change**: Unwraps `{ success, data }` from router responses in `getObject`; list+detail fetch pattern
 
 - **`src/services/zlfnAPI.ts`**
   - **Features**: Wrapper/factory for current API selection
@@ -433,7 +437,7 @@
 - **`src/context/LogicSharedContext.tsx`** *(~490+ lines)* ✅ **SIGNIFICANTLY ENHANCED**
   - **Features**: Unified data model for all three views (ZLFN/STN/ATN) with shared argument management
   - **State**: Expression, modes, simulation state, node states, selection, **unified argument data**
-  - **Server Merge**: On boot fetches `/api/zlfn` and merges server objects into `unifiedData.arguments`
+  - **Server Merge**: On boot fetches `/api/zlfn` summaries, then details via `getObject(id)`; merges into `unifiedData.arguments`; stamps `argumentId` on incoming nodes
   - **New Types**: `SharedArgument`, `UnifiedData`, `Note` for cross-view data sharing
   - **Functions**: State setters, reset functions, **markdown document management**, **lazy accessors**
   - **Lazy Accessors**: `getAstFor`, `getZlfnGraphFor`, `getAtnDataFor` with memoization and caching
