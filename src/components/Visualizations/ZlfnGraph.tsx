@@ -515,7 +515,8 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	// default zones
 	const defaultZones: ZlfnZone[] = useMemo(
 		() => [
-			{ id: 'arguments', name: 'Arguments', color: '#9e9e9e', xRange: [40, 160], yRange: [110, 260] },
+			// Increased default height for arguments zone to comfortably fit chip + core
+			{ id: 'arguments', name: 'Arguments', color: '#9e9e9e', xRange: [40, 160], yRange: [80, 380] },
 			{ id: 'premises', name: 'Premises', color: '#20B2AA', xRange: [180, 460], yRange: [110, 900] },
 			{ id: 'terms', name: 'Terms', color: '#4169E1', xRange: [500, 820], yRange: [110, 900] },
 			{ id: 'conclusions', name: 'Conclusions', color: '#9370DB', xRange: [860, 1180], yRange: [110, 900] },
@@ -896,12 +897,38 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		// zones
 		const zonesToUseRaw = zones && zones.length ? zones : defaultZones
 		const zonesToUse = (zonesToUseRaw as any[]).filter(z => (z.id !== 'informal' || showInformalZone) && (z.id !== 'temporal' || showTemporalZone))
+		// Match Arguments zone height to Fallacies zone height
+		try {
+			const argsZone = (zonesToUse as any[]).find((z: any) => z.id === 'arguments')
+			const fallaciesZone = (zonesToUse as any[]).find((z: any) => z.id === 'fallacies')
+			if (argsZone && fallaciesZone && Array.isArray(fallaciesZone.yRange)) {
+				argsZone.yRange = [...fallaciesZone.yRange]
+			}
+		} catch {}
 		// Zone configuration applied
 		renderZones(g as any, zonesToUse as any)
 
 		// map for zone lookup and default assignment for nodes without zone
 		const zoneById = new Map<string, ZlfnZone>((zonesToUse as any[]).map((z: any) => [z.id, z]))
+		// canonicalize zone names (case-insensitive + synonyms)
+		const zoneSynonyms: Record<string, string> = {
+			'arguments': 'arguments', 'argument': 'arguments', 'main': 'arguments', 'core': 'arguments',
+			'premises': 'premises', 'premise': 'premises',
+			'terms': 'terms', 'term': 'terms',
+			'conclusions': 'conclusions', 'conclusion': 'conclusions',
+			'fallacies': 'fallacies', 'fallacy': 'fallacies',
+			'informal': 'informal',
+			'temporal': 'temporal'
+		}
+		const toCanonicalZone = (z?: string) => {
+			if (!z) return undefined as unknown as string | undefined
+			const canon = zoneSynonyms[(z + '').toLowerCase()]
+			return (canon || undefined) as string | undefined
+		}
 		for (const n of nodes as any[]) {
+			const rawZone = (n.zoneId || n.zone) as string | undefined
+			const canonZone = toCanonicalZone(rawZone)
+			if (canonZone) { n.zone = canonZone; n.zoneId = canonZone }
 			if (!n.zone && !n.zoneId && n.type) {
 				if (n.type === 'premise') n.zone = 'premises'
 				else if (n.type === 'term') n.zone = 'terms'
@@ -909,6 +936,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				else if (n.type === 'fallacy') n.zone = 'fallacies'
 				else if (n.type === 'informal') n.zone = 'informal'
 				else if (n.type === 'temporal') n.zone = 'temporal'
+				else if (n.type === 'core') n.zone = 'arguments'
 			}
 		}
 
@@ -917,14 +945,27 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			id: `__arg_${aid}`,
 			label: aid,
 			zone: 'arguments',
-			type: 'core' as const,
+			type: 'term' as const,
 			size: { width: 84, height: 22 },
 			color: aid === selectedArgumentId ? '#ffd740' : '#9e9e9e'
 		}))
 		const zoneAllowed = new Set(zonesToUse.map((z:any)=>z.id))
 		// Use optimized nodes if available, otherwise use original nodes
 		const sourceNodes = optimizedData?.visibleNodes || nodes
-		const filteredNodes = (sourceNodes as any[]).filter(n => (!n.zone && !n.zoneId) ? true : zoneAllowed.has((n.zoneId || n.zone) as any))
+		console.debug('[ZLFN] Zones allowed', Array.from(zoneAllowed))
+		const filteredNodes = (sourceNodes as any[]).filter(n => {
+			if (!n.zone && !n.zoneId) return true
+			const nodeZone = (n.zoneId || n.zone) as string
+			if ((n as any).argumentId) {
+				// trace per-argument visibility
+				// console.debug('[ZLFN] node arg', (n as any).id, (n as any).argumentId, 'zone', nodeZone)
+			}
+			// Case-insensitive zone matching
+			return Array.from(zoneAllowed).some(allowedZone => 
+				allowedZone.toLowerCase() === nodeZone.toLowerCase()
+			)
+		})
+		console.debug('[ZLFN] Filtered nodes', { total: (sourceNodes as any[]).length, kept: (filteredNodes as any[]).length })
 		const nodesWithArgs: any[] = [...filteredNodes, ...argBadges]
 
 		// seed or repair Terms positions if they are coincident (stacking) or uninitialized

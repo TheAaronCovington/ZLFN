@@ -86,7 +86,13 @@ class RealZLFNAPI {
 
   // ZLFN Objects
   async getObject(id: string): Promise<APIResponse<ZLFNObject>> {
-    return this.request<ZLFNObject>(`/zlfn/${id}`)
+    const resp = await this.request<any>(`/zlfn/${id}`)
+    if (resp.success && resp.data && (resp.data as any).success) {
+      const payload = (resp.data as any)
+      const item = payload.data
+      return { success: true, data: item as ZLFNObject, error: null }
+    }
+    return { success: false, data: null as any, error: resp.error || 'Failed to get object' }
   }
 
   async createObject(object: Partial<ZLFNObject>): Promise<APIResponse<ZLFNObject>> {

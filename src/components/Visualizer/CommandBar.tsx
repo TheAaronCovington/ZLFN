@@ -32,7 +32,8 @@ import {
   Upload as UploadIcon,
   Speed as SpeedIcon,
   Help as HelpIcon,
-  Keyboard as KeyboardIcon
+  Keyboard as KeyboardIcon,
+  Add as AddIcon
 } from '@mui/icons-material'
 import { Tune as ControlsIcon, Visibility as InspectorIcon } from '@mui/icons-material'
 
@@ -82,6 +83,9 @@ interface CommandBarProps {
   // View selector
   viewMode?: 'graph' | 'argument'
   onChangeViewMode?: (mode: 'graph' | 'argument') => void
+
+  // Object Form
+  onCreateArgument?: () => void
 }
 
 export const CommandBar: React.FC<CommandBarProps> = ({
@@ -112,7 +116,8 @@ export const CommandBar: React.FC<CommandBarProps> = ({
   onToggleControls,
   onToggleInspector,
   viewMode = 'graph', 
-  onChangeViewMode
+  onChangeViewMode,
+  onCreateArgument
 }) => {
   // Access unified data from context
   const { unifiedData, setSelectedArgumentId } = useLogicShared()
@@ -318,6 +323,51 @@ export const CommandBar: React.FC<CommandBarProps> = ({
             />
           )}
         </Stack>
+
+        {/* Create Argument FAB */}
+        {onCreateArgument && (
+          <Tooltip title="Create New Argument">
+            <IconButton
+              onClick={onCreateArgument}
+              sx={{
+                width: 48,
+                height: 48,
+                background: 'linear-gradient(135deg, var(--ai-cyan), var(--ai-blue))',
+                borderRadius: '50%',
+                boxShadow: 'var(--ai-glow-cyan)',
+                color: 'white',
+                mr: 1,
+                position: 'relative',
+                overflow: 'hidden',
+                '&:hover': {
+                  transform: 'scale(1.1)',
+                  boxShadow: '0 0 20px rgba(0, 229, 255, 0.6)',
+                  background: 'linear-gradient(135deg, var(--ai-blue), var(--ai-purple))',
+                },
+                '&:active': {
+                  transform: 'scale(0.95)',
+                },
+                transition: 'all var(--ai-transition-normal)',
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  top: 0,
+                  left: '-100%',
+                  width: '100%',
+                  height: '100%',
+                  background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent)',
+                  animation: 'fabSweep 3s infinite linear',
+                  '@keyframes fabSweep': {
+                    '0%': { left: '-100%' },
+                    '100%': { left: '100%' }
+                  }
+                }
+              }}
+            >
+              <AddIcon sx={{ fontSize: 28, position: 'relative', zIndex: 1 }} />
+            </IconButton>
+          </Tooltip>
+        )}
 
         {/* Overflow Menu */}
         <Tooltip title="More Actions">

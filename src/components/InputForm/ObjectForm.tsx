@@ -9,9 +9,10 @@ import realAPI from '../../services/realAPI'
 interface ObjectFormProps {
   objectId?: string
   onClose: () => void
+  initialData?: any
 }
 
-export default function ObjectForm({ objectId, onClose }: ObjectFormProps) {
+export default function ObjectForm({ objectId, onClose, initialData }: ObjectFormProps) {
   const [activeTab, setActiveTab] = React.useState(0)
   const [error, setError] = React.useState('')
   const [formData, setFormData] = React.useState<ZLFNObject>(() => createEmptyZLFNObject(objectId || `zlfn_${Date.now()}`))
@@ -28,6 +29,24 @@ export default function ObjectForm({ objectId, onClose }: ObjectFormProps) {
     load()
     return () => { cancelled = true }
   }, [objectId])
+
+  // Handle imported data
+  React.useEffect(() => {
+    if (initialData && !objectId) {
+      // Convert imported data to ZLFNObject format
+      const importedObject = createEmptyZLFNObject(`imported_${Date.now()}`)
+      
+      if (initialData.arguments && initialData.arguments.length > 0) {
+        // Use the first argument from imported data
+        const firstArg = initialData.arguments[0]
+        importedObject.zflnJson.arguments = [firstArg]
+        importedObject.metadata.title = firstArg.title || 'Imported Argument'
+        importedObject.markdown = firstArg.markdown?.content || ''
+      }
+      
+      setFormData(importedObject)
+    }
+  }, [initialData, objectId])
 
   const handleSubmit = async () => {
     const api = getCurrentAPI()

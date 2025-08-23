@@ -4,6 +4,7 @@ import { Box, Snackbar, Alert, Dialog, DialogTitle, DialogContent, CircularProgr
 // Lazy load heavy visualization components
 const ZlfnGraphWithNotes = React.lazy(() => import('../components/Visualizations/ZlfnGraphWithNotes').then(module => ({ default: module.ZlfnGraphWithNotes })))
 const ArgumentTableau = React.lazy(() => import('../components/Visualizations/ArgumentTableau'))
+import ObjectFormModal from '../components/InputForm/ObjectFormModal'
 import type { ZlfnNode } from '../components/Visualizations/ZlfnGraph/types'
 import type { VennDiagramData, NecessarySufficientExample } from '../components/Visualizations/VennDiagram'
 import { parseExpressionToAst, toNNF, toCNF, astToString, type AstNodeRec } from '../services/logic'
@@ -45,6 +46,11 @@ const LogicVisualizer: React.FC = () => {
 	)
 	const [shortcutsOpen, setShortcutsOpen] = React.useState(false)
 	const [advancedSearchOpen, setAdvancedSearchOpen] = React.useState(false)
+	
+	// ObjectForm modal state
+	const [objectFormOpen, setObjectFormOpen] = React.useState(false)
+	const [objectFormMode, setObjectFormMode] = React.useState<'create' | 'edit'>('create')
+	const [editingObjectId, setEditingObjectId] = React.useState<string>()
 
 	// Advanced features and toggles
 	const [showRivers, setShowRivers] = React.useState<boolean>(() => 
@@ -216,7 +222,21 @@ const LogicVisualizer: React.FC = () => {
 		}
 	}
 
+	// ObjectForm handlers
+	const handleCreateArgument = () => {
+		setObjectFormMode('create')
+		setEditingObjectId(undefined)
+		setObjectFormOpen(true)
+	}
 
+
+
+
+
+	const handleCloseObjectForm = () => {
+		setObjectFormOpen(false)
+		setEditingObjectId(undefined)
+	}
 
 	const handleEdgeSelect = (edge: any) => {
 		setSelectedEdge(edge)
@@ -343,11 +363,12 @@ const LogicVisualizer: React.FC = () => {
 	// Keyboard shortcuts using global shortcuts hook
 	const shortcuts = React.useMemo(() => [
 		createShortcut('k', () => setAdvancedSearchOpen(true), 'Open Advanced Search', { ctrl: true }),
+		createShortcut('n', () => handleCreateArgument(), 'Create New Argument', { ctrl: true }),
 		createShortcut('g', () => showInfo('View: Graph', 'info'), 'Graph View'),
 		createShortcut('f', () => showInfo('Fit Graph', 'info'), 'Fit Graph'),
 		createShortcut('c', () => showInfo('Center Graph', 'info'), 'Center Graph'),
 		createShortcut('?', () => setShortcutsOpen(true), 'Show Shortcuts')
-	], [])
+	], [handleCreateArgument])
 
 	useGlobalShortcuts(shortcuts, {
 		disableInInputs: true,
@@ -460,6 +481,7 @@ const LogicVisualizer: React.FC = () => {
 				onToggleRivers={() => setShowRivers(v => !v)}
 				bayesianEnabled={bayesianEnabled}
 				onToggleBayesian={() => setBayesianEnabled(v => !v)}
+				onCreateArgument={handleCreateArgument}
 			/>
 
 			{/* Main Content Area */}
@@ -696,6 +718,7 @@ const LogicVisualizer: React.FC = () => {
 				<DialogContent sx={{ color: '#ffffff' }}>
 					<Box sx={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 1, fontSize: 14 }}>
 						<strong>Ctrl/Cmd + K</strong><span>Open Advanced Search</span>
+						<strong>Ctrl/Cmd + N</strong><span>Create New Argument</span>
 						<strong>G</strong><span>Graph View</span>
 						<strong>F</strong><span>Fit Graph</span>
 						<strong>C</strong><span>Center Graph</span>
@@ -720,6 +743,14 @@ const LogicVisualizer: React.FC = () => {
 					{snackbar.msg}
 				</Alert>
 			</Snackbar>
+
+			{/* ObjectForm Modal */}
+			<ObjectFormModal
+				open={objectFormOpen}
+				onClose={handleCloseObjectForm}
+				mode={objectFormMode}
+				objectId={editingObjectId}
+			/>
 		</Box>
 	)
 }

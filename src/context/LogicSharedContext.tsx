@@ -107,13 +107,21 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 			try {
 				const resp = await realAPI.listObjects()
 				if (!resp.success || !resp.data) return
-				const serverArgs = resp.data.map(obj => ({
+				// Fetch full objects for graph details (list endpoint is summary-only)
+				const ids = (resp.data as any[]).map(o => (o as any).id).filter(Boolean)
+				const detailResults = await Promise.all(ids.map(id => realAPI.getObject(id)))
+				const fullObjects = detailResults.filter(r => (r as any)?.success && (r as any)?.data).map(r => (r as any).data)
+				console.debug('[LogicShared] Server objects loaded', { count: fullObjects.length, ids })
+				const serverArgs = fullObjects.map((obj: any) => ({
 					id: obj.id,
-					title: obj.title || obj.id,
+					title: obj.title || obj.metadata?.title || obj.id,
 					markdown: { documentId: obj.id, content: (obj as any).markdownContent || '' },
 					expressions: [],
 					zlfnGraph: (obj as any).zlfnJson && Array.isArray((obj as any).zlfnJson.nodes) && Array.isArray((obj as any).zlfnJson.edges)
-						? { nodes: (obj as any).zlfnJson.nodes, edges: (obj as any).zlfnJson.edges }
+						? { 
+							nodes: ((obj as any).zlfnJson.nodes as any[]).map(n => ({ ...(n || {}), argumentId: (n as any)?.argumentId || obj.id })),
+							edges: (obj as any).zlfnJson.edges 
+						}
 						: undefined
 				}))
 				if (cancelled) return
