@@ -3,7 +3,9 @@
 Last Updated: 2025-08-22
 
 ## Overview
-This plan defines a shared data model used across all three views (ZLFN, STN, ATN), a unified argument selector present in the main toolbar, and a phased UX/UI + functionality roadmap. Switching views preserves the same active argument and data source (document, expression, or imported JSON). Each phase includes acceptance criteria and verification steps.
+This plan defines a shared data model used across both views (ZLFN, ATN), a unified argument selector present in the main toolbar, and a phased UX/UI + functionality roadmap. Switching views preserves the same active argument and data source (document, expression, or imported JSON). Each phase includes acceptance criteria and verification steps.
+
+**Note**: Semantic Tableau Network (STN) removed as per revised design (December 22, 2024).
 
 ## Shared Data Model Design
 
@@ -39,15 +41,14 @@ export type UnifiedData = {
 - Imported JSON → convert into `SharedArgument[]` and hydrate lazily.
 
 ### Cross-View Synchronization
-- One global dropdown (`ArgumentSelector`) in the main toolbar controls `selectedArgumentId` across ZLFN/STN/ATN.
+- One global dropdown (`ArgumentSelector`) in the main toolbar controls `selectedArgumentId` across ZLFN/ATN.
 - View renderers read from the same `UnifiedData`:
   - ZLFN: `getZlfnGraphFor(selectedArgumentId)`
-  - STN: `getAstFor(selectedArgumentId)`
   - ATN: `getAtnDataFor(selectedArgumentId)`
 - Persistence: `selectedArgumentId` and `activeSource` saved to localStorage; optional `?arg=<id>` URL param.
 
-### JSON Import Normalization (ZLFN/STN/ATN Compatibility)
-To accept the generalized JSON structure and make it work across all three views without schema drift, we apply a non-destructive normalization layer at import time (in the shared import pipeline before data reaches the views).
+### JSON Import Normalization (ZLFN/ATN Compatibility)
+To accept the generalized JSON structure and make it work across both views without schema drift, we apply a non-destructive normalization layer at import time (in the shared import pipeline before data reaches the views).
 
 Field mappings and defaults:
 - Dependencies (edges)

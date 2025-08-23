@@ -93,7 +93,7 @@ const LogicVisualizer: React.FC = () => {
 	const [graph, setGraph] = React.useState<any>(null)
 	const [atnData, setAtnData] = React.useState<any>(null)
 
-	// STN removed: no AST derivation effect for tableau
+	// Note: AST derivation handled by shared context
 
 	React.useEffect(() => {
 		let cancelled = false

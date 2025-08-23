@@ -1,7 +1,7 @@
 /**
  * Argument Normalization Service
  * Converts various input formats (document, expression, imported JSON) to SharedArgument[]
- * Handles field mapping and defaults for ZLFN/STN/ATN compatibility
+ * Handles field mapping and defaults for ZLFN/ATN compatibility
  */
 
 import type { SharedArgument } from '../context/types'
@@ -147,7 +147,7 @@ export function normalizeImportedJSON(json: ImportedJSON, documentContent?: stri
           color: getNodeColor(normalizeNodeType(node.type || "generic")),
           size: getNodeSize(normalizeNodeType(node.type || "generic")),
           markdownRef: node.markdownRef || undefined
-          // Note: STN-specific fields like closed, decomposed will be handled during STN conversion
+          // Note: Additional fields for future expansion
         }
         
         // ATN-specific fields
@@ -214,7 +214,7 @@ export function normalizeImportedJSON(json: ImportedJSON, documentContent?: stri
       })
     }
 
-    // Synthesize a main STN expression from supports/attacks
+    // Synthesize a main expression from supports/attacks
     // (pickConclusionId inlined into synthesizeExpressionFromGraph)
 
     // (symbolFor is provided by synthesizeExpressionFromGraph)
@@ -369,7 +369,7 @@ function titleCaseRule(rule: string): string {
     .join(' ')
 }
 
-// Exported helper for STN fallback: synthesize a propositional expression from a ZLFN graph
+// Exported helper: synthesize a propositional expression from a ZLFN graph
 export function synthesizeExpressionFromGraph(nodes: ZlfnNode[], edges: ZlfnEdge[]): string {
   const counts: Record<string, number> = {}
   for (const e of edges) {

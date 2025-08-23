@@ -8,7 +8,7 @@ export type ExportPayload = {
 		selectedNodeId?: string | null
 		layoutMode: 'tree' | 'hierarchy'
 	}
-	viewMode?: 'graph' | 'ast' | 'both' | 'tableau'
+	viewMode?: 'graph' | 'ast' | 'both'
 	selectedNodeId?: string | null
 	layout?: Record<string, { x: number; y: number }>
 	pins?: string[]

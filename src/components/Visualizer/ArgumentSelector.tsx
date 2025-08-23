@@ -1,6 +1,6 @@
 /**
  * Reusable Argument Selector Component
- * Extracted from ATN and generalized for use across all views (ZLFN/STN/ATN)
+ * Extracted from ATN and generalized for use across all views (ZLFN/ATN)
  */
 
 import React from 'react'

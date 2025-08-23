@@ -154,7 +154,7 @@ describe('ExportService', () => {
       );
 
       expect(global.Blob).toHaveBeenCalledWith(
-        [expect.stringContaining('"id":"test-object-1"')],
+        [expect.stringContaining('"id": "test-object-1"')],
         { type: 'application/json' }
       );
     });
@@ -243,11 +243,50 @@ describe('ExportService', () => {
         serializeToString: vi.fn().mockReturnValue('<svg></svg>'),
       }));
 
-      global.Image = vi.fn().mockImplementation(() => ({
-        onload: null,
-        onerror: null,
-        src: '',
-      }));
+      // Mock URL.createObjectURL and revokeObjectURL
+      global.URL.createObjectURL = vi.fn().mockReturnValue('blob:mock-url');
+      global.URL.revokeObjectURL = vi.fn();
+
+      // Mock canvas and context
+      const mockCanvas = {
+        width: 0,
+        height: 0,
+        getContext: vi.fn().mockReturnValue({
+          drawImage: vi.fn(),
+        }),
+        toBlob: vi.fn().mockImplementation((callback) => {
+          callback(new Blob(['mock-png'], { type: 'image/png' }));
+        }),
+      };
+      global.HTMLCanvasElement.prototype.getContext = mockCanvas.getContext;
+      global.HTMLCanvasElement.prototype.toBlob = mockCanvas.toBlob;
+      Object.defineProperty(global.HTMLCanvasElement.prototype, 'width', {
+        set: function(value) { mockCanvas.width = value; },
+        get: function() { return mockCanvas.width; }
+      });
+      Object.defineProperty(global.HTMLCanvasElement.prototype, 'height', {
+        set: function(value) { mockCanvas.height = value; },
+        get: function() { return mockCanvas.height; }
+      });
+
+      global.Image = vi.fn().mockImplementation(() => {
+        const img = {
+          onload: null,
+          onerror: null,
+          src: '',
+        };
+        // Automatically trigger onload when src is set
+        Object.defineProperty(img, 'src', {
+          set: function(value) {
+            setTimeout(() => {
+              if (this.onload) {
+                this.onload();
+              }
+            }, 0);
+          }
+        });
+        return img;
+      });
 
       await exportService.exportObject(
         { object: mockZLFNObject, svgElement: mockSvgElement },

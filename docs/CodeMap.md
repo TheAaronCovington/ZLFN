@@ -1,4 +1,4 @@
-# ZLFN/STN/ATN Codebase Map
+# ZLFN/ATN Codebase Map
 
 **Version**: 2.0  
 **Last Updated**: 2024-12-22  
@@ -35,11 +35,11 @@
 
 ### Main Pages
 - **`src/pages/LogicVisualizer.tsx`** *(635 lines)* ✅ **OPTIMIZED WITH LAZY LOADING**
-  - **Features**: Main application shell, view mode switching (ZLFN/STN/ATN), drawer management
+  - **Features**: Main application shell, view mode switching (ZLFN/ATN), drawer management
   - **Components**: CommandBar, ControlsDrawer, InspectorDrawer, StatusBar integration
   - **State**: View mode, drawer states, performance overlay, search, snackbar notifications
   - **Logic**: Expression parsing, import/export, keyboard shortcuts, responsive layout
-  - **Dependencies**: LogicSharedContext, lazy-loaded ZlfnGraphWithNotes, lazy-loaded SemanticTableau, lazy-loaded ArgumentTableau
+  - **Dependencies**: LogicSharedContext, lazy-loaded ZlfnGraphWithNotes, lazy-loaded ArgumentTableau
   - **Performance**: Heavy visualization components load on-demand with React.Suspense
 
 - **`src/pages/Phase2Demo.tsx`**: Demo page for Phase 2 features
@@ -53,7 +53,7 @@
 
 ### Command & Control Layer
 - **`src/components/Visualizer/CommandBar.tsx`** *(~350 lines)*
-  - **Features**: Top toolbar, search, simulation controls, layout actions, view mode toggle (ZLFN/STN/ATN)
+  - **Features**: Top toolbar, search, simulation controls, layout actions, view mode toggle (ZLFN/ATN)
   - **Components**: Search autocomplete, argument filter, performance toggle, help/shortcuts
   - **State**: Menu anchors, search state
   - **Dependencies**: MUI components, icons
@@ -99,31 +99,8 @@
   - **State**: Notes data, notes dialogs
   - **Dependencies**: ZlfnGraph, notes hooks
 
-### Semantic Tableau Network (STN)
-- **`src/components/Visualizations/SemanticTableau.tsx`** *(~1800 lines)* ✅ **REFACTORED INTO MODULES**
-  - **Modular Structure**: Refactored into focused modules for better maintainability
-  - **`src/components/Visualizations/SemanticTableau/`**:
-    - **`tableauLogic.ts`**: AST to tableau conversion, rule validation, logical operations
-    - **`treeRenderer.ts`**: D3 tree layout and SVG rendering for tableau visualization
-    - **`exportFunctions.ts`**: LaTeX, image, and proof steps export functionality
-    - **`index.ts`**: Consolidated exports
-  - **Features**: Tree-based tableau visualization, proof construction, export capabilities
-  - **Components**: D3 tree layout, node expansion/closure, rule application, proof validation
-  - **State**: Tableau tree, selected nodes, auto operations, step mode, proof status
-  - **Logic**: Tableau rules (α, β, closure), branch validation, proof reconstruction
-  - **Dependencies**: CompactTableauMenu, TableauComparison, logic services
+**Note**: Semantic Tableau Network (STN) removed as per revised design (December 22, 2024).
 
-- **`src/components/Visualizations/CompactTableauMenu.tsx`** *(~200 lines)*
-  - **Features**: Redesigned single-row menu for STN with overflow dropdown
-  - **Components**: Layout toggle, logic mode selector, status chips, export buttons
-  - **State**: Overflow menu anchor
-  - **Dependencies**: MUI components, logic types
-
-- **`src/components/Visualizations/TableauComparison.tsx`** *(~150 lines)*
-  - **Features**: Side-by-side tableau comparison dialog
-  - **Components**: Multiple SemanticTableau instances, comparison insights
-  - **State**: Comparison list, input expressions
-  - **Dependencies**: SemanticTableau, logic parser
 
 ### Argument Tableau Network (ATN)
 - **`src/components/Visualizations/ArgumentTableau/index.tsx`** *(~470 lines)* ✅ **NEW IMPLEMENTATION**

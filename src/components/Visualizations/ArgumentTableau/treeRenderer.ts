@@ -1,6 +1,6 @@
 /**
  * ATN Tree Renderer - D3 Tree Layout for Argument Structure
- * Reuses patterns from SemanticTableau/treeRenderer.ts
+ * Tree layout patterns for argument visualization
  */
 
 import * as d3 from 'd3'
