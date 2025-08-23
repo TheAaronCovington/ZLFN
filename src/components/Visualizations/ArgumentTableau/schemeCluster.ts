@@ -249,16 +249,18 @@ export function calculateClusterLayout(
 }
 
 /**
- * Render scheme cluster backgrounds in SVG
+ * Render scheme cluster backgrounds in SVG with zoom-aware scaling and fade effects
  */
 export function renderSchemeClusterBackgrounds(
   svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
   clusters: SchemeCluster[],
   clusterPositions: Map<string, { x: number; y: number; radius: number }>,
-  showClusters: boolean = true
+  showClusters: boolean = true,
+  zoomScale: number = 1
 ): void {
   if (!showClusters) {
     svg.selectAll('.scheme-cluster-bg').remove()
+    svg.selectAll('.scheme-cluster-label').remove()
     return
   }
 
@@ -267,50 +269,137 @@ export function renderSchemeClusterBackgrounds(
     position: clusterPositions.get(cluster.scheme)
   })).filter(d => d.position)
 
+  // Calculate zoom-adjusted properties
+  const getZoomAdjustedRadius = (baseRadius: number) => {
+    // Scale radius inversely with zoom to maintain visual consistency
+    return baseRadius / Math.sqrt(zoomScale)
+  }
+
+  const getZoomAdjustedOpacity = (baseOpacity: number) => {
+    // Fade out clusters at high zoom levels to reduce visual clutter
+    if (zoomScale > 2) {
+      return baseOpacity * (3 - zoomScale) / 1 // Fade from zoom 2 to 3
+    }
+    return baseOpacity
+  }
+
+  const getZoomAdjustedStrokeWidth = (baseWidth: number) => {
+    // Maintain consistent stroke width across zoom levels
+    return baseWidth / zoomScale
+  }
+
+  // Render cluster background circles
   const clusterBgs = svg.selectAll('.scheme-cluster-bg')
     .data(clusterData, (d: any) => d.scheme)
 
-  clusterBgs.exit().remove()
+  clusterBgs.exit()
+    .transition()
+    .duration(300)
+    .attr('r', 0)
+    .style('opacity', 0)
+    .remove()
 
   const clusterEnter = clusterBgs.enter()
     .append('circle')
     .attr('class', 'scheme-cluster-bg')
+    .attr('r', 0)
+    .style('opacity', 0)
 
   const clusterMerge = clusterEnter.merge(clusterBgs as any)
 
   clusterMerge
+    .transition()
+    .duration(300)
+    .ease(d3.easeBackOut)
     .attr('cx', d => d.position!.x)
     .attr('cy', d => d.position!.y)
-    .attr('r', d => d.position!.radius)
+    .attr('r', d => getZoomAdjustedRadius(d.position!.radius))
     .attr('fill', d => d.color || '#666')
-    .attr('fill-opacity', 0.1)
+    .attr('fill-opacity', () => getZoomAdjustedOpacity(0.08))
     .attr('stroke', d => d.color || '#666')
-    .attr('stroke-width', 2)
-    .attr('stroke-opacity', 0.3)
-    .attr('stroke-dasharray', '5,5')
+    .attr('stroke-width', getZoomAdjustedStrokeWidth(2))
+    .attr('stroke-opacity', () => getZoomAdjustedOpacity(0.25))
+    .attr('stroke-dasharray', `${5 / zoomScale},${5 / zoomScale}`)
+    .style('opacity', 1)
     .style('pointer-events', 'none')
 
-  // Add cluster labels
+  // Add hover effects for cluster circles
+  clusterMerge
+    .on('mouseenter', function() {
+      d3.select(this)
+        .transition()
+        .duration(200)
+        .attr('fill-opacity', getZoomAdjustedOpacity(0.15))
+        .attr('stroke-opacity', getZoomAdjustedOpacity(0.4))
+        .attr('stroke-width', getZoomAdjustedStrokeWidth(3))
+    })
+    .on('mouseleave', function() {
+      d3.select(this)
+        .transition()
+        .duration(300)
+        .attr('fill-opacity', getZoomAdjustedOpacity(0.08))
+        .attr('stroke-opacity', getZoomAdjustedOpacity(0.25))
+        .attr('stroke-width', getZoomAdjustedStrokeWidth(2))
+    })
+
+  // Add cluster labels with zoom-aware sizing
   const clusterLabels = svg.selectAll('.scheme-cluster-label')
     .data(clusterData, (d: any) => d.scheme)
 
-  clusterLabels.exit().remove()
+  clusterLabels.exit()
+    .transition()
+    .duration(300)
+    .style('opacity', 0)
+    .remove()
 
   const labelEnter = clusterLabels.enter()
     .append('text')
     .attr('class', 'scheme-cluster-label')
+    .style('opacity', 0)
 
   const labelMerge = labelEnter.merge(clusterLabels as any)
 
+  // Calculate label visibility based on zoom level
+  const labelVisible = zoomScale >= 0.5 && zoomScale <= 2.5
+  const labelOpacity = labelVisible ? getZoomAdjustedOpacity(0.8) : 0
+
   labelMerge
+    .transition()
+    .duration(300)
     .attr('x', d => d.position!.x)
-    .attr('y', d => d.position!.y - d.position!.radius - 10)
+    .attr('y', d => d.position!.y - getZoomAdjustedRadius(d.position!.radius) - (10 / zoomScale))
     .attr('text-anchor', 'middle')
-    .style('font-size', '11px')
+    .style('font-size', `${Math.max(9, 11 / zoomScale)}px`)
     .style('font-weight', '600')
     .style('fill', d => d.color || '#666')
+    .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.7)')
     .style('pointer-events', 'none')
+    .style('opacity', labelOpacity)
     .text(d => d.scheme)
+
+  // Add pulsing animation for high-priority clusters
+  clusterMerge
+    .filter((d: any) => d.priority > 80) // High confidence clusters
+    .style('animation', `cluster-pulse 2s ease-in-out infinite`)
+
+  // Add CSS animation if not already present
+  if (!document.querySelector('#cluster-animations')) {
+    const style = document.createElement('style')
+    style.id = 'cluster-animations'
+    style.textContent = `
+      @keyframes cluster-pulse {
+        0%, 100% { 
+          stroke-opacity: 0.25;
+          fill-opacity: 0.08;
+        }
+        50% { 
+          stroke-opacity: 0.4;
+          fill-opacity: 0.15;
+        }
+      }
+    `
+    document.head.appendChild(style)
+  }
 }
 
 /**

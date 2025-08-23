@@ -283,6 +283,7 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
   const [settingsMenuAnchor, setSettingsMenuAnchor] = useState<null | HTMLElement>(null)
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
   const [selectedNodeIndex, setSelectedNodeIndex] = useState<number>(-1)
+  const [zoomScale, setZoomScale] = useState(1)
   // State management
   const [layoutMode, setLayoutMode] = useState<ATNLayoutMode>(() => {
     try {
@@ -607,7 +608,7 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
         renderStateRef.current = state
       } else {
         // Tree or hierarchical layout
-        const state = initializeTreeSVG(containerRef.current, config)
+        const state = initializeTreeSVG(containerRef.current, config, setZoomScale)
         
         if (layoutMode === 'tree') {
           renderTreeLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect, handleFacetClick)
@@ -630,7 +631,7 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
             })
           } catch {}
           const clusterPositions = calculateClusterLayout(clusters, (state.g as any).selectAll('.tree-node').data() as any[], config.width, config.height)
-          renderSchemeClusterBackgrounds(state.svg, clusters, clusterPositions, true)
+          renderSchemeClusterBackgrounds(state.svg, clusters, clusterPositions, true, zoomScale)
         }
         
         renderStateRef.current = state
@@ -692,7 +693,7 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
           renderTableLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect)
           renderStateRef.current = state
         } else {
-          const state = initializeTreeSVG(containerRef.current, config)
+          const state = initializeTreeSVG(containerRef.current, config, setZoomScale)
           
           if (layoutMode === 'tree') {
             renderTreeLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect, handleFacetClick)

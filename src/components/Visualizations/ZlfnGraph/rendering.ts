@@ -32,27 +32,80 @@ export function renderNodes(
     .attr('class', 'node')
     .attr('id', (d: any) => `node-${d.id}`)
 
-  // Add node shapes
+  // Add node shapes with hover animations
   nodeEnter.each(function(d: any) {
     const node = d3.select(this)
     
+    // Add glow filter definition
+    if (!g.select('defs').node()) {
+      const defs = g.append('defs')
+      
+      // Create glow filter
+      const glowFilter = defs.append('filter')
+        .attr('id', 'glow')
+        .attr('x', '-50%')
+        .attr('y', '-50%')
+        .attr('width', '200%')
+        .attr('height', '200%')
+      
+      glowFilter.append('feGaussianBlur')
+        .attr('stdDeviation', '4')
+        .attr('result', 'coloredBlur')
+      
+      const feMerge = glowFilter.append('feMerge')
+      feMerge.append('feMergeNode').attr('in', 'coloredBlur')
+      feMerge.append('feMergeNode').attr('in', 'SourceGraphic')
+      
+      // Create pulse animation filter
+      const pulseFilter = defs.append('filter')
+        .attr('id', 'pulse')
+        .attr('x', '-100%')
+        .attr('y', '-100%')
+        .attr('width', '300%')
+        .attr('height', '300%')
+      
+      pulseFilter.append('feGaussianBlur')
+        .attr('stdDeviation', '2')
+        .attr('result', 'blur')
+      
+      pulseFilter.append('feColorMatrix')
+        .attr('in', 'blur')
+        .attr('type', 'matrix')
+        .attr('values', '1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1.5 0')
+        .attr('result', 'glow')
+      
+      const pulseMerge = pulseFilter.append('feMerge')
+      pulseMerge.append('feMergeNode').attr('in', 'glow')
+      pulseMerge.append('feMergeNode').attr('in', 'SourceGraphic')
+    }
+    
     if (d.size && 'width' in d.size) {
-      // Rectangle node
-      node.append('rect')
+      // Rectangle node with hover expansion
+      const rect = node.append('rect')
         .attr('width', d.size.width)
         .attr('height', d.size.height)
         .attr('x', -d.size.width / 2)
         .attr('y', -d.size.height / 2)
         .attr('rx', 4)
         .attr('ry', 4)
+        .style('transition', 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)')
+        .style('cursor', 'pointer')
+      
+      // Store original dimensions
+      rect.datum({ ...d, originalWidth: d.size.width, originalHeight: d.size.height })
     } else {
-      // Circle node
+      // Circle node with hover expansion
       const radius = d.size?.radius || 20
-      node.append('circle')
+      const circle = node.append('circle')
         .attr('r', radius)
+        .style('transition', 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)')
+        .style('cursor', 'pointer')
+      
+      // Store original radius
+      circle.datum({ ...d, originalRadius: radius })
     }
     
-    // Add node label
+    // Add node label with hover effects
     node.append('text')
       .attr('class', 'node-label')
       .attr('text-anchor', 'middle')
@@ -61,6 +114,7 @@ export function renderNodes(
       .style('font-weight', '500')
       .style('pointer-events', 'none')
       .style('user-select', 'none')
+      .style('transition', 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)')
   })
 
   // Merge enter and update selections
@@ -87,6 +141,95 @@ export function renderNodes(
   nodeUpdate.select('.node-label')
     .text((d: any) => d.name || d.symbol || d.label || d.id)
     .style('fill', (d: any) => getNodeTextColor(d.color))
+
+  // Add hover interactions with expansion and glow effects
+  nodeUpdate
+    .on('mouseenter', function(_event, d: any) {
+      const node = d3.select(this)
+      const shape = node.select('rect, circle')
+      const label = node.select('.node-label')
+      
+      // Apply glow effect
+      shape.style('filter', 'url(#glow)')
+      
+      // Expand node
+      const shapeElement = shape.node() as SVGElement
+      if (shapeElement?.tagName === 'rect') {
+        const originalWidth = d.originalWidth || d.size?.width || 100
+        const originalHeight = d.originalHeight || d.size?.height || 40
+        const expandedWidth = originalWidth * 1.15
+        const expandedHeight = originalHeight * 1.15
+        
+        shape
+          .transition()
+          .duration(200)
+          .ease(d3.easeBackOut.overshoot(1.2))
+          .attr('width', expandedWidth)
+          .attr('height', expandedHeight)
+          .attr('x', -expandedWidth / 2)
+          .attr('y', -expandedHeight / 2)
+      } else if (shapeElement?.tagName === 'circle') {
+        const originalRadius = d.originalRadius || d.size?.radius || 20
+        const expandedRadius = originalRadius * 1.2
+        
+        shape
+          .transition()
+          .duration(200)
+          .ease(d3.easeBackOut.overshoot(1.2))
+          .attr('r', expandedRadius)
+      }
+      
+      // Enhance label
+      label
+        .transition()
+        .duration(200)
+        .style('font-weight', '600')
+        .style('font-size', '13px')
+        .style('text-shadow', '0 0 8px rgba(100, 200, 255, 0.6)')
+      
+      // Raise node to front
+      node.raise()
+    })
+    .on('mouseleave', function(_event, d: any) {
+      const node = d3.select(this)
+      const shape = node.select('rect, circle')
+      const label = node.select('.node-label')
+      
+      // Remove glow effect
+      shape.style('filter', null)
+      
+      // Restore original size
+      const shapeElement = shape.node() as SVGElement
+      if (shapeElement?.tagName === 'rect') {
+        const originalWidth = d.originalWidth || d.size?.width || 100
+        const originalHeight = d.originalHeight || d.size?.height || 40
+        
+        shape
+          .transition()
+          .duration(300)
+          .ease(d3.easeBackOut)
+          .attr('width', originalWidth)
+          .attr('height', originalHeight)
+          .attr('x', -originalWidth / 2)
+          .attr('y', -originalHeight / 2)
+      } else if (shapeElement?.tagName === 'circle') {
+        const originalRadius = d.originalRadius || d.size?.radius || 20
+        
+        shape
+          .transition()
+          .duration(300)
+          .ease(d3.easeBackOut)
+          .attr('r', originalRadius)
+      }
+      
+      // Restore label
+      label
+        .transition()
+        .duration(300)
+        .style('font-weight', '500')
+        .style('font-size', '12px')
+        .style('text-shadow', 'none')
+    })
 
   return nodeUpdate
 }

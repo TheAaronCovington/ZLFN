@@ -36,7 +36,8 @@ export interface TreeLinkDatum {
  */
 export function initializeTreeSVG(
   container: HTMLElement,
-  config: ArgumentRenderConfig
+  config: ArgumentRenderConfig,
+  onZoomChange?: (scale: number) => void
 ): TreeRenderState {
   // Clear existing content
   d3.select(container).selectAll('*').remove()
@@ -74,12 +75,58 @@ export function initializeTreeSVG(
       // Update overlay visibility based on zoom level for better performance
       const scale = event.transform.k
       updateOverlayVisibility(g, scale)
+      
+      // Notify zoom scale change for scheme cluster updates
+      onZoomChange?.(scale)
     })
 
   svg.call(zoom)
 
   // Add definitions for markers and patterns
   const defs = svg.append('defs')
+
+  // Create glow filter for hover effects
+  const glowFilter = defs.append('filter')
+    .attr('id', 'atn-glow')
+    .attr('x', '-50%')
+    .attr('y', '-50%')
+    .attr('width', '200%')
+    .attr('height', '200%')
+  
+  glowFilter.append('feGaussianBlur')
+    .attr('stdDeviation', '3')
+    .attr('result', 'coloredBlur')
+  
+  const feMerge = glowFilter.append('feMerge')
+  feMerge.append('feMergeNode').attr('in', 'coloredBlur')
+  feMerge.append('feMergeNode').attr('in', 'SourceGraphic')
+
+  // Create gradient definitions for modern node styling
+  const gradientConfigs = [
+    { id: 'claim-gradient', colors: ['#4f46e5', '#7c3aed'] },
+    { id: 'premise-gradient', colors: ['#059669', '#0d9488'] },
+    { id: 'evidence-gradient', colors: ['#dc2626', '#ea580c'] },
+    { id: 'warrant-gradient', colors: ['#7c2d12', '#a16207'] },
+    { id: 'backing-gradient', colors: ['#1e40af', '#1e3a8a'] },
+    { id: 'rebuttal-gradient', colors: ['#be123c', '#9f1239'] }
+  ]
+
+  gradientConfigs.forEach(({ id, colors }) => {
+    const gradient = defs.append('linearGradient')
+      .attr('id', id)
+      .attr('x1', '0%')
+      .attr('y1', '0%')
+      .attr('x2', '100%')
+      .attr('y2', '100%')
+    
+    gradient.append('stop')
+      .attr('offset', '0%')
+      .attr('stop-color', colors[0])
+    
+    gradient.append('stop')
+      .attr('offset', '100%')
+      .attr('stop-color', colors[1])
+  })
 
   // Arrow markers for different relationship types
   const markerConfigs = [
@@ -313,66 +360,87 @@ function renderTreeNodes(
       onNodeClick?.(d.data)
     })
 
-  // Add node shapes based on argument type
+  // Add node shapes based on argument type with modern styling
   nodeEnter.each(function(d) {
     const node = d3.select(this)
     const argumentType = d.data.argumentType
     const color = ARGUMENT_COLORS[argumentType]
+    const gradientId = `${argumentType}-gradient`
+
+    // Store original dimensions for hover effects
+    let originalDimensions: any = {}
 
     switch (argumentType) {
       case 'claim':
         // Rectangle for claims (prominent)
-        node.append('rect')
+        const claimRect = node.append('rect')
           .attr('class', 'node-shape')
           .attr('x', -60)
           .attr('y', -20)
           .attr('width', 120)
           .attr('height', 40)
           .attr('rx', 8)
+        
+        originalDimensions = { width: 120, height: 40, x: -60, y: -20 }
+        claimRect.datum({ ...d, originalDimensions })
         break
 
       case 'ground':
       case 'backing':
         // Rounded rectangles for evidence
-        node.append('rect')
+        const evidenceRect = node.append('rect')
           .attr('class', 'node-shape')
           .attr('x', -50)
           .attr('y', -15)
           .attr('width', 100)
           .attr('height', 30)
           .attr('rx', 15)
+        
+        originalDimensions = { width: 100, height: 30, x: -50, y: -15 }
+        evidenceRect.datum({ ...d, originalDimensions })
         break
 
       case 'warrant':
         // Diamond for warrants
-        node.append('path')
+        const warrantPath = node.append('path')
           .attr('class', 'node-shape')
           .attr('d', 'M-40,0 L0,-20 L40,0 L0,20 Z')
+        
+        originalDimensions = { path: 'M-40,0 L0,-20 L40,0 L0,20 Z' }
+        warrantPath.datum({ ...d, originalDimensions })
         break
 
       case 'rebuttal':
         // Hexagon for rebuttals
-        node.append('path')
+        const rebuttalPath = node.append('path')
           .attr('class', 'node-shape')
           .attr('d', 'M-30,-15 L30,-15 L40,0 L30,15 L-30,15 L-40,0 Z')
+        
+        originalDimensions = { path: 'M-30,-15 L30,-15 L40,0 L30,15 L-30,15 L-40,0 Z' }
+        rebuttalPath.datum({ ...d, originalDimensions })
         break
 
       case 'qualifier':
         // Circle for qualifiers
-        node.append('circle')
+        const qualifierCircle = node.append('circle')
           .attr('class', 'node-shape')
           .attr('r', 20)
+        
+        originalDimensions = { radius: 20 }
+        qualifierCircle.datum({ ...d, originalDimensions })
         break
     }
 
-    // Style the shape
+    // Style the shape with gradients and modern effects
     node.select('.node-shape')
-      .attr('fill', color)
+      .attr('fill', `url(#${gradientId})`)
       .attr('stroke', d3.color(color)?.darker(1).toString() || color)
       .attr('stroke-width', 2)
-      .style('filter', 'drop-shadow(2px 2px 4px rgba(0,0,0,0.3))')
+      .style('filter', 'drop-shadow(2px 2px 6px rgba(0,0,0,0.4))')
+      .style('transition', 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)')
+      .style('cursor', 'pointer')
 
-    // Add text label
+    // Add text label with enhanced styling
     node.append('text')
       .attr('class', 'node-label')
       .attr('text-anchor', 'middle')
@@ -381,12 +449,14 @@ function renderTreeNodes(
       .style('font-size', '12px')
       .style('font-weight', '600')
       .style('pointer-events', 'none')
+      .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.7)')
+      .style('transition', 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)')
       .text(function(d: any) {
         const label = d.data.label || d.data.name || 'Untitled'
         return label.length > 15 ? label.substring(0, 15) + '...' : label
       })
 
-    // Add strength indicator
+    // Add strength indicator with enhanced styling
     if (d.data.strength !== undefined) {
       node.append('text')
         .attr('class', 'strength-indicator')
@@ -394,7 +464,10 @@ function renderTreeNodes(
         .attr('dy', '25')
         .style('fill', 'var(--ai-text-secondary)')
         .style('font-size', '10px')
+        .style('font-weight', '500')
         .style('pointer-events', 'none')
+        .style('text-shadow', '1px 1px 1px rgba(0,0,0,0.5)')
+        .style('transition', 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)')
         .text(`${d.data.strength}%`)
     }
 
@@ -404,11 +477,133 @@ function renderTreeNodes(
     }
   })
 
+  // Add hover interactions with expansion and glow effects
+  nodeMerge
+    .on('mouseenter', function(_event, d: any) {
+      const node = d3.select(this)
+      const shape = node.select('.node-shape')
+      const label = node.select('.node-label')
+      const strengthIndicator = node.select('.strength-indicator')
+      
+      // Apply glow effect
+      shape.style('filter', 'url(#atn-glow) drop-shadow(2px 2px 6px rgba(0,0,0,0.4))')
+      
+      // Expand based on shape type
+      const shapeElement = shape.node() as SVGElement
+      if (shapeElement?.tagName === 'rect') {
+        const originalDims = d.originalDimensions
+        if (originalDims) {
+          const expandedWidth = originalDims.width * 1.1
+          const expandedHeight = originalDims.height * 1.1
+          const expandedX = -expandedWidth / 2
+          const expandedY = -expandedHeight / 2
+          
+          shape
+            .transition()
+            .duration(200)
+            .ease(d3.easeBackOut.overshoot(1.1))
+            .attr('width', expandedWidth)
+            .attr('height', expandedHeight)
+            .attr('x', expandedX)
+            .attr('y', expandedY)
+        }
+      } else if (shapeElement?.tagName === 'circle') {
+        const originalRadius = d.originalDimensions?.radius || 20
+        const expandedRadius = originalRadius * 1.15
+        
+        shape
+          .transition()
+          .duration(200)
+          .ease(d3.easeBackOut.overshoot(1.1))
+          .attr('r', expandedRadius)
+      } else if (shapeElement?.tagName === 'path') {
+        // Scale path shapes
+        shape
+          .transition()
+          .duration(200)
+          .ease(d3.easeBackOut.overshoot(1.1))
+          .attr('transform', 'scale(1.1)')
+      }
+      
+      // Enhance text
+      label
+        .transition()
+        .duration(200)
+        .style('font-weight', '700')
+        .style('font-size', '13px')
+        .style('text-shadow', '0 0 8px rgba(255, 255, 255, 0.8), 1px 1px 2px rgba(0,0,0,0.7)')
+      
+      strengthIndicator
+        .transition()
+        .duration(200)
+        .style('font-weight', '600')
+        .style('font-size', '11px')
+        .style('fill', 'var(--ai-accent-primary)')
+      
+      // Raise node to front
+      node.raise()
+    })
+    .on('mouseleave', function(_event, d: any) {
+      const node = d3.select(this)
+      const shape = node.select('.node-shape')
+      const label = node.select('.node-label')
+      const strengthIndicator = node.select('.strength-indicator')
+      
+      // Remove glow effect
+      shape.style('filter', 'drop-shadow(2px 2px 6px rgba(0,0,0,0.4))')
+      
+      // Restore original size
+      const shapeElement = shape.node() as SVGElement
+      if (shapeElement?.tagName === 'rect') {
+        const originalDims = d.originalDimensions
+        if (originalDims) {
+          shape
+            .transition()
+            .duration(300)
+            .ease(d3.easeBackOut)
+            .attr('width', originalDims.width)
+            .attr('height', originalDims.height)
+            .attr('x', originalDims.x)
+            .attr('y', originalDims.y)
+        }
+      } else if (shapeElement?.tagName === 'circle') {
+        const originalRadius = d.originalDimensions?.radius || 20
+        
+        shape
+          .transition()
+          .duration(300)
+          .ease(d3.easeBackOut)
+          .attr('r', originalRadius)
+      } else if (shapeElement?.tagName === 'path') {
+        // Restore path scale
+        shape
+          .transition()
+          .duration(300)
+          .ease(d3.easeBackOut)
+          .attr('transform', 'scale(1)')
+      }
+      
+      // Restore text
+      label
+        .transition()
+        .duration(300)
+        .style('font-weight', '600')
+        .style('font-size', '12px')
+        .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.7)')
+      
+      strengthIndicator
+        .transition()
+        .duration(300)
+        .style('font-weight', '500')
+        .style('font-size', '10px')
+        .style('fill', 'var(--ai-text-secondary)')
+    })
+
   // Update existing nodes
   nodeMerge.select('.node-shape')
     .transition()
     .duration(300)
-    .attr('fill', d => ARGUMENT_COLORS[d.data.argumentType])
+    .attr('fill', d => `url(#${d.data.argumentType}-gradient)`)
 
   nodeMerge.select('.node-label')
     .text(function(d: any) {
