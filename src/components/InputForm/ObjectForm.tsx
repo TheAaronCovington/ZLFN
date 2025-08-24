@@ -130,7 +130,7 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
           }
           return {
             ...prev,
-            ...(importedMarkdown !== undefined ? { markdownContent: importedMarkdown } : {}),
+            markdownContent: importedMarkdown !== undefined ? importedMarkdown : prev.markdownContent,
             zflnJson: {
               ...prev.zflnJson,
               arguments: importedArgs.length > 0 ? importedArgs : prev.zflnJson?.arguments || []

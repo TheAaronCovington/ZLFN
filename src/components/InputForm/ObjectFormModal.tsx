@@ -81,7 +81,9 @@ export default function ObjectFormModal({
             const { markdownContent, ...rest } = arg as any
             return rest
           })
-          setImportedData(normalized)
+          // Only populate arguments – markdown content should remain
+          // untouched so existing edits in ObjectForm are preserved
+          setImportedData({ arguments: normalized })
           setFormProgress(75)
         } catch (error) {
           console.error('Failed to import JSON:', error)
