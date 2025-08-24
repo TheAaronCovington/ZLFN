@@ -33,14 +33,12 @@ import {
 } from '@mui/icons-material'
 import type { 
   ArgumentTableauProps, 
-  ArgumentData, 
   ArgumentNode, 
   ArgumentEdge,
   ATNLayoutMode,
   ArgumentCollection 
 } from './types'
 import { 
-  ARGUMENT_COLORS,
   DEFAULT_ATN_CONFIG
 } from './types'
 import { storage } from '../../../services/storage'
@@ -87,168 +85,7 @@ import KeyboardShortcutsDialog from './KeyboardShortcutsDialog'
 /**
  * Sample argument data for initial development and testing
  */
-const SAMPLE_ARGUMENT: ArgumentData = {
-  id: 'demo-argument',
-  name: 'Policy X Should Be Adopted',
-  description: 'A sample argument demonstrating the ATN structure',
-  core: {
-    id: 'claim-1',
-    label: 'Policy X should be adopted',
-    name: 'Main Claim',
-    argumentType: 'claim',
-    argumentId: 'demo-argument',
-    type: 'conclusion',
-    color: ARGUMENT_COLORS.claim,
-    size: { width: 150, height: 40 },
-    strength: 85,
-    x: 400,
-    y: 100,
-    facets: {
-      vennRelevant: true,
-      truthTableRelevant: false,
-      timelineRelevant: false,
-      counterRelevant: true,
-      rebuttalRelevant: true,
-      noteRelevant: true
-    }
-  },
-  components: [
-    {
-      id: 'ground-1',
-      label: 'Studies show benefits',
-      name: 'Evidence Ground',
-      argumentType: 'ground',
-      argumentId: 'demo-argument',
-      type: 'premise',
-      color: ARGUMENT_COLORS.ground,
-      size: { width: 120, height: 30 },
-      strength: 90,
-      x: 200,
-      y: 200,
-      facets: { vennRelevant: true, noteRelevant: true }
-    },
-    {
-      id: 'warrant-1',
-      label: 'Evidence-based policy is good',
-      name: 'Policy Warrant',
-      argumentType: 'warrant',
-      argumentId: 'demo-argument',
-      type: 'term',
-      color: ARGUMENT_COLORS.warrant,
-      size: { width: 140, height: 30 },
-      strength: 75,
-      x: 400,
-      y: 200,
-      facets: { truthTableRelevant: true, noteRelevant: true }
-    },
-    {
-      id: 'backing-1',
-      label: 'Historical success of evidence-based policies',
-      name: 'Historical Backing',
-      argumentType: 'backing',
-      argumentId: 'demo-argument',
-      type: 'premise',
-      color: ARGUMENT_COLORS.backing,
-      size: { width: 160, height: 30 },
-      strength: 80,
-      x: 600,
-      y: 280,
-      facets: { timelineRelevant: true, noteRelevant: true }
-    },
-    {
-      id: 'rebuttal-1',
-      label: 'Policy X is too expensive',
-      name: 'Cost Rebuttal',
-      argumentType: 'rebuttal',
-      argumentId: 'demo-argument',
-      type: 'fallacy',
-      color: ARGUMENT_COLORS.rebuttal,
-      size: { width: 130, height: 30 },
-      strength: 60,
-      attackedBy: [],
-      x: 100,
-      y: 300,
-      facets: { rebuttalRelevant: true, counterRelevant: true, noteRelevant: true }
-    },
-    {
-      id: 'qualifier-1',
-      label: 'Unless budget constraints apply',
-      name: 'Budget Qualifier',
-      argumentType: 'qualifier',
-      argumentId: 'demo-argument',
-      type: 'informal',
-      color: ARGUMENT_COLORS.qualifier,
-      size: { radius: 25 },
-      strength: 70,
-      x: 500,
-      y: 50,
-      facets: { noteRelevant: true }
-    }
-  ],
-  relationships: [
-    {
-      id: 'rel-1',
-      from: 'ground-1',
-      to: 'warrant-1',
-      relationshipType: 'support',
-      scheme: 'Evidence to Warrant',
-      confidence: 85,
-      weight: 85,
-      rule: 'Evidence Support',
-      type: 'implication',
-      style: 'solid'
-    },
-    {
-      id: 'rel-2',
-      from: 'warrant-1',
-      to: 'claim-1',
-      relationshipType: 'support',
-      scheme: 'Warrant to Claim',
-      confidence: 80,
-      weight: 80,
-      rule: 'Warrant Support',
-      type: 'implication',
-      style: 'solid'
-    },
-    {
-      id: 'rel-3',
-      from: 'backing-1',
-      to: 'warrant-1',
-      relationshipType: 'support',
-      scheme: 'Historical Authority',
-      confidence: 75,
-      weight: 75,
-      rule: 'Authority Support',
-      type: 'implication',
-      style: 'solid'
-    },
-    {
-      id: 'rel-4',
-      from: 'rebuttal-1',
-      to: 'claim-1',
-      relationshipType: 'attack',
-      scheme: 'Cost-Benefit Challenge',
-      confidence: 65,
-      weight: 65,
-      rule: 'Economic Challenge',
-      type: 'counterexample',
-      style: 'dashed'
-    },
-    {
-      id: 'rel-5',
-      from: 'qualifier-1',
-      to: 'claim-1',
-      relationshipType: 'undercut',
-      scheme: 'Conditional Limitation',
-      confidence: 70,
-      weight: 70,
-      rule: 'Conditional Qualifier',
-      type: 'semantic',
-      style: 'dotted'
-    }
-  ],
-  layoutMode: 'tree'
-}
+// No sample argument retained
 
 const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
   expression: _expression,
@@ -303,7 +140,7 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
   })
 
   const [argumentCollection] = useState<ArgumentCollection>(() => ({
-    arguments: argument ? [argument] : [SAMPLE_ARGUMENT],
+    arguments: argument ? [argument] : [],
     selectedArgumentId: argument?.id || selectedArgumentId,
     globalSettings: {
       showSchemeLabels: true,
@@ -337,11 +174,9 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
 
   // Get current argument data - wire to shared data if available
   const currentArgument = useMemo(() => {
-    // Use shared data argument if provided, otherwise fall back to collection or sample
-    if (argument) {
-      return argument
-    }
-    return argumentCollection.arguments.find(arg => arg.id === selectedArgumentId) || SAMPLE_ARGUMENT
+    // Use shared data argument if provided, otherwise look in collection
+    if (argument) return argument
+    return argumentCollection.arguments.find(arg => arg.id === selectedArgumentId) as any
   }, [argument, argumentCollection, selectedArgumentId])
 
   // Convert to ATN format (adapt existing data if needed)

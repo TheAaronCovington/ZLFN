@@ -59,8 +59,7 @@ interface ControlsDrawerProps {
   }>
   
   // Demo Extras
-  showDemoExtras: boolean
-  onToggleDemoExtras: () => void
+  // Removed demo extras for clean testing
   
   // Recent expressions (if available)
   recentExpressions?: string[]
@@ -82,8 +81,6 @@ export const ControlsDrawer: React.FC<ControlsDrawerProps> = ({
   useDocumentData,
   onToggleDocumentData,
   documentArguments = [],
-  showDemoExtras,
-  onToggleDemoExtras,
   recentExpressions = [],
   onSelectRecentExpression
 }) => {
@@ -265,17 +262,7 @@ export const ControlsDrawer: React.FC<ControlsDrawerProps> = ({
           </AccordionSummary>
           <AccordionDetails>
             <FormGroup>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={showDemoExtras}
-                    onChange={() => onToggleDemoExtras()}
-                    sx={{ color: '#40c4ff', '&.Mui-checked': { color: '#40c4ff' } }}
-                  />
-                }
-                label="Demo Extras"
-                sx={{ color: '#ffffff' }}
-              />
+              {/* Demo Extras removed for clean testing */}
             </FormGroup>
           </AccordionDetails>
         </Accordion>

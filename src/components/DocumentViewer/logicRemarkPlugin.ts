@@ -142,6 +142,11 @@ export function logicRemarkPlugin(options: { enableTooltips?: boolean; enableVar
 	const { enableTooltips = true, enableVariableMapping = true } = options
 	
 	return (tree: any) => {
+		// Defensive guards for empty/invalid trees
+		if (!tree || typeof tree !== 'object') return
+		if (import.meta.env.DEV) {
+			try { console.debug('[logicRemarkPlugin] start', { type: tree?.type, childCount: Array.isArray(tree?.children) ? tree.children.length : undefined }) } catch {}
+		}
 		// Collect variables and predicates across the document for mapping
 		const documentVariables = new Set<string>()
 		const documentPredicates = new Set<string>()
@@ -159,7 +164,7 @@ export function logicRemarkPlugin(options: { enableTooltips?: boolean; enableVar
 			if (!parent || typeof node.value !== 'string') return
 			if (parent.type === 'inlineCode' || parent.type === 'code') return
 			const value: string = node.value
-
+			
 			// Build enhanced regex patterns
 			const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 			
@@ -223,7 +228,10 @@ export function logicRemarkPlugin(options: { enableTooltips?: boolean; enableVar
 			
 			out += value.slice(lastIndex)
 			if (out === value) return
-			if (typeof index === 'number') {
+			if (typeof index === 'number' && parent && Array.isArray(parent.children)) {
+				if (import.meta.env.DEV) {
+					try { console.debug('[logicRemarkPlugin] replace text->html', { original: value, replaced: out }) } catch {}
+				}
 				parent.children.splice(index, 1, { type: 'html', value: out })
 			}
 		})

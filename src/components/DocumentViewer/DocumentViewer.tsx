@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import 'katex/dist/katex.min.css'
 import 'highlight.js/styles/atom-one-dark.css'
 import { logicRemarkPlugin } from './logicRemarkPlugin'
+import './DocumentViewer.css'
 import { getDocumentContent } from '../../services/docs'
 import { useLogicShared } from '../../context/LogicSharedContext'
 import { Box, Typography, Chip, IconButton, Tooltip } from '@mui/material'
@@ -42,7 +43,7 @@ const AccordionMarkdownRenderer: React.FC<{
 
   return (
     <ReactMarkdown
-      remarkPlugins={[...remarkPlugins, logicRemarkPlugin(syntaxOptions)]}
+      remarkPlugins={[...remarkPlugins, [logicRemarkPlugin as any, syntaxOptions] as any]}
       rehypePlugins={[...rehypePlugins]}
       components={{
         // Skip headings if requested (they're in accordion titles)
@@ -100,7 +101,7 @@ const AccordionMarkdownRenderer: React.FC<{
           </Box>
         ),
         code: ({ children, className }) => {
-          // Check if it's inline code (no className usually means inline)
+          // Inline code (no className usually means inline)
           if (!className) {
             return (
               <Box component="code" sx={{ 
@@ -118,11 +119,11 @@ const AccordionMarkdownRenderer: React.FC<{
               </Box>
             )
           }
-          
-          // Check if it's an expression block
-          const content = String(children).trim()
-          const isExpression = className?.includes('language-expression') || content.match(/^[\(\)\w\s→↔⇒⇔¬∧∨⊻↑⊢⊨∀∃⊥⊤&|!~<>=\-]+$/)
-          
+
+          // Block code: preserve className so rehype-highlight can style
+          const content = String(children ?? '').trim()
+          const isExpression = className?.includes('language-expression') || /[→↔⇒⇔¬∧∨⊻↑⊢⊨∀∃⊥⊤]/.test(content)
+
           if (isExpression) {
             return (
               <Box sx={{ mb: 1.5 }}>
@@ -150,7 +151,7 @@ const AccordionMarkdownRenderer: React.FC<{
                     border: '1px solid var(--ai-border-primary)'
                   }
                 }}>
-                  <pre style={{ margin: 0, color: 'var(--ai-green)' }}>{content}</pre>
+                  <pre style={{ margin: 0 }}><code className={className}>{content}</code></pre>
                   <button 
                     onClick={() => setCurrentExpression(content)}
                     style={{ 
@@ -165,14 +166,6 @@ const AccordionMarkdownRenderer: React.FC<{
                       fontWeight: 600,
                       transition: 'all 0.2s ease'
                     }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(0, 229, 255, 0.2)'
-                      e.currentTarget.style.transform = 'translateY(-1px)'
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(0, 229, 255, 0.1)'
-                      e.currentTarget.style.transform = 'translateY(0)'
-                    }}
                   >
                     Use Expression
                   </button>
@@ -180,22 +173,8 @@ const AccordionMarkdownRenderer: React.FC<{
               </Box>
             )
           }
-          
-          return (
-            <Box sx={{ 
-              backgroundColor: 'var(--ai-bg-elevated)', 
-              border: '1px solid var(--ai-border-primary)',
-              borderRadius: 2,
-              p: 1.5,
-              mb: 1.5,
-              fontFamily: 'JetBrains Mono, Fira Code, monospace',
-              fontSize: 13,
-              overflow: 'auto',
-              boxShadow: 'var(--ai-glow-cyan)'
-            }}>
-              <pre style={{ margin: 0, color: 'var(--ai-text-primary)' }}>{children}</pre>
-            </Box>
-          )
+
+          return <pre style={{ margin: 0 }}><code className={className}>{children}</code></pre>
         }
       }}
     >
@@ -579,7 +558,7 @@ const PluginsRenderer: React.FC<{ content: string, activeExpression: string, syn
 
   return (
     <ReactMarkdown 
-      remarkPlugins={[...remarkPlugins, logicRemarkPlugin(syntaxOptions)]}
+      remarkPlugins={[...remarkPlugins, [logicRemarkPlugin as any, syntaxOptions] as any]}
       rehypePlugins={[...rehypePlugins]}
       components={{
         h1: ({ children }) => {
@@ -616,11 +595,9 @@ const PluginsRenderer: React.FC<{ content: string, activeExpression: string, syn
           const isInline = !className
           const text = String(children ?? '').trim()
           const classNameExtra = !isInline && text === activeExpression ? ' expr-active' : ''
-          return isInline ? (
-            <code className="markdown-code-inline">{children}</code>
-          ) : (
-            <code className={`markdown-code-block${classNameExtra}`} onClick={() => setCurrentExpression(text)} style={{ cursor: 'pointer' }}>{children}</code>
-          )
+          if (isInline) return <code className="markdown-code-inline">{children}</code>
+          // Preserve className so rehype-highlight can style
+          return <code className={`${className} markdown-code-block${classNameExtra}`} onClick={() => setCurrentExpression(text)} style={{ cursor: 'pointer' }}>{children}</code>
         },
         pre: ({ children }) => <pre className="markdown-pre">{children}</pre>,
         blockquote: ({ children }) => <blockquote className="markdown-blockquote">{children}</blockquote>,

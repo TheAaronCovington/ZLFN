@@ -73,9 +73,7 @@ const LogicVisualizer: React.FC = () => {
 	const [bayesianEnabled, setBayesianEnabled] = React.useState<boolean>(() => 
 		localStorage.getItem('xv_bayesian') === '1'
 	)
-	const [showDemoExtras, setShowDemoExtras] = React.useState<boolean>(() => 
-		localStorage.getItem('xv_demo_extras') === '1'
-	)
+	const [showDemoExtras, setShowDemoExtras] = React.useState<boolean>(() => false)
 	const [useDocumentData, setUseDocumentData] = React.useState<boolean>(() => 
 		localStorage.getItem('xv_use_document') === '1'
 	)
@@ -192,21 +190,12 @@ const LogicVisualizer: React.FC = () => {
 		} : null
 	}, [unifiedData.arguments, selectedArgumentId, graph])
 	
-	// Only show sample data when the default expression is selected and no graph is available
-	const showSample = !activeData && (unifiedData.selectedArgumentId === 'default-expression')
-	
-	let nodes: ZlfnNode[] = activeData?.nodes || (showSample ? [
-		{ id: 'P1', label: 'P1', color: '#20B2AA', type: 'premise', size: { width: 100, height: 30 }, argumentId: 'Demo' },
-		{ id: 'T1', label: 'T1', color: '#4169E1', type: 'term', size: { radius: 20 }, argumentId: 'Demo' },
-		{ id: 'C', label: 'C', color: '#9370DB', type: 'conclusion', size: { width: 100, height: 30 }, argumentId: 'Demo' },
-	] : [])
-	let edges = (activeData?.edges || (showSample ? [
-		{ from: 'P1', to: 'T1', weight: 85, style: 'solid', rule: 'Modus Ponens' },
-		{ from: 'T1', to: 'C', weight: 75, style: 'dashed', rule: 'Hypothetical Syllogism' },
-	] : [])) as any[]
+	// No sample data; empty when no active graph
+	let nodes: ZlfnNode[] = activeData?.nodes || []
+	let edges = (activeData?.edges || []) as any[]
 
-	// Add demo extras if enabled
-	if (showDemoExtras && (!graph || (Array.isArray(graph.nodes) && graph.nodes.length <= 6))) {
+	// Remove demo extras in clean mode
+	if (false && showDemoExtras && (!graph || (Array.isArray(graph.nodes) && graph.nodes.length <= 6))) {
 		if (!nodes.find(n => n.id === 'C2')) {
 			nodes = nodes.concat({ id: 'C2', label: 'C2', color: '#8e7cc3', type: 'conclusion', size: { width: 100, height: 30 }, argumentId: 'Demo' })
 		}
@@ -352,9 +341,7 @@ const LogicVisualizer: React.FC = () => {
 		setUseDocumentData(v => !v)
 	}
 
-	const handleToggleDemoExtras = () => {
-		setShowDemoExtras(v => !v)
-	}
+	// Demo extras removed
 
 	const handleExport = () => {
 		const data = {
@@ -581,8 +568,7 @@ const LogicVisualizer: React.FC = () => {
 					useDocumentData={useDocumentData}
 					onToggleDocumentData={handleToggleDocumentData}
 					documentArguments={documentGraphData?.arguments}
-					showDemoExtras={showDemoExtras}
-					onToggleDemoExtras={handleToggleDemoExtras}
+					// Demo extras removed
 				/>
 
 				{/* Graph Canvas */}

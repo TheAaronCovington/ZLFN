@@ -80,18 +80,13 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 			console.warn('Failed to parse persisted arguments:', e)
 		}
 
-		const baseDefault = [{
-			id: 'default-expression',
-			title: 'Default Expression',
-			markdown: { documentId: 'default', content: '' },
-			expressions: ['(A ∧ B) → C']
-		}]
+		const baseDefault: any[] = []
 
 		const argumentsList = Array.isArray(persistedArgs) && persistedArgs.length > 0 ? persistedArgs : baseDefault
 		// Ensure selected id exists
 		const selectedId = (savedSelectedArgumentId && argumentsList.some(a => a.id === savedSelectedArgumentId))
 			? savedSelectedArgumentId
-			: (argumentsList[0]?.id || 'default-expression')
+			: (argumentsList[0]?.id || '')
 
 		return {
 			activeSource: savedActiveSource,
