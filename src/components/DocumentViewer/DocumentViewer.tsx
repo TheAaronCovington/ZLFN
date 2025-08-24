@@ -6,8 +6,6 @@ import 'highlight.js/styles/atom-one-dark.css'
 import { logicRemarkPlugin } from './logicRemarkPlugin'
 import './DocumentViewer.css'
 import { getDocumentContent } from '../../services/docs'
-import { realAPI } from '../../services/realAPI'
-import { api as mockAPI } from '../../services/zlfnAPI'
 import { useLogicShared } from '../../context/LogicSharedContext'
 import { Box, Typography, Chip, IconButton, Tooltip } from '@mui/material'
 import { NeonAccordion, type NeonAccordionItem } from '../Accordion/NeonAccordion'
@@ -210,6 +208,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>('')
+  const [documentTitle, setDocumentTitle] = useState<string>('')
   const { 
     currentExpression, 
     setCurrentExpression, 
@@ -352,52 +351,23 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
       }
       
       try {
-        let txt: string | null = null
-        let documentTitle = effective.replace(/_/g, ' ')
-        
-        // First, try to load from database (for dynamic routes), with mock fallback when unauthenticated
-        try {
-          const apiResponse = await realAPI.getObject(effective)
-          if (apiResponse.success && apiResponse.data?.markdownContent) {
-            txt = apiResponse.data.markdownContent
-            documentTitle = apiResponse.data.metadata?.title || documentTitle
-            console.debug('[DocumentViewer] Loaded from database:', effective)
-          }
-        } catch (dbError) {
-          console.debug('[DocumentViewer] Database load failed:', dbError)
-        }
+        const result: any = await getDocumentContent(effective)
 
-        // Fallback to mock store if real backend not available/authorized
-        if (!txt) {
-          try {
-            const fallback = await mockAPI.getObject(effective)
-            if (fallback.success && fallback.data && (fallback.data as any).markdownContent) {
-              const obj: any = fallback.data
-              txt = obj.markdownContent
-              documentTitle = obj.metadata?.title || documentTitle
-              console.debug('[DocumentViewer] Loaded from mock store:', effective)
-            }
-          } catch (mockErr) {
-            console.debug('[DocumentViewer] Mock load failed, trying file system:', mockErr)
-          }
-        }
-        
-        // Fallback to file system if database load failed
-        if (!txt) {
-          txt = await getDocumentContent(effective)
-          if (txt) {
-            console.debug('[DocumentViewer] Loaded from file system:', effective)
-          }
-        }
-        
-        if (txt) {
+        if (result) {
+          const txt = typeof result === 'string' ? result : result.text
+          const title =
+            typeof result === 'string'
+              ? effective.replace(/_/g, ' ')
+              : result.title || effective.replace(/_/g, ' ')
+
           setContent(txt)
+          setDocumentTitle(title)
           setError('')
-          
+
           // Load document into shared data model
-          loadMarkdownDocument(effective, txt, documentTitle)
+          loadMarkdownDocument(effective, txt, title)
           setActiveSource('document')
-          
+
           // Extract ALL expressions from fenced code blocks ```expr|expression|logic
           const regex = /```\s*(expr|expression|logic)\s+([\s\S]*?)```/gi
           const exprs: string[] = []
@@ -408,7 +378,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
           }
           const unique = Array.from(new Set(exprs))
           setDetectedExpressions(unique)
-          
+
           // Auto-sync first expression if different
           if (unique.length && unique[0] !== currentExpression && syncedDocId.current !== effective) {
             setCurrentExpression(unique[0])
@@ -416,7 +386,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
           }
         } else {
           setContent('')
-          setError('Document not found in database or file system')
+          setError('Document not found')
         }
       } catch (error) {
         console.error('[DocumentViewer] Load error:', error)
@@ -455,7 +425,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
     )
   }
 
-  const effectiveTitle = (filenameOverride || routeParams.filename)?.replace('_', ' ')
+  const effectiveTitle = documentTitle || (filenameOverride || routeParams.filename)?.replace('_', ' ')
 
   return (
     <div className="document-viewer">
