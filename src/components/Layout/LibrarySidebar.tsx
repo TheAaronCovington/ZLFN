@@ -380,7 +380,7 @@ export const LibrarySidebar: React.FC = () => {
 								})
 								.map(arg => (
 								<ListItemButton 
-									key={arg.id} 
+									key={`arg-${arg.id}`} 
 									component={RouterLink} 
 									to={`/viz/zlfn?argument=${arg.id}`} 
 									onClick={() => onOpenDoc(arg.id)} 

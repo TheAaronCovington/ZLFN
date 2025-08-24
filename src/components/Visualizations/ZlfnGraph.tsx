@@ -159,6 +159,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 	const stableTicksRef = useRef<number>(0)
 	const { simulationMode, setSimulationMode, nodeIdToActive, setNodeIdToActive, resetStates, selectedNodeId, setSelectedNodeId, modes } = useLogicShared()
 	const [tooltip, setTooltip] = useState<{ x: number; y: number; html: string } | null>(null)
+	const containerRef = elementRef // elementRef is the root div we'll position relative to
   const simulationRef = useRef<d3.Simulation<any, any> | null>(null)
 	const pathCentroidRef = useRef<{ x: number; y: number } | null>(null)
   const mmBoundsRef = useRef<{ minX: number; minY: number; sx: number; sy: number } | null>(null)
@@ -952,7 +953,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		const zoneAllowed = new Set(zonesToUse.map((z:any)=>z.id))
 		// Use optimized nodes if available, otherwise use original nodes
 		const sourceNodes = optimizedData?.visibleNodes || nodes
-		console.debug('[ZLFN] Zones allowed', Array.from(zoneAllowed))
+		if (import.meta.env.DEV) console.debug('[ZLFN] Zones allowed', Array.from(zoneAllowed))
 		const filteredNodes = (sourceNodes as any[]).filter(n => {
 			if (!n.zone && !n.zoneId) return true
 			const nodeZone = (n.zoneId || n.zone) as string
@@ -965,7 +966,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				allowedZone.toLowerCase() === nodeZone.toLowerCase()
 			)
 		})
-		console.debug('[ZLFN] Filtered nodes', { total: (sourceNodes as any[]).length, kept: (filteredNodes as any[]).length })
+		if (import.meta.env.DEV) console.debug('[ZLFN] Filtered nodes', { total: (sourceNodes as any[]).length, kept: (filteredNodes as any[]).length })
 		const nodesWithArgs: any[] = [...filteredNodes, ...argBadges]
 
 		// seed or repair Terms positions if they are coincident (stacking) or uninitialized
@@ -1326,11 +1327,12 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			.attr('marker-start', (d: any) => (d.type === 'bidirectional' ? 'url(#arrow)' : null))
 			.on('mouseover', (event, d) => {
 				if (!d.rule && !d.weight && !d.type) return
-				setTooltip({
-					x: event.pageX + 10,
-					y: event.pageY - 10,
-					html: `<strong>${d.rule ?? 'Edge'}</strong><br/>${d.type ?? ''} ${d.weight ? `(${d.weight}%)` : ''}`
-				})
+				const rect = (containerRef.current as any)?.getBoundingClientRect?.()
+				const cx = (event as MouseEvent).clientX
+				const cy = (event as MouseEvent).clientY
+				const left = rect ? cx - rect.left + 10 : cx + 10
+				const top = rect ? cy - rect.top - 10 : cy - 10
+				setTooltip({ x: left, y: top, html: `<strong>${d.rule ?? 'Edge'}</strong><br/>${d.type ?? ''} ${d.weight ? `(${d.weight}%)` : ''}` })
 			})
 			.on('mouseout', () => setTooltip(null))
 			.on('click', function (this: any) {
@@ -1442,7 +1444,12 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				const rule = d.rule || d.label || 'Edge'
 				const type = d.type ? `Type: ${d.type}` : ''
 				const w = d.weight != null ? `Weight: ${d.weight}%` : ''
-				setTooltip({ x: event.pageX + 10, y: event.pageY - 10, html: `<strong>${rule}</strong>${type || w ? '<br/>' : ''}${[type, w].filter(Boolean).join(' • ')}` })
+				const rect = (containerRef.current as any)?.getBoundingClientRect?.()
+				const cx = (event as MouseEvent).clientX
+				const cy = (event as MouseEvent).clientY
+				const left = rect ? cx - rect.left + 10 : cx + 10
+				const top = rect ? cy - rect.top - 10 : cy - 10
+				setTooltip({ x: left, y: top, html: `<strong>${rule}</strong>${type || w ? '<br/>' : ''}${[type, w].filter(Boolean).join(' • ')}` })
 				d3.select(event.currentTarget).select('rect.link-badge').attr('stroke-opacity', 1).attr('stroke-width', 2)
 			})
 			.on('mouseout', (event: any) => { setTooltip(null); d3.select(event.currentTarget).select('rect.link-badge').attr('stroke-opacity', 0.8).attr('stroke-width', 1) })
@@ -2338,18 +2345,24 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		nodeEnter
 			.on('mouseover', (event, d) => {
 				if (!d.name && !d.translation && !d.type) {
-					setTooltip({ x: event.pageX + 10, y: event.pageY - 10, html: `<strong>${d.label ?? d.id}</strong>` })
+					const rect = (containerRef.current as any)?.getBoundingClientRect?.()
+					const cx = (event as MouseEvent).clientX
+					const cy = (event as MouseEvent).clientY
+					const left = rect ? cx - rect.left + 10 : cx + 10
+					const top = rect ? cy - rect.top - 10 : cy - 10
+					setTooltip({ x: left, y: top, html: `<strong>${d.label ?? d.id}</strong>` })
 					return
 				}
 				const type = d.type ? `<div>Type: ${d.type}</div>` : ''
 				const name = d.name ? `<div>Name: ${d.name}</div>` : ''
 				const symbol = d.symbol ? `<div>Symbol: ${d.symbol}</div>` : ''
 				const html = `<strong>${d.name ?? d.id}</strong>${symbol}${name}${type}`
-				setTooltip({
-					x: event.pageX + 10,
-					y: event.pageY - 10,
-					html
-				})
+				const rect = (containerRef.current as any)?.getBoundingClientRect?.()
+				const cx = (event as MouseEvent).clientX
+				const cy = (event as MouseEvent).clientY
+				const left = rect ? cx - rect.left + 10 : cx + 10
+				const top = rect ? cy - rect.top - 10 : cy - 10
+				setTooltip({ x: left, y: top, html })
 			})
 			.on('mouseout', () => setTooltip(null))
 			.on('click', (event, d) => {
@@ -4215,7 +4228,7 @@ Controls:
 						color: 'var(--ai-text-primary)',
 						fontSize: 12,
 						pointerEvents: 'none',
-						zIndex: 10,
+						zIndex: 1000,
 						maxWidth: 300
 					}}
 					dangerouslySetInnerHTML={{ __html: tooltip.html }}

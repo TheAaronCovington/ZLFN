@@ -231,6 +231,15 @@ const LogicVisualizer: React.FC = () => {
 	const [schemeClusters, setSchemeClusters] = React.useState<any[]>([])
 	const [onSchemeClusterClick, setOnSchemeClusterClick] = React.useState<((cluster: any) => void) | null>(null)
 
+	// Stable callbacks for ATN scheme clusters (avoid inline hooks in JSX)
+	const handleSchemeClustersChange = React.useCallback((clusters: any[]) => {
+		setSchemeClusters(clusters)
+	}, [])
+
+	const handleSchemeClusterClickChange = React.useCallback((clickHandler: (cluster: any) => void) => {
+		setOnSchemeClusterClick(() => clickHandler)
+	}, [])
+
 	// Search state
 	const [searchId, setSearchId] = React.useState<string>('')
 	const [searchTrigger, setSearchTrigger] = React.useState<number>(0)
@@ -684,12 +693,8 @@ const LogicVisualizer: React.FC = () => {
 										// Handle ATN edge selection
 										showInfo(`Selected relationship: ${edge.scheme}`)
 									}}
-									onSchemeClustersChange={React.useCallback((clusters: any[]) => {
-										setSchemeClusters(clusters)
-									}, [])}
-									onSchemeClusterClickChange={React.useCallback((clickHandler: (cluster: any) => void) => {
-										setOnSchemeClusterClick(() => clickHandler)
-									}, [])}
+									onSchemeClustersChange={handleSchemeClustersChange}
+									onSchemeClusterClickChange={handleSchemeClusterClickChange}
 								/>
 							)}
 						</React.Suspense>

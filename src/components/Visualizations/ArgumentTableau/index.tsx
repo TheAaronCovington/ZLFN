@@ -393,23 +393,23 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
   }
 
   // Handle node selection
-  const handleNodeSelect = (node: ArgumentNode) => {
+  const handleNodeSelect = React.useCallback((node: ArgumentNode) => {
     onNodeSelect?.(node)
-  }
+  }, [onNodeSelect])
 
   // Handle edge selection
-  const handleEdgeSelect = (edge: ArgumentEdge) => {
+  const handleEdgeSelect = React.useCallback((edge: ArgumentEdge) => {
     onEdgeSelect?.(edge)
-  }
+  }, [onEdgeSelect])
 
   // Handle facet clicks
-  const handleFacetClick: FacetClick = (type, _opts, datum, _target) => {
+  const handleFacetClick: FacetClick = React.useCallback((type, _opts, datum, _target) => {
     const nodeData = datum as ArgumentNode
     setFacetDialogs(prev => ({
       ...prev,
       [type]: { open: true, nodeData }
     }))
-  }
+  }, [])
 
   // Close facet dialogs
   const closeFacetDialog = (type: keyof typeof facetDialogs) => {
@@ -644,7 +644,8 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
             })
           } catch {}
           const clusterPositions = calculateClusterLayout(clusters, (state.g as any).selectAll('.tree-node').data() as any[], config.width, config.height)
-          renderSchemeClusterBackgrounds(state.svg, clusters, clusterPositions, true, zoomScale)
+          // Render into the same group 'g' so it scales with zoom
+          renderSchemeClusterBackgrounds((state.g as any), clusters, clusterPositions, true, zoomScale)
         }
         
         renderStateRef.current = state
@@ -653,6 +654,13 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
       console.error('ATN rendering error:', error)
     }
   }, [layoutMode, currentArgument, handleNodeSelect, handleEdgeSelect, showSchemeClustering, schemeClusters])
+
+  // Debug zoom scale changes
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.debug('[ATN] zoomScale changed:', zoomScale)
+    }
+  }, [zoomScale])
 
   // Legend rendering removed - schemes now displayed in inspector sidebar
 

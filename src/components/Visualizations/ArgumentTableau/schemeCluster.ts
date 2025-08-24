@@ -252,15 +252,15 @@ export function calculateClusterLayout(
  * Render scheme cluster backgrounds in SVG with zoom-aware scaling and fade effects
  */
 export function renderSchemeClusterBackgrounds(
-  svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
+  container: d3.Selection<SVGGElement, unknown, null, undefined>,
   clusters: SchemeCluster[],
   clusterPositions: Map<string, { x: number; y: number; radius: number }>,
   showClusters: boolean = true,
   zoomScale: number = 1
 ): void {
   if (!showClusters) {
-    svg.selectAll('.scheme-cluster-bg').remove()
-    svg.selectAll('.scheme-cluster-label').remove()
+    container.selectAll('.scheme-cluster-bg').remove()
+    container.selectAll('.scheme-cluster-label').remove()
     return
   }
 
@@ -289,7 +289,7 @@ export function renderSchemeClusterBackgrounds(
   }
 
   // Render cluster background circles
-  const clusterBgs = svg.selectAll('.scheme-cluster-bg')
+  const clusterBgs = container.selectAll('.scheme-cluster-bg')
     .data(clusterData, (d: any) => d.scheme)
 
   clusterBgs.exit()
@@ -343,7 +343,7 @@ export function renderSchemeClusterBackgrounds(
     })
 
   // Add cluster labels with zoom-aware sizing
-  const clusterLabels = svg.selectAll('.scheme-cluster-label')
+  const clusterLabels = container.selectAll('.scheme-cluster-label')
     .data(clusterData, (d: any) => d.scheme)
 
   clusterLabels.exit()

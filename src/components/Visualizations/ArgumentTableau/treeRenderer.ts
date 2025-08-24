@@ -52,10 +52,13 @@ export function initializeTreeSVG(
 
   // Safe tooltip: simple HTML tooltip div managed by D3
   try {
+    // Ensure container is positioned so tooltip absolute coords are relative to it
     d3.select(container)
+      .style('position', 'relative')
       .append('div')
       .attr('class', 'atn-tooltip')
       .style('position', 'absolute')
+      .style('z-index', '2000')
       .style('pointer-events', 'none')
       .style('background', 'rgba(20,20,28,0.95)')
       .style('border', '1px solid rgba(64,196,255,0.4)')
@@ -70,6 +73,10 @@ export function initializeTreeSVG(
   const zoom = d3.zoom<SVGSVGElement, unknown>()
     .scaleExtent([0.1, 4])
     .on('zoom', (event) => {
+      // Debug zoom event
+      if (import.meta.env.DEV) {
+        console.debug('[ATN][zoom] k=', event.transform.k.toFixed(2), 'x=', event.transform.x.toFixed(1), 'y=', event.transform.y.toFixed(1))
+      }
       g.attr('transform', event.transform)
       
       // Update overlay visibility based on zoom level for better performance
@@ -206,7 +213,7 @@ export function renderTreeLayout(
   onEdgeClick?: (edge: ArgumentEdge) => void,
   onFacetClick?: FacetClick
 ): void {
-  const { g, width, height } = state
+  const { svg, g, zoom, width, height } = state
 
   // Build hierarchy
   const hierarchy = buildArgumentHierarchy(argumentData)
@@ -259,12 +266,18 @@ export function renderTreeLayout(
   // Add attack and undercut relationships as curved links
   renderNonHierarchicalEdges(g, argumentData, nodes, config, onEdgeClick)
 
-  // Center the tree
+  // Center the tree using zoom transform to keep zoom state in sync
   const bounds = g.node()?.getBBox()
   if (bounds) {
     const centerX = width / 2 - bounds.width / 2 - bounds.x
     const centerY = height / 2 - bounds.height / 2 - bounds.y
-    g.attr('transform', `translate(${centerX}, ${centerY})`)
+    const initialTransform = d3.zoomIdentity.translate(centerX, centerY)
+    try {
+      svg.call(zoom.transform, initialTransform)
+    } catch {
+      // Fallback if zoom not available yet
+      g.attr('transform', `translate(${centerX}, ${centerY})`)
+    }
   }
 }
 
@@ -312,13 +325,16 @@ function renderTreeLinks(
   // Simple HTML tooltip handlers
   const container = (g.node() as SVGGElement).ownerSVGElement?.parentElement as HTMLElement | undefined
   const tip = container ? d3.select(container).select<HTMLDivElement>('.atn-tooltip') : null
+  const containerRect = container?.getBoundingClientRect()
   if (tip) {
     linkMerge
       .on('mousemove', (event, d) => {
-        const { pageX, pageY } = event as MouseEvent
+        const { clientX, clientY } = event as MouseEvent
+        const left = containerRect ? clientX - containerRect.left + 12 : clientX + 12
+        const top = containerRect ? clientY - containerRect.top + 12 : clientY + 12
         tip
-          .style('left', `${pageX + 12}px`)
-          .style('top', `${pageY + 12}px`)
+          .style('left', `${left}px`)
+          .style('top', `${top}px`)
           .style('display', 'block')
           .html(`${d.edge.scheme || 'Support'}<br/>Confidence: ${d.edge.confidence ?? 0}%`)
       })
@@ -359,6 +375,38 @@ function renderTreeNodes(
       event.stopPropagation()
       onNodeClick?.(d.data)
     })
+
+  // Simple HTML tooltip handlers for nodes
+  const nodeTipContainer = (g.node() as SVGGElement).ownerSVGElement?.parentElement as HTMLElement | undefined
+  const nodeTip = nodeTipContainer ? d3.select(nodeTipContainer).select<HTMLDivElement>('.atn-tooltip') : null
+  const nodeContainerRect = nodeTipContainer?.getBoundingClientRect()
+  if (nodeTip) {
+    nodeMerge
+      .on('mousemove', (event: any, d: any) => {
+        const { clientX, clientY } = event as MouseEvent
+        const left = nodeContainerRect ? clientX - nodeContainerRect.left + 12 : clientX + 12
+        const top = nodeContainerRect ? clientY - nodeContainerRect.top + 12 : clientY + 12
+        const title = d.data.label || d.data.name || 'Untitled'
+        const type = d.data.argumentType || 'node'
+        const strength = d.data.strength != null ? `${d.data.strength}%` : '—'
+        nodeTip
+          .style('left', `${left}px`)
+          .style('top', `${top}px`)
+          .style('display', 'block')
+          .html(`${title}<br/>Type: ${type}${d.data.strength != null ? `<br/>Strength: ${strength}` : ''}`)
+      })
+      .on('mouseleave', () => {
+        nodeTip.style('display', 'none')
+      })
+  } else {
+    // Fallback native title
+    nodeEnter.append('title').text((d: any) => {
+      const title = d.data.label || d.data.name || 'Untitled'
+      const type = d.data.argumentType || 'node'
+      const strength = d.data.strength != null ? `${d.data.strength}%` : ''
+      return [title, `Type: ${type}`, strength ? `Strength: ${strength}` : ''].filter(Boolean).join('\n')
+    })
+  }
 
   // Add node shapes based on argument type with modern styling
   nodeEnter.each(function(d) {
