@@ -2,7 +2,8 @@ import React from 'react'
 import { Box, Tabs, Tab, TextField, Button, Accordion, AccordionSummary, AccordionDetails, Typography, Select, MenuItem, Snackbar, Slider, Checkbox, Alert, LinearProgress } from '@mui/material'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { debounce } from 'lodash'
-import type { ZLFNArgument, ZLFNObject } from '../../types/zlfn'
+import { v4 as uuidv4 } from 'uuid'
+import type { ZLFNArgument, ZLFNObject, ZLFNStructure } from '../../types/zlfn'
 import { createEmptyZLFNObject } from '../../types/zlfn'
 import { getCurrentAPI, apiConfig } from '../../services/apiConfig'
 import realAPI from '../../services/realAPI'
@@ -17,10 +18,21 @@ interface ObjectFormProps {
 export default function ObjectForm({ objectId, onClose, initialData }: ObjectFormProps) {
   const [activeTab, setActiveTab] = React.useState(0)
   const [error, setError] = React.useState('')
-  const [formData, setFormData] = React.useState<ZLFNObject>(() => createEmptyZLFNObject(objectId || `zlfn_${Date.now()}`))
+  const [formData, setFormData] = React.useState<Partial<ZLFNObject>>(() => ({ 
+    id: objectId || uuidv4(), 
+    markdownContent: '', 
+    zflnJson: { arguments: [] } as ZLFNStructure,
+    metadata: {
+      created: new Date().toISOString(),
+      modified: new Date().toISOString(),
+      fileReferences: []
+    }
+  }))
   const [errors, setErrors] = React.useState<{ [key: string]: string }>({})
   const [isValidating, setIsValidating] = React.useState(false)
   const [isSubmitting, setIsSubmitting] = React.useState(false)
+  const [markdownFile, setMarkdownFile] = React.useState<File | null>(null)
+  const [jsonFile, setJsonFile] = React.useState<File | null>(null)
 
   React.useEffect(() => {
     let cancelled = false
@@ -35,7 +47,7 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
     return () => { cancelled = true }
   }, [objectId])
 
-  // Handle imported data
+  // Handle imported data (legacy support)
   React.useEffect(() => {
     if (initialData && !objectId) {
       // Convert imported data to ZLFNObject format
@@ -46,61 +58,111 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
         const firstArg = initialData.arguments[0]
         importedObject.zflnJson.arguments = [firstArg]
         importedObject.metadata.title = firstArg.title || 'Imported Argument'
-        importedObject.markdown = firstArg.markdown?.content || ''
+        importedObject.markdownContent = firstArg.markdown?.content || ''
       }
       
       setFormData(importedObject)
     }
   }, [initialData, objectId])
 
+  // Markdown file import handler
+  const handleMarkdownImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      setMarkdownFile(file)
+      const id = file.name.replace(/\.md$/, '').replace(/[^a-zA-Z0-9_-]/g, '_')
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const content = e.target?.result as string
+        setFormData(prev => ({ 
+          ...prev, 
+          id, 
+          markdownContent: content,
+          metadata: {
+            ...prev.metadata,
+            title: file.name.replace(/\.md$/, '').replace(/_/g, ' '),
+            created: prev.metadata?.created || new Date().toISOString(),
+            modified: new Date().toISOString(),
+            fileReferences: prev.metadata?.fileReferences || []
+          }
+        }))
+      }
+      reader.onerror = () => {
+        setError('Failed to read markdown file')
+      }
+      reader.readAsText(file)
+    }
+  }
+
+  // JSON file import handler
+  const handleJsonImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      setJsonFile(file)
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        try {
+          const content = e.target?.result as string
+          const json = JSON.parse(content)
+          setFormData(prev => ({
+            ...prev,
+            zflnJson: { 
+              ...prev.zflnJson, 
+              arguments: json.arguments || [] 
+            }
+          }))
+        } catch (error) {
+          setError('Invalid JSON file format')
+        }
+      }
+      reader.onerror = () => {
+        setError('Failed to read JSON file')
+      }
+      reader.readAsText(file)
+    }
+  }
+
   // Comprehensive validation function
   const validateForm = React.useCallback(async (): Promise<boolean> => {
     const newErrors: { [key: string]: string } = {}
     
-    // Title validation
-    if (!formData.metadata?.title || formData.metadata.title.length < 1 || formData.metadata.title.length > 200) {
+    // ID validation (required for routing)
+    if (!formData.id || formData.id.length < 1 || formData.id.length > 100) {
+      newErrors.id = 'ID must be 1-100 characters'
+    }
+    
+    // ID format validation (for URL compatibility)
+    if (formData.id && !/^[a-zA-Z0-9_-]+$/.test(formData.id)) {
+      newErrors.id = 'ID can only contain letters, numbers, underscores, and hyphens'
+    }
+    
+    // Title validation (optional but recommended)
+    if (formData.metadata?.title && (formData.metadata.title.length < 1 || formData.metadata.title.length > 200)) {
       newErrors.title = 'Title must be 1-200 characters'
     }
     
-    // Arguments validation
-    if (!formData.zflnJson?.arguments || formData.zflnJson.arguments.length === 0) {
-      newErrors.arguments = 'At least one argument is required'
+    // Markdown content validation (optional - can be empty)
+    if (formData.markdownContent && formData.markdownContent.length > 100000) {
+      newErrors.markdownContent = 'Markdown content is too large (max 100,000 characters)'
     }
     
-    // Validate each argument
-    formData.zflnJson?.arguments.forEach((arg, i) => {
-      if (!arg.core?.name || arg.core.name.length < 1 || arg.core.name.length > 100) {
-        newErrors[`arg${i}.core.name`] = `Argument ${i + 1} name must be 1-100 characters`
-      }
-      
-      if (!arg.zones || arg.zones.length === 0) {
-        newErrors[`arg${i}.zones`] = `Argument ${i + 1} requires at least one zone`
-      }
-      
-      // Validate nodes within zones
-      arg.zones?.forEach((zone, j) => {
-        zone.nodes?.forEach((node, k) => {
-          if (node.state && !['T', 'F', 'B'].includes(node.state)) {
-            newErrors[`arg${i}.zone${j}.node${k}.state`] = 'State must be T, F, or B'
-          }
-          
-          if (node.weight !== undefined && (node.weight < 0 || node.weight > 100)) {
-            newErrors[`arg${i}.zone${j}.node${k}.weight`] = 'Weight must be 0-100'
-          }
-        })
+    // Arguments validation (optional - can be empty for markdown-only documents)
+    if (formData.zflnJson?.arguments) {
+      formData.zflnJson.arguments.forEach((arg, i) => {
+        if (arg.core?.name && (arg.core.name.length < 1 || arg.core.name.length > 100)) {
+          newErrors[`arg${i}.core.name`] = `Argument ${i + 1} name must be 1-100 characters`
+        }
+        
+        // Validate dependencies if present
+        if (arg.dependencies && arg.dependencies.length > 0) {
+          arg.dependencies.forEach((dep, j) => {
+            if (!dep.type || !dep.target) {
+              newErrors[`arg${i}.dep${j}`] = `Dependency ${j + 1} is incomplete`
+            }
+          })
+        }
       })
-      
-      // Validate argument-level dependencies
-      if (arg.dependencies && arg.dependencies.some((dep: any) => 
-        !formData.zflnJson!.arguments.some(a => 
-          a.zones.some(z => 
-            z.nodes.some(n => n.id === dep.source || n.id === dep.target)
-          )
-        )
-      )) {
-        newErrors[`arg${i}.dependencies`] = 'Invalid dependency node references'
-      }
-    })
+    }
     
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
@@ -153,14 +215,27 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
       const api = getCurrentAPI()
       
       if (objectId) {
-        const res = await api.updateObject(objectId, formData)
+        // Update existing object
+        const res = await api.updateObject(objectId, { 
+          ...formData, 
+          markdownContent: formData.markdownContent 
+        })
         if (!res.success) throw new Error(res.error || 'Update failed')
       } else {
-        const useReal = apiConfig.getConfig().useRealBackend
-        const res = useReal 
-          ? await realAPI.createObject(formData)
-          : await api.createObject(formData.markdown, formData.zflnJson)
+        // Create new object
+        const res = apiConfig.getConfig().useRealBackend
+          ? await realAPI.createObject({ 
+              ...formData, 
+              markdownContent: formData.markdownContent, 
+              id: formData.id 
+            })
+          : await api.createObject(formData.markdownContent || '', formData.zflnJson)
         if (!res.success) throw new Error(res.error || 'Create failed')
+        
+        // Navigate to the new route if ID is set
+        if (formData.id) {
+          window.history.pushState({}, '', `/${formData.id}`)
+        }
       }
       
       onClose()
@@ -202,7 +277,7 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
       ...prev,
       zflnJson: {
         ...prev.zflnJson,
-        arguments: prev.zflnJson.arguments.map((a, idx) => idx === i ? updater(a) : a)
+        arguments: prev.zflnJson?.arguments?.map((a, idx) => idx === i ? updater(a) : a) || []
       }
     }))
   }
@@ -245,11 +320,25 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
 
       {activeTab === 0 && (
         <Box display="grid" gap={2}>
-          <TextField label="ID" value={formData.id} disabled fullWidth />
+          <TextField 
+            label="ID" 
+            value={formData.id || ''} 
+            onChange={(e) => setFormData(p => ({ ...p, id: e.target.value }))} 
+            fullWidth 
+            error={!!errors.id}
+            helperText={errors.id || 'Used for URL routing (e.g., /your-id)'}
+            placeholder="Enter a unique identifier"
+          />
           <TextField 
             label="Title" 
-            value={formData.metadata.title || ''} 
-            onChange={(e)=>setFormData(p=>({...p, metadata:{...p.metadata, title: e.target.value}}))} 
+            value={formData.metadata?.title || ''} 
+            onChange={(e)=>setFormData(p=>({...p, metadata:{
+              ...p.metadata,
+              title: e.target.value,
+              created: p.metadata?.created || new Date().toISOString(),
+              modified: new Date().toISOString(),
+              fileReferences: p.metadata?.fileReferences || []
+            }}))} 
             fullWidth 
             error={!!errors.title}
             helperText={errors.title}
@@ -259,13 +348,54 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
 
       {activeTab === 1 && (
         <Box display="grid" gap={2}>
-          <TextField label="Markdown" value={formData.markdown} onChange={(e)=>setFormData(p=>({...p, markdown: e.target.value}))} fullWidth multiline minRows={8} />
+          <Box>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>Import Markdown File</Typography>
+            <input 
+              type="file" 
+              accept=".md,.markdown" 
+              onChange={handleMarkdownImport}
+              style={{ marginBottom: '16px' }}
+            />
+            {markdownFile && (
+              <Typography variant="caption" color="textSecondary">
+                Imported: {markdownFile.name}
+              </Typography>
+            )}
+          </Box>
+          <TextField 
+            label="Markdown Content" 
+            value={formData.markdownContent || ''} 
+            onChange={(e) => setFormData(p => ({ ...p, markdownContent: e.target.value }))} 
+            fullWidth 
+            multiline 
+            minRows={8}
+            placeholder="Enter markdown content or import a .md file above"
+          />
         </Box>
       )}
 
       {activeTab === 2 && (
         <Box display="grid" gap={2}>
-          {formData.zflnJson.arguments.map((arg, i) => (
+          <Box>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>Import JSON Arguments</Typography>
+            <input 
+              type="file" 
+              accept=".json" 
+              onChange={handleJsonImport}
+              style={{ marginBottom: '16px' }}
+            />
+            {jsonFile && (
+              <Typography variant="caption" color="textSecondary">
+                Imported: {jsonFile.name} ({formData.zflnJson?.arguments?.length || 0} arguments)
+              </Typography>
+            )}
+          </Box>
+          {formData.zflnJson?.arguments?.length === 0 && (
+            <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic' }}>
+              No arguments loaded. Import a JSON file above to populate argument data for visualizations.
+            </Typography>
+          )}
+          {formData.zflnJson?.arguments?.map((arg, i) => (
             <Accordion key={i}>
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                 <Typography>{arg.core.name || `Argument ${i+1}`}</Typography>

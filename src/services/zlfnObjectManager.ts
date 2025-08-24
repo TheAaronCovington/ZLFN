@@ -28,7 +28,7 @@ export class ZLFNObjectManager {
     const object = createEmptyZLFNObject(id)
     
     if (markdown) {
-      object.markdown = this.sanitizeMarkdown(markdown)
+      object.markdownContent = this.sanitizeMarkdown(markdown)
     }
     
     if (initialJson) {
@@ -38,7 +38,7 @@ export class ZLFNObjectManager {
     // Create initial version
     const initialVersion: ZLFNVersion = {
       timestamp: new Date().toISOString(),
-      markdown: object.markdown,
+      markdownContent: object.markdownContent,
       zflnJson: object.zflnJson,
       notes: object.notes,
       changeType: 'created',
@@ -64,7 +64,7 @@ export class ZLFNObjectManager {
     // Seed an initial version for this fixed id
     const initialVersion: ZLFNVersion = {
       timestamp: new Date().toISOString(),
-      markdown: object.markdown,
+      markdownContent: object.markdownContent,
       zflnJson: object.zflnJson,
       notes: object.notes,
       changeType: 'created',
@@ -93,7 +93,7 @@ export class ZLFNObjectManager {
     // Create new version before updating
     const newVersion: ZLFNVersion = {
       timestamp: new Date().toISOString(),
-      markdown: updates.markdown || object.markdown,
+      markdownContent: updates.markdownContent || object.markdownContent,
       zflnJson: updates.zflnJson || object.zflnJson,
       notes: updates.notes || object.notes,
       changeType: 'modified',
@@ -138,7 +138,7 @@ export class ZLFNObjectManager {
   async updateMarkdown(id: string, markdown: string, _author?: string): Promise<ZLFNObject | null> {
     const sanitized = this.sanitizeMarkdown(markdown)
     const updated = await this.updateObject(id, { 
-      markdown: sanitized
+      markdownContent: sanitized
     })
     if (updated) {
       this.syncUpdateMarkdown(id, sanitized).catch(() => {})
@@ -190,7 +190,7 @@ export class ZLFNObjectManager {
     if (options.createBackup) {
       const backupVersion: ZLFNVersion = {
         timestamp: new Date().toISOString(),
-        markdown: object.markdown,
+        markdownContent: object.markdownContent,
         zflnJson: object.zflnJson,
         notes: object.notes,
         changeType: 'modified',
@@ -331,7 +331,7 @@ export class ZLFNObjectManager {
     // Create version for note change
     const noteVersion: ZLFNVersion = {
       timestamp: new Date().toISOString(),
-      markdown: object.markdown,
+      markdownContent: object.markdownContent,
       zflnJson: object.zflnJson,
       notes: object.notes,
       author: _author,
@@ -377,7 +377,7 @@ export class ZLFNObjectManager {
     // Create a new version for the revert
     const revertVersion: ZLFNVersion = {
       timestamp: new Date().toISOString(),
-      markdown: version.markdown,
+      markdownContent: version.markdownContent,
       zflnJson: version.zflnJson,
       notes: version.notes,
       changeType: 'reverted',
@@ -386,7 +386,7 @@ export class ZLFNObjectManager {
     }
 
     return this.updateObject(objectId, {
-      markdown: version.markdown,
+      markdownContent: version.markdownContent,
       zflnJson: version.zflnJson,
       notes: version.notes,
       versionHistory: [...object.versionHistory, revertVersion]
@@ -400,7 +400,7 @@ export class ZLFNObjectManager {
 
     const snapshot: ZLFNVersion = {
       timestamp: new Date().toISOString(),
-      markdown: object.markdown,
+      markdownContent: object.markdownContent,
       zflnJson: object.zflnJson,
       notes: object.notes,
       changeType,
@@ -591,7 +591,7 @@ export class ZLFNObjectManager {
   private generateChangeDescription(previous: ZLFNObject, updates: Partial<ZLFNObject>): string {
     const changes: string[] = []
     
-    if (updates.markdown && updates.markdown !== previous.markdown) {
+    if (updates.markdownContent && updates.markdownContent !== previous.markdownContent) {
       changes.push('markdown content')
     }
     
@@ -718,7 +718,7 @@ export class ZLFNObjectManager {
       case 'json':
         return JSON.stringify(object.zflnJson, null, 2)
       case 'markdown':
-        return object.markdown
+        return object.markdownContent
       case 'full':
         return JSON.stringify(object, null, 2)
       default:
@@ -750,7 +750,7 @@ export class ZLFNObjectManager {
   searchObjects(query: string): ZLFNObject[] {
     const searchTerm = query.toLowerCase()
     return this.getAllObjects().filter(obj => 
-      obj.markdown.toLowerCase().includes(searchTerm) ||
+      obj.markdownContent.toLowerCase().includes(searchTerm) ||
       obj.metadata.title?.toLowerCase().includes(searchTerm) ||
       obj.metadata.description?.toLowerCase().includes(searchTerm) ||
       Object.values(obj.notes).some(note => note.toLowerCase().includes(searchTerm))
@@ -1076,7 +1076,7 @@ export class ZLFNObjectManager {
     try {
       await realAPI.createObject({
         id: object.id,
-        markdown: object.markdown,
+        markdownContent: object.markdownContent,
         zflnJson: object.zflnJson,
         notes: object.notes,
         metadata: object.metadata

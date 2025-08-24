@@ -166,7 +166,7 @@ export interface ZLFNStructure {
 // Version Control Interfaces
 export interface ZLFNVersion {
   timestamp: string
-  markdown: string
+  markdownContent: string
   zflnJson: ZLFNStructure
   notes: Record<string, string>
   author?: string
@@ -188,7 +188,7 @@ export interface ConflictResolution {
 // Enhanced ZLFN Object (Main Container)
 export interface ZLFNObject {
   id: string
-  markdown: string
+  markdownContent: string
   zflnJson: ZLFNStructure
   notes: Record<string, string> // nodeId -> note content
   versionHistory: ZLFNVersion[]
@@ -403,7 +403,7 @@ export const createEmptyZLFNStructure = (): ZLFNStructure => ({
 
 export const createEmptyZLFNObject = (id: string): ZLFNObject => ({
   id,
-  markdown: "",
+  markdownContent: "",
   zflnJson: createEmptyZLFNStructure(),
   notes: {},
   versionHistory: [],

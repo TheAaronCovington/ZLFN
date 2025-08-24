@@ -90,7 +90,7 @@ Therefore Q.`;
       // Test 3: Markdown Update
       const updatedMarkdown = testMarkdown + "\n\n## Additional Note\nThis is an update.";
       const updatedObject = await zlfnObjectManager.updateMarkdown(createdObject.id, updatedMarkdown);
-      log("Markdown Update", !!updatedObject && updatedObject.markdown.includes("Additional Note"));
+      log("Markdown Update", !!updatedObject && updatedObject.markdownContent.includes("Additional Note"));
 
       // Test 4: Notes System
       const notesSaved = await zlfnObjectManager.saveNote(createdObject.id, "P1", "This is a test note for P1");
