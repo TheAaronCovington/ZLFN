@@ -1,6 +1,7 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import ObjectForm from '../../components/InputForm/ObjectForm'
+import { vi } from 'vitest'
 
 vi.mock('../../services/apiConfig', () => ({
   getCurrentAPI: () => ({
@@ -27,6 +28,57 @@ describe('ObjectForm', () => {
 
     // No throw; basic smoke
     expect(submit).toBeInTheDocument()
+  })
+
+  it('preserves markdown content when importing JSON', async () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={[{ pathname: '/create' }] as any}>
+        <ObjectForm onClose={() => {}} />
+      </MemoryRouter>
+    )
+
+    // Switch to Markdown tab and enter content
+    fireEvent.click(screen.getByRole('tab', { name: /markdown/i }))
+    const markdownField = await screen.findByLabelText('Markdown Content')
+    fireEvent.change(markdownField, { target: { value: 'Original markdown' } })
+
+    // Switch to Arguments tab to import JSON
+    fireEvent.click(screen.getByRole('tab', { name: /arguments/i }))
+
+    const jsonInput = container.querySelector('#arguments-json-file-input') as HTMLInputElement
+    const jsonContent = {
+      arguments: [
+        {
+          core: { name: 'Arg1', summary: '' },
+          zones: [],
+          dependencies: [],
+          modes: {},
+          counterarguments: [],
+          subarguments: [],
+          validation: { isValid: true, errors: [], warnings: [] },
+          pagination: { currentPage: 1, totalPages: 1 }
+        }
+      ]
+    }
+    const file = new File([JSON.stringify(jsonContent)], 'test.json', { type: 'application/json' })
+
+    const fileReaderMock = {
+      onload: null as ((this: FileReader, ev: ProgressEvent<FileReader>) => any) | null,
+      readAsText(this: any, _file: Blob) {
+        this.onload?.({ target: { result: JSON.stringify(jsonContent) } })
+      }
+    }
+    vi.spyOn(window, 'FileReader').mockImplementation(() => fileReaderMock as any)
+
+    await act(async () => {
+      fireEvent.change(jsonInput, { target: { files: [file] } })
+    })
+
+    // Return to Markdown tab and ensure content is unchanged
+    fireEvent.click(screen.getByRole('tab', { name: /markdown/i }))
+    const markdownFieldAfter = await screen.findByLabelText('Markdown Content')
+    expect((markdownFieldAfter as HTMLInputElement).value).toBe('Original markdown')
+    vi.restoreAllMocks()
   })
 })
 

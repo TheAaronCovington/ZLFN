@@ -117,9 +117,8 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
               ...prev.zflnJson,
               arguments: importedArgs
             },
-            metadata: nextMeta,
-            // Do not modify markdownContent when importing JSON
-            markdownContent: prev.markdownContent || ''
+            metadata: nextMeta
+            // markdownContent intentionally left unchanged
           }
         })
         log('applied initialData mapping', { argsLen: importedArgs.length, title: importedTitle })
