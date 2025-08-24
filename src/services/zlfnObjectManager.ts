@@ -38,8 +38,17 @@ export class ZLFNObjectManager {
       { id: 'd2', source: 'n2', target: 'n3', rule: 'support', context: '', priority: 1 }
     ]
     arg.modes.propositional = true
-    structure.metadata.created = now
-    structure.metadata.modified = now
+    if (!structure.metadata) {
+      structure.metadata = {
+        version: '1.0.0',
+        created: now,
+        modified: now,
+        schema: 'zlfn-v1.0'
+      }
+    } else {
+      structure.metadata.created = now
+      structure.metadata.modified = now
+    }
 
     const sample = createEmptyZLFNObject('sample-object-1')
     sample.markdownContent = markdown

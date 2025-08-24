@@ -1743,7 +1743,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
                                                        .attr('x', -newW / 2).attr('y', -newH / 2)
                                        } else if (tag === 'path') {
                                                const origScale = parseFloat(shape.attr('data-orig-scale') || '1')
-                                               const pathBBox = shape.node()?.getBBox()
+                                               const pathBBox = (shape.node() as SVGGraphicsElement | null)?.getBBox()
                                                if (pathBBox) {
                                                        const scaleFactor = Math.max(origScale, (bbox.width + 12) / pathBBox.width)
                                                        shape.transition().duration(200).attr('transform', `scale(${scaleFactor})`)
