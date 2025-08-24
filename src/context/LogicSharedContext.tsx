@@ -129,41 +129,44 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 					} catch {}
 				}
 
-				if (fullObjects.length === 0) return
-
-				const serverArgs = fullObjects.map((obj: any) => ({
-					id: obj.id,
-					title: obj.metadata?.title || obj.title || (obj.id ? obj.id.replace(/_/g, ' ') : 'Untitled'),
-					markdown: {
-						documentId: obj.id,
-						content: obj.markdownContent || '',
-						source: obj.metadata?.isFromDatabase ? 'database' : 'mock',
-						lastModified: obj.metadata?.modified,
-						author: obj.metadata?.author
-					},
-					expressions: [],
-					metadata: {
-						created: obj.metadata?.created,
-						modified: obj.metadata?.modified,
-						author: obj.metadata?.author,
-						description: obj.metadata?.description,
-						status: obj.metadata?.status,
-						isFromDatabase: !!obj.metadata?.isFromDatabase
-					},
-					zlfnGraph: obj.zlfnJson && Array.isArray(obj.zlfnJson.nodes) && Array.isArray(obj.zlfnJson.edges)
-						? {
-							nodes: obj.zlfnJson.nodes.map((n: any) => ({
-								...n,
-								argumentId: n.argumentId || obj.id
-							})),
-							edges: obj.zlfnJson.edges || []
-						}
-						: undefined
-				}))
-				if (cancelled) return
-				setUnifiedData(prev => {
-					const map = new Map(prev.arguments.map(a => [a.id, a]))
-					for (const a of serverArgs) map.set(a.id, a)
+                                let serverArgs: any[]
+                                if (fullObjects.length === 0) {
+                                        serverArgs = [normalizeExpression('(A ∧ B) → C')]
+                                } else {
+                                        serverArgs = fullObjects.map((obj: any) => ({
+                                                id: obj.id,
+                                                title: obj.metadata?.title || obj.title || (obj.id ? obj.id.replace(/_/g, ' ') : 'Untitled'),
+                                                markdown: {
+                                                        documentId: obj.id,
+                                                        content: obj.markdownContent || '',
+                                                        source: obj.metadata?.isFromDatabase ? 'database' : 'mock',
+                                                        lastModified: obj.metadata?.modified,
+                                                        author: obj.metadata?.author
+                                                },
+                                                expressions: [],
+                                                metadata: {
+                                                        created: obj.metadata?.created,
+                                                        modified: obj.metadata?.modified,
+                                                        author: obj.metadata?.author,
+                                                        description: obj.metadata?.description,
+                                                        status: obj.metadata?.status,
+                                                        isFromDatabase: !!obj.metadata?.isFromDatabase
+                                                },
+                                                zlfnGraph: obj.zlfnJson && Array.isArray(obj.zlfnJson.nodes) && Array.isArray(obj.zlfnJson.edges)
+                                                        ? {
+                                                                nodes: obj.zlfnJson.nodes.map((n: any) => ({
+                                                                        ...n,
+                                                                        argumentId: n.argumentId || obj.id
+                                                                })),
+                                                                edges: obj.zlfnJson.edges || []
+                                                        }
+                                                        : undefined
+                                        }))
+                                }
+                                if (cancelled) return
+                                setUnifiedData(prev => {
+                                        const map = new Map(prev.arguments.map(a => [a.id, a]))
+                                        for (const a of serverArgs) map.set(a.id, a)
 					let merged = Array.from(map.values())
 					// Fallback demo argument if nothing available
 					if (merged.length === 0) {
@@ -387,10 +390,19 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 				(databaseObject.metadata?.title || databaseObject.title || title || documentId) : 
 				(title || documentId)
 			
-			// Use normalizeDocument to align with parseDocumentToGraph workflow
-			const normalizedArguments = await normalizeDocument(documentId, effectiveContent)
-			
-			setUnifiedData(prev => {
+                        // Use normalizeDocument to align with parseDocumentToGraph workflow
+                        let normalizedArguments = await normalizeDocument(documentId, effectiveContent)
+                        if (normalizedArguments.length === 0) {
+                                const extraction = extractArgumentsFromMarkdown(documentId, effectiveContent, effectiveTitle)
+                                normalizedArguments = extraction.arguments.length > 0 ? extraction.arguments : [{
+                                        id: documentId,
+                                        title: effectiveTitle,
+                                        markdown: { documentId, content: effectiveContent },
+                                        expressions: []
+                                }]
+                        }
+
+                        setUnifiedData(prev => {
 				// Remove existing arguments from this document
 				const filteredArguments = prev.arguments.filter(arg => 
 					!arg.markdown.documentId || arg.markdown.documentId !== documentId

@@ -14,13 +14,49 @@ import type {
   ConflictResolution,
   UploadValidation
 } from '../types/zlfn'
-import { createEmptyZLFNObject } from '../types/zlfn'
+import { createEmptyZLFNObject, createEmptyZLFNStructure } from '../types/zlfn'
 import realAPI from './realAPI'
 import { apiConfig } from './apiConfig'
 
 export class ZLFNObjectManager {
   private objects: Map<string, ZLFNObject> = new Map()
   private locks: Map<string, { userId: string; expires: number }> = new Map()
+
+  constructor() {
+    const now = new Date().toISOString()
+    const markdown = '# Sample Argument\n\n1. A\n2. B\n3. Therefore C'
+    const structure = createEmptyZLFNStructure()
+    const arg = structure.arguments[0]
+    arg.core.name = 'Sample Argument'
+    arg.zones[0].nodes = [
+      { id: 'n1', name: 'A', symbolic: 'A', translation: 'A', type: 'premise', vennRelevant: false, timelineRelevant: false, facets: {} },
+      { id: 'n2', name: 'B', symbolic: 'B', translation: 'B', type: 'premise', vennRelevant: false, timelineRelevant: false, facets: {} },
+      { id: 'n3', name: 'C', symbolic: 'C', translation: 'C', type: 'conclusion', vennRelevant: false, timelineRelevant: false, facets: {} }
+    ]
+    arg.dependencies = [
+      { id: 'd1', source: 'n1', target: 'n3', rule: 'support', context: '', priority: 1 },
+      { id: 'd2', source: 'n2', target: 'n3', rule: 'support', context: '', priority: 1 }
+    ]
+    arg.modes.propositional = true
+    structure.metadata.created = now
+    structure.metadata.modified = now
+
+    const sample = createEmptyZLFNObject('sample-object-1')
+    sample.markdownContent = markdown
+    sample.zflnJson = structure
+    sample.metadata.modified = now
+    sample.metadata.title = 'Sample Argument'
+    const initialVersion: ZLFNVersion = {
+      timestamp: now,
+      markdownContent: markdown,
+      zflnJson: structure,
+      notes: sample.notes,
+      changeType: 'created',
+      changeDescription: 'Seeded sample object'
+    }
+    sample.versionHistory.push(initialVersion)
+    this.objects.set('sample-object-1', sample)
+  }
 
   // Object CRUD Operations
   async createObject(markdown?: string, initialJson?: ZLFNStructure): Promise<ZLFNObject> {
