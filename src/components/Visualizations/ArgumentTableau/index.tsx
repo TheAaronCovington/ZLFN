@@ -181,22 +181,24 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
 
   // Convert to ATN format (adapt existing data if needed)
   const atnNodes = useMemo(() => {
+    if (!currentArgument) return []
     const nodes: ArgumentNode[] = [currentArgument.core, ...currentArgument.components]
     return nodes
   }, [currentArgument])
 
   const atnEdges = useMemo(() => {
+    if (!currentArgument) return []
     return currentArgument.relationships
   }, [currentArgument])
 
   // Advanced analysis computations
   const strengthAnalysis = useMemo(() => {
-    if (!showStrengthAnalysis) return null
+    if (!showStrengthAnalysis || !currentArgument) return null
     return calculateArgumentStrengths(currentArgument)
   }, [currentArgument, showStrengthAnalysis])
 
   const schemeClusters = useMemo(() => {
-    if (!showSchemeClustering) return []
+    if (!showSchemeClustering || !currentArgument) return []
     return groupEdgesByScheme(currentArgument)
   }, [currentArgument, showSchemeClustering])
 
@@ -214,6 +216,7 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
   }, [onSchemeClusterClickChange])
 
   const processedArgument = useMemo(() => {
+    if (!currentArgument) return null
     return applySchemeClustering(currentArgument, showSchemeClustering)
   }, [currentArgument, showSchemeClustering])
 
@@ -256,6 +259,7 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
 
   // Handle export
   const handleExport = (format: 'json' | 'csv' | 'latex' | 'markdown') => {
+    if (!processedArgument) return
     const options: ATNExportOptions = {
       includeMetadata: true,
       includeStrengthAnalysis: showStrengthAnalysis,
@@ -321,19 +325,20 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
     exportAsMarkdown: () => handleExport('markdown'),
     exportAsLaTeX: () => handleExport('latex'),
     exportAsCSV: () => handleExport('csv'),
-    
+
     // Navigation
     selectNextNode: () => {
-      setSelectedNodeIndex(prev => 
+      setSelectedNodeIndex(prev =>
         prev < atnNodes.length - 1 ? prev + 1 : 0
       )
     },
     selectPreviousNode: () => {
-      setSelectedNodeIndex(prev => 
+      setSelectedNodeIndex(prev =>
         prev > 0 ? prev - 1 : atnNodes.length - 1
       )
     },
     selectCoreNode: () => {
+      if (!currentArgument) return
       const coreIndex = atnNodes.findIndex(node => node.id === currentArgument.core.id)
       if (coreIndex >= 0) {
         setSelectedNodeIndex(coreIndex)
@@ -403,13 +408,13 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
     openExportMenu: () => setExportMenuAnchor(document.body),
     showHelp: () => setShowKeyboardHelp(true)
   }), [
-    setLayoutMode, 
-    setShowStrengthAnalysis, 
-    setShowSchemeClustering, 
-    handleExport, 
-    atnNodes, 
-    selectedNode, 
-    currentArgument.core.id
+    setLayoutMode,
+    setShowStrengthAnalysis,
+    setShowSchemeClustering,
+    handleExport,
+    atnNodes,
+    selectedNode,
+    currentArgument?.core.id
   ])
 
   // Create keyboard event handler
@@ -439,7 +444,7 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
 
   // Render the visualization when layout mode or argument changes
   useEffect(() => {
-    if (!containerRef.current) return
+    if (!containerRef.current || !currentArgument) return
 
     const config = {
       ...DEFAULT_ATN_CONFIG,
@@ -457,13 +462,13 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
       } else {
         // Tree or hierarchical layout
         const state = initializeTreeSVG(containerRef.current, config, setZoomScale)
-        
+
         if (layoutMode === 'tree') {
           renderTreeLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect, handleFacetClick)
         } else {
           renderHierarchicalLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect, handleFacetClick)
         }
-        
+
         // Scheme clustering backgrounds (optional)
         if (showSchemeClustering) {
           const clusters = schemeClusters
@@ -478,17 +483,22 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
               if (id) nodePositions.set(id, { x, y })
             })
           } catch {}
-          const clusterPositions = calculateClusterLayout(clusters, (state.g as any).selectAll('.tree-node').data() as any[], config.width, config.height)
+          const clusterPositions = calculateClusterLayout(
+            clusters,
+            (state.g as any).selectAll('.tree-node').data() as any[],
+            config.width,
+            config.height
+          )
           // Render into the same group 'g' so it scales with zoom
           renderSchemeClusterBackgrounds((state.g as any), clusters, clusterPositions, true, zoomScale)
         }
-        
+
         renderStateRef.current = state
       }
     } catch (error) {
       console.error('ATN rendering error:', error)
     }
-  }, [layoutMode, currentArgument, handleNodeSelect, handleEdgeSelect, showSchemeClustering, schemeClusters])
+  }, [layoutMode, currentArgument, handleNodeSelect, handleEdgeSelect, showSchemeClustering, schemeClusters, handleFacetClick])
 
   // Debug zoom scale changes
   useEffect(() => {
@@ -516,8 +526,8 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
   // Handle window resize
   useEffect(() => {
     const handleResize = () => {
-      if (!containerRef.current) return
-      
+      if (!containerRef.current || !currentArgument) return
+
       // Re-render on resize
       const config = {
         ...DEFAULT_ATN_CONFIG,
@@ -533,13 +543,13 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
           renderStateRef.current = state
         } else {
           const state = initializeTreeSVG(containerRef.current, config, setZoomScale)
-          
+
           if (layoutMode === 'tree') {
             renderTreeLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect, handleFacetClick)
           } else {
             renderHierarchicalLayout(state, currentArgument, config, handleNodeSelect, handleEdgeSelect, handleFacetClick)
           }
-          
+
           renderStateRef.current = state
         }
       } catch (error) {
@@ -549,10 +559,13 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
 
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [layoutMode, currentArgument, handleNodeSelect, handleEdgeSelect])
+  }, [layoutMode, currentArgument, handleNodeSelect, handleEdgeSelect, handleFacetClick])
+  if (!currentArgument) {
+    return <Alert severity="info">No argument data available</Alert>
+  }
 
   return (
-    <Box sx={{ 
+    <Box sx={{
       width: '100%', 
       height: '100%', 
       display: 'flex', 

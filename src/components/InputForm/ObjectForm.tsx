@@ -446,9 +446,13 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
         }
 
         if (!res?.success) throw new Error(res?.error || 'Create failed')
+        const createdId = res.data?.id
+        if (createdId) {
+          setFormData(prev => ({ ...prev, id: createdId }))
+        }
         // Immediately surface the new document in the unified argument list
         try {
-          const newId = formData.id || ''
+          const newId = createdId || formData.id || ''
           const md = formData.markdownContent || ''
           const t = formData.metadata?.title
           if (newId) {
@@ -456,10 +460,11 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
             setActiveSource('document')
           }
         } catch {}
-        
+
         // Navigate to the new route if ID is set
-        if (formData.id) {
-          window.history.pushState({}, '', `/${formData.id}`)
+        const navId = createdId || formData.id
+        if (navId) {
+          window.history.pushState({}, '', `/${navId}`)
         }
       }
       
