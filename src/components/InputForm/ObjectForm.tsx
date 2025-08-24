@@ -3,6 +3,7 @@ import { Box, Tabs, Tab, TextField, Button, Accordion, AccordionSummary, Accordi
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { debounce } from 'lodash'
 import { v4 as uuidv4 } from 'uuid'
+import { useNavigate } from 'react-router-dom'
 import type { ZLFNArgument, ZLFNObject, ZLFNStructure } from '../../types/zlfn'
 // import { createEmptyZLFNObject } from '../../types/zlfn'
 import { getCurrentAPI, apiConfig } from '../../services/apiConfig'
@@ -50,6 +51,7 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
   const [markdownFile, setMarkdownFile] = React.useState<File | null>(null)
   const [jsonFile, setJsonFile] = React.useState<File | null>(null)
   const { loadMarkdownDocument, setActiveSource } = useLogicShared()
+  const navigate = useNavigate()
   
   // Add a ref to track the current markdown content to prevent loss
   const markdownContentRef = React.useRef<string>('')
@@ -464,7 +466,7 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
         // Navigate to the new route if ID is set
         const navId = createdId || formData.id
         if (navId) {
-          window.history.pushState({}, '', `/${navId}`)
+          navigate(`/${navId}`)
         }
       }
       
