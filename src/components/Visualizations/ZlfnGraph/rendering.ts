@@ -5,6 +5,7 @@
 
 import * as d3 from 'd3'
 import type { ZlfnNode, ZlfnEdge, ZlfnZone, RenderConfig, GraphRefs } from './types'
+import { truncateText } from '../../../vis/utils/format'
 
 export interface RenderCallbacks {
   onNodeUpdate?: (node: ZlfnNode) => void
@@ -137,9 +138,26 @@ export function renderNodes(
       return 1
     })
 
-  // Update node labels
+  // Update node labels with truncation to fit node width
   nodeUpdate.select('.node-label')
-    .text((d: any) => d.name || d.symbol || d.label || d.id)
+    .each(function(d: any) {
+      const textEl = d3.select(this)
+      const fullLabel = d.name || d.symbol || d.label || d.id
+      const nodeWidth = d.size && 'width' in d.size
+        ? d.size.width
+        : d.size && 'radius' in d.size
+          ? d.size.radius * 2
+          : 40
+      const maxChars = Math.max(1, Math.floor((nodeWidth - 10) / 7))
+      const truncated = truncateText(fullLabel, maxChars)
+
+      textEl
+        .text(truncated)
+        .attr('data-full-label', fullLabel)
+        .attr('data-truncated-label', truncated)
+        .select('title').remove()
+      textEl.append('title').text(fullLabel)
+    })
     .style('fill', (d: any) => getNodeTextColor(d.color))
 
   // Add hover interactions with expansion and glow effects
@@ -148,18 +166,22 @@ export function renderNodes(
       const node = d3.select(this)
       const shape = node.select('rect, circle')
       const label = node.select('.node-label')
-      
+      const fullLabel = label.attr('data-full-label') || ''
+      label.text(fullLabel)
+
       // Apply glow effect
       shape.style('filter', 'url(#glow)')
-      
+
+      const approxLabelWidth = fullLabel.length * 7 + 10
+
       // Expand node
       const shapeElement = shape.node() as SVGElement
       if (shapeElement?.tagName === 'rect') {
         const originalWidth = d.originalWidth || d.size?.width || 100
         const originalHeight = d.originalHeight || d.size?.height || 40
-        const expandedWidth = originalWidth * 1.15
+        const expandedWidth = Math.max(originalWidth * 1.15, approxLabelWidth)
         const expandedHeight = originalHeight * 1.15
-        
+
         shape
           .transition()
           .duration(200)
@@ -170,15 +192,15 @@ export function renderNodes(
           .attr('y', -expandedHeight / 2)
       } else if (shapeElement?.tagName === 'circle') {
         const originalRadius = d.originalRadius || d.size?.radius || 20
-        const expandedRadius = originalRadius * 1.2
-        
+        const expandedRadius = Math.max(originalRadius * 1.2, approxLabelWidth / 2)
+
         shape
           .transition()
           .duration(200)
           .ease(d3.easeBackOut.overshoot(1.2))
           .attr('r', expandedRadius)
       }
-      
+
       // Enhance label
       label
         .transition()
@@ -186,7 +208,7 @@ export function renderNodes(
         .style('font-weight', '600')
         .style('font-size', '13px')
         .style('text-shadow', '0 0 8px rgba(100, 200, 255, 0.6)')
-      
+
       // Raise node to front
       node.raise()
     })
@@ -224,6 +246,7 @@ export function renderNodes(
       
       // Restore label
       label
+        .text(label.attr('data-truncated-label') || '')
         .transition()
         .duration(300)
         .style('font-weight', '500')
