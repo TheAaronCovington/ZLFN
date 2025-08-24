@@ -44,6 +44,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/document/:filename" element={<DocumentViewer />} />
+            <Route path="/:id" element={<DocumentViewer />} />
             <Route path="/viz/zlfn" element={<VizZlfn />} />
             <Route path="/viz/venn" element={<VizVenn />} />
             <Route path="/viz/symbols" element={<VizSymbols />} />

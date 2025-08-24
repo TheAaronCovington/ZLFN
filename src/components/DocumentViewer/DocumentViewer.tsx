@@ -6,6 +6,7 @@ import 'highlight.js/styles/atom-one-dark.css'
 import { logicRemarkPlugin } from './logicRemarkPlugin'
 import './DocumentViewer.css'
 import { getDocumentContent } from '../../services/docs'
+import { realAPI } from '../../services/realAPI'
 import { useLogicShared } from '../../context/LogicSharedContext'
 import { Box, Typography, Chip, IconButton, Tooltip } from '@mui/material'
 import { NeonAccordion, type NeonAccordionItem } from '../Accordion/NeonAccordion'
@@ -204,7 +205,7 @@ function extractText(children: React.ReactNode): string {
 }
 
 const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => {
-  const routeParams = useParams<{ filename: string }>()
+  const routeParams = useParams<{ filename?: string; id?: string }>()
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>('')
@@ -340,7 +341,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
 
   useEffect(() => {
     const load = async () => {
-      const effective = filenameOverride || routeParams.filename
+      const effective = filenameOverride || routeParams.filename || routeParams.id
       setLoading(true)
       if (!effective) {
         setError('No document specified')
@@ -348,14 +349,36 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
         setLoading(false)
         return
       }
+      
       try {
-        const txt = await getDocumentContent(effective)
+        let txt: string | null = null
+        let documentTitle = effective.replace(/_/g, ' ')
+        
+        // First, try to load from database (for dynamic routes)
+        try {
+          const apiResponse = await realAPI.getObject(effective)
+          if (apiResponse.success && apiResponse.data?.markdownContent) {
+            txt = apiResponse.data.markdownContent
+            documentTitle = apiResponse.data.metadata?.title || documentTitle
+            console.debug('[DocumentViewer] Loaded from database:', effective)
+          }
+        } catch (dbError) {
+          console.debug('[DocumentViewer] Database load failed, trying file system:', dbError)
+        }
+        
+        // Fallback to file system if database load failed
+        if (!txt) {
+          txt = await getDocumentContent(effective)
+          if (txt) {
+            console.debug('[DocumentViewer] Loaded from file system:', effective)
+          }
+        }
+        
         if (txt) {
           setContent(txt)
           setError('')
           
           // Load document into shared data model
-          const documentTitle = effective.replace('_', ' ')
           loadMarkdownDocument(effective, txt, documentTitle)
           setActiveSource('document')
           
@@ -377,9 +400,10 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
           }
         } else {
           setContent('')
-          setError('Document not found')
+          setError('Document not found in database or file system')
         }
-      } catch {
+      } catch (error) {
+        console.error('[DocumentViewer] Load error:', error)
         setContent('')
         setError('Failed to load document')
       } finally {
@@ -387,7 +411,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
       }
     }
     load()
-  }, [filenameOverride, routeParams.filename, setCurrentExpression, currentExpression, loadMarkdownDocument, setActiveSource])
+  }, [filenameOverride, routeParams.filename, routeParams.id, setCurrentExpression, currentExpression, loadMarkdownDocument, setActiveSource])
 
   useEffect(() => {
     // auto-scroll to active expression block when content or currentExpression changes or highlight nonce updates

@@ -149,7 +149,8 @@ router.get('/:id', optionalAuth, validateObjectId, async (req, res) => {
   try {
     const { id } = req.params;
     
-    const object = await ZLFNObject.findOne({ id });
+    // Select only necessary fields for performance
+    const object = await ZLFNObject.findOne({ id }).select('markdownContent metadata.isPublic metadata.author id');
     
     if (!object) {
       return res.status(404).json({
@@ -169,9 +170,13 @@ router.get('/:id', optionalAuth, validateObjectId, async (req, res) => {
     // Update last accessed
     await object.updateLastAccessed();
     
+    // Return optimized response for dynamic routes
     res.json({
       success: true,
-      data: object
+      data: { 
+        markdownContent: object.markdownContent, 
+        id: object.id 
+      }
     });
   } catch (error) {
     logger.error('Error fetching object:', error);
@@ -207,14 +212,16 @@ router.post('/', authenticateToken, requirePermission('canCreateObjects'), valid
     
     const object = new ZLFNObject({
       id,
-      title,
+      title: title || id.replace(/_/g, ' '), // Use title from request or generate from ID
       markdownContent: markdownContent || '',
       zlfnJson,
       notes: notes || new Map(),
       metadata: {
         author: req.user.username,
         created: new Date(),
-        modified: new Date()
+        modified: new Date(),
+        title: title, // Also store in metadata for consistency
+        isPublic: false // Default to private
       }
     });
     
