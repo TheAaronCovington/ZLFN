@@ -84,9 +84,14 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
 
       let importedArgs: any[] = []
       let importedTitle: string | undefined
+      let importedMarkdown: string | undefined
 
       // NOTE: Per requirement, importing JSON must NOT change markdownContent.
-      // We will only map JSON into arguments and title hints.
+      // We will only map JSON into arguments and title hints unless markdownContent is explicitly provided.
+
+      if (typeof (initialData as any).markdownContent === 'string') {
+        importedMarkdown = (initialData as any).markdownContent
+      }
 
       if (Array.isArray(initialData)) {
         // initialData is likely SharedArgument[] from normalizeImportedJSON
@@ -102,7 +107,7 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
         log('mapped raw JSON arguments', { importedArgsLen: importedArgs.length })
       }
 
-      if (importedArgs.length > 0) {
+      if (importedArgs.length > 0 || importedMarkdown !== undefined) {
         setFormData(prev => {
           const nextMeta = {
             ...prev.metadata,
@@ -113,15 +118,15 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
           }
           return {
             ...prev,
+            ...(importedMarkdown !== undefined ? { markdownContent: importedMarkdown } : {}),
             zflnJson: {
               ...prev.zflnJson,
-              arguments: importedArgs
+              arguments: importedArgs.length > 0 ? importedArgs : prev.zflnJson?.arguments || []
             },
             metadata: nextMeta
-            // markdownContent intentionally left unchanged
           }
         })
-        log('applied initialData mapping', { argsLen: importedArgs.length, title: importedTitle })
+        log('applied initialData mapping', { argsLen: importedArgs.length, title: importedTitle, md: importedMarkdown?.length })
       }
     }
   }, [initialData, objectId])

@@ -68,7 +68,7 @@ describe('ObjectForm', () => {
         this.onload?.({ target: { result: JSON.stringify(jsonContent) } })
       }
     }
-    vi.spyOn(window, 'FileReader').mockImplementation(() => fileReaderMock as any)
+    const frSpy = vi.spyOn(window, 'FileReader').mockImplementation(() => fileReaderMock as any)
 
     await act(async () => {
       fireEvent.change(jsonInput, { target: { files: [file] } })
@@ -78,7 +78,59 @@ describe('ObjectForm', () => {
     fireEvent.click(screen.getByRole('tab', { name: /markdown/i }))
     const markdownFieldAfter = await screen.findByLabelText('Markdown Content')
     expect((markdownFieldAfter as HTMLInputElement).value).toBe('Original markdown')
-    vi.restoreAllMocks()
+    frSpy.mockRestore()
+  })
+
+  it('loads markdown content from initialData into textarea', async () => {
+    const initialData = { markdownContent: '# Imported\n\nContent', arguments: [] }
+
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/create' }] as any}>
+        <ObjectForm onClose={() => {}} initialData={initialData} />
+      </MemoryRouter>
+    )
+
+    fireEvent.click(screen.getByRole('tab', { name: /markdown/i }))
+    const markdownField = await screen.findByLabelText('Markdown Content')
+    expect((markdownField as HTMLInputElement).value).toBe('# Imported\n\nContent')
+  })
+
+  it('does not overwrite markdown when reinitialized with JSON data', async () => {
+    const markdownData = { markdownContent: 'Original markdown', arguments: [] }
+    const jsonData = {
+      arguments: [
+        {
+          core: { name: 'Arg1', summary: '' },
+          zones: [],
+          dependencies: [],
+          modes: {},
+          counterarguments: [],
+          subarguments: [],
+          validation: { isValid: true, errors: [], warnings: [] },
+          pagination: { currentPage: 1, totalPages: 1 }
+        }
+      ]
+    }
+
+    const Wrapper = ({ data }: { data: any }) => (
+      <MemoryRouter initialEntries={[{ pathname: '/create' }] as any}>
+        <ObjectForm onClose={() => {}} initialData={data} />
+      </MemoryRouter>
+    )
+
+    const { rerender } = render(<Wrapper data={markdownData} />)
+
+    fireEvent.click(screen.getByRole('tab', { name: /markdown/i }))
+    const mdField = await screen.findByLabelText('Markdown Content')
+    expect((mdField as HTMLInputElement).value).toBe('Original markdown')
+
+    await act(async () => {
+      rerender(<Wrapper data={jsonData} />)
+    })
+
+    fireEvent.click(screen.getByRole('tab', { name: /markdown/i }))
+    const mdFieldAfter = await screen.findByLabelText('Markdown Content')
+    expect((mdFieldAfter as HTMLInputElement).value).toBe('Original markdown')
   })
 })
 
