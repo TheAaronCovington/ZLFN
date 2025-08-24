@@ -37,7 +37,7 @@ import { VennDiagramDialog, TruthTableDialog, TimelineDialog, CounterargumentsDi
 import { useFlowRivers } from '../../hooks/useFlowRivers'
 import { useBayesianMode, formatProbability } from '../../hooks/useBayesianMode'
 // Enhanced dialog types imported above
-import { truncateText } from 'src/vis/utils/format'
+// import { truncateText } from 'src/vis/utils/format' // TODO: Fix import path
 
 // AST-based evaluator (no eval) - COMMENTED OUT
 /* function evaluateExpressionWithAst(expression: string, variables: string[], values: boolean[]): boolean {
@@ -1661,7 +1661,8 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
                                maxChars = Math.floor((50) / charWidth) // hex radius ~25 -> width ~50
                        }
 
-                       const truncated = truncateText(fullText, Math.max(maxChars, 1))
+                                               const maxLen = Math.max(maxChars, 1)
+                        const truncated = fullText.length > maxLen ? fullText.substring(0, maxLen - 3) + '...' : fullText
                        const sel = d3.select(this as SVGTextElement)
                        sel.attr('data-full-label', fullText)
                                .attr('data-truncated-label', truncated)
@@ -1718,7 +1719,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 
                // Hover interactions: expand labels and apply glow
                nodeEnter
-                       .on('mouseenter', function (event: any, d: any) {
+                                               .on('mouseenter', function (_event: any, _d: any) {
                                const g = d3.select(this as SVGGElement)
                                const textSel = g.select('text').filter(function () {
                                        return !d3.select(this).classed('pin-marker')
@@ -1726,7 +1727,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
                                textSel.text(textSel.attr('data-full-label') || '')
                                g.style('filter', 'url(#glow)')
                                const shape = g.select('circle, rect, path')
-                               const tag = shape.node()?.tagName
+                                                               const tag = (shape.node() as SVGElement)?.tagName
                                if (tag === 'circle') {
                                        const origR = parseFloat(shape.attr('data-orig-radius') || shape.attr('r') || '0')
                                        shape.attr('r', origR * 1.1)
@@ -1742,7 +1743,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
                                        shape.attr('transform', `scale(${origScale * 1.1})`)
                                }
                        })
-                       .on('mouseleave', function (event: any, d: any) {
+                                               .on('mouseleave', function (_event: any, _d: any) {
                                const g = d3.select(this as SVGGElement)
                                const textSel = g.select('text').filter(function () {
                                        return !d3.select(this).classed('pin-marker')
@@ -1750,7 +1751,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
                                textSel.text(textSel.attr('data-truncated-label') || '')
                                g.style('filter', null)
                                const shape = g.select('circle, rect, path')
-                               const tag = shape.node()?.tagName
+                                                               const tag = (shape.node() as SVGElement)?.tagName
                                if (tag === 'circle') {
                                        const origR = parseFloat(shape.attr('data-orig-radius') || '0')
                                        if (origR) shape.attr('r', origR)

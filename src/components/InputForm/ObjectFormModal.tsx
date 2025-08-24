@@ -87,8 +87,86 @@ export default function ObjectFormModal({
   }
 
   const handleMarkdownImport = () => {
-    // TODO: Implement markdown import
-    console.log('Markdown import not yet implemented')
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.md,.markdown,.txt'
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (file) {
+        try {
+          const content = await file.text()
+          const fileName = file.name.replace(/\.(md|markdown|txt)$/, '')
+          
+          // Create a basic ZLFN structure with the markdown content
+          const markdownData = {
+            arguments: [{
+              title: fileName,
+              markdown: {
+                documentId: fileName.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+                content: content
+              },
+              core: {
+                name: fileName,
+                summary: `Imported from ${file.name}`,
+                layoutMode: "network",
+                variables: {},
+                mode: {
+                  zlfMode: true,
+                  atnMode: true
+                },
+                metadata: {
+                  confidence: 0.5,
+                  uncertain: [],
+                  domain: "general"
+                }
+              },
+              zones: [],
+              dependencies: [],
+              modes: {
+                zlfn: { enabled: true },
+                atn: { enabled: true }
+              },
+              counterarguments: [],
+              subarguments: [],
+              validation: {
+                isValid: true,
+                errors: [],
+                warnings: []
+              },
+              pagination: {
+                currentPage: 1,
+                totalPages: 1,
+                hasNext: false,
+                hasPrevious: false
+              },
+              zlfnGraph: {
+                nodes: [
+                  {
+                    id: "core",
+                    label: fileName,
+                    type: "core",
+                    zone: "core",
+                    position: { x: 0, y: 0 }
+                  }
+                ],
+                edges: [],
+                zones: [
+                  { name: "core", bounds: { x: -50, y: -50, width: 100, height: 100 } }
+                ]
+              }
+            }]
+          }
+          
+          setImportedData(markdownData)
+          setFormProgress(75)
+          console.log('Markdown imported successfully:', fileName)
+        } catch (error) {
+          console.error('Error reading markdown file:', error)
+          alert('Error reading markdown file. Please try again.')
+        }
+      }
+    }
+    input.click()
   }
 
   const handleClearImport = () => {
@@ -266,10 +344,10 @@ export default function ObjectFormModal({
           )}
 
           {/* Import Actions */}
-          {mode === 'create' && !importedData && (
+          {mode === 'create' && (
             <Box sx={{ mt: 2 }}>
               <Typography variant="caption" sx={{ color: 'var(--ai-text-tertiary)', mb: 1, display: 'block' }}>
-                Quick Start
+                {importedData ? 'Import Additional Data' : 'Quick Start'}
               </Typography>
               <Stack direction="row" spacing={1}>
                 <Button

@@ -27,6 +27,7 @@ import MenuBookIcon from '@mui/icons-material/MenuBook'
 import PushPinIcon from '@mui/icons-material/PushPin'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import EditIcon from '@mui/icons-material/Edit'
+import DeleteIcon from '@mui/icons-material/Delete'
 import LocalOfferIcon from '@mui/icons-material/LocalOffer'
 import SearchIcon from '@mui/icons-material/Search'
 import { Link as RouterLink } from 'react-router-dom'
@@ -101,7 +102,7 @@ const TagEditDialog: React.FC<TagEditDialogProps> = ({ open, onClose, documentId
 }
 
 export const LibrarySidebar: React.FC = () => {
-  const { unifiedData } = useLogicShared()
+  const { unifiedData, removeDocument } = useLogicShared()
   const [open, setOpen] = useState(false)
   const [docs, setDocs] = useState<DocMeta[]>([])
   const [query, setQuery] = useState('')
@@ -192,6 +193,27 @@ export const LibrarySidebar: React.FC = () => {
     // await updateDocumentTags(documentId, newTags)
     
     console.log(`Updated tags for ${documentId}:`, newTags)
+  }
+
+  const handleDeleteDocument = (documentId: string, documentTitle: string) => {
+    if (window.confirm(`Are you sure you want to delete "${documentTitle}"? This action cannot be undone.`)) {
+      removeDocument(documentId)
+      // Remove from pins and recents
+      setPins(prev => {
+        const next = new Set(prev)
+        next.delete(documentId)
+        storage.setSet(PINS_KEY, next)
+        return next
+      })
+      setRecents(prev => {
+        const next = new Set(prev)
+        next.delete(documentId)
+        storage.setSet(RECENTS_KEY, next)
+        return next
+      })
+      // Refresh document list
+      getDocumentList().then(setDocs)
+    }
   }
 
 	const allTags = useMemo(() => {
@@ -455,6 +477,20 @@ export const LibrarySidebar: React.FC = () => {
 												<EditIcon fontSize="small" />
 											</IconButton>
 										</Tooltip>
+										<Tooltip title="Delete Document">
+											<IconButton 
+												edge="end" 
+												size="small" 
+												onClick={(e) => { 
+													e.preventDefault(); 
+													e.stopPropagation(); 
+													handleDeleteDocument(d.id, d.label || d.id) 
+												}}
+												sx={{ color: 'error.main' }}
+											>
+												<DeleteIcon fontSize="small" />
+											</IconButton>
+										</Tooltip>
 										<Tooltip title="Unpin">
 											<IconButton 
 												edge="end" 
@@ -525,6 +561,20 @@ export const LibrarySidebar: React.FC = () => {
 												<EditIcon fontSize="small" />
 											</IconButton>
 										</Tooltip>
+										<Tooltip title="Delete Document">
+											<IconButton 
+												edge="end" 
+												size="small" 
+												onClick={(e) => { 
+													e.preventDefault(); 
+													e.stopPropagation(); 
+													handleDeleteDocument(d.id, d.label || d.id) 
+												}}
+												sx={{ color: 'error.main' }}
+											>
+												<DeleteIcon fontSize="small" />
+											</IconButton>
+										</Tooltip>
 										<Tooltip title="Pin">
 											<IconButton 
 												edge="end" 
@@ -582,6 +632,20 @@ export const LibrarySidebar: React.FC = () => {
 											}}
 										>
 											<EditIcon fontSize="small" />
+										</IconButton>
+									</Tooltip>
+									<Tooltip title="Delete Document">
+										<IconButton 
+											edge="end" 
+											size="small" 
+											onClick={(e) => { 
+												e.preventDefault(); 
+												e.stopPropagation(); 
+												handleDeleteDocument(d.id, d.label || d.id) 
+											}}
+											sx={{ color: 'error.main' }}
+										>
+											<DeleteIcon fontSize="small" />
 										</IconButton>
 									</Tooltip>
 									<Tooltip title="Pin">
