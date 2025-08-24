@@ -9,6 +9,7 @@
 
 import { realAPI } from './realAPI'
 import { api as mockAPI } from './zlfnAPI'
+import { apiConfig } from './apiConfig'
 
 // File-based document loaders (fallback only)
 const loaders = import.meta.glob('../assets/documents/*.md', { query: '?raw', import: 'default' }) as Record<string, () => Promise<string>>
@@ -98,18 +99,22 @@ export async function getDocumentList(): Promise<DocMeta[]> {
 export async function getDocumentContent(id: string): Promise<string | null> {
         console.debug('[docs] Getting document content for:', id)
 
+        const { useRealBackend } = apiConfig.getConfig()
+
         let dbError: unknown = null
 
         // First, try to get content from the database (API)
-        try {
-                const apiResponse = await realAPI.getObject(id)
-                if (apiResponse.success && apiResponse.data && typeof apiResponse.data.markdownContent === 'string') {
-                        console.debug('[docs] Loaded content from database:', id)
-                        return apiResponse.data.markdownContent
+        if (useRealBackend) {
+                try {
+                        const apiResponse = await realAPI.getObject(id)
+                        if (apiResponse.success && apiResponse.data && typeof apiResponse.data.markdownContent === 'string') {
+                                console.debug('[docs] Loaded content from database:', id)
+                                return apiResponse.data.markdownContent
+                        }
+                        if (!apiResponse.success) dbError = apiResponse.error
+                } catch (error) {
+                        dbError = error
                 }
-                if (!apiResponse.success) dbError = apiResponse.error
-        } catch (error) {
-                dbError = error
         }
 
         // Next, try the mock store before falling back to files
