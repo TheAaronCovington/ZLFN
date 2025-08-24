@@ -4,7 +4,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { debounce } from 'lodash'
 import { v4 as uuidv4 } from 'uuid'
 import type { ZLFNArgument, ZLFNObject, ZLFNStructure } from '../../types/zlfn'
-import { createEmptyZLFNObject } from '../../types/zlfn'
+// import { createEmptyZLFNObject } from '../../types/zlfn'
 import { getCurrentAPI, apiConfig } from '../../services/apiConfig'
 import realAPI from '../../services/realAPI'
 import { zlfnObjectManager } from '../../services/zlfnObjectManager'
@@ -16,6 +16,20 @@ interface ObjectFormProps {
 }
 
 export default function ObjectForm({ objectId, onClose, initialData }: ObjectFormProps) {
+  // Debug toggles
+  const DBG = false
+  const log = (...args: any[]) => { if (DBG) console.log('[ObjectForm]', ...args) }
+  const logState = (tag: string, md?: string) => {
+    if (!DBG) return
+    console.log('[ObjectForm]', tag, {
+      id: formData.id,
+      title: formData.metadata?.title,
+      mdLen: (formData.markdownContent || '').length,
+      mdPreview: (md !== undefined ? md : (formData.markdownContent || '')).slice(0, 80),
+      argsLen: formData.zflnJson?.arguments?.length || 0,
+      lastAction: lastActionRef.current
+    })
+  }
   const [activeTab, setActiveTab] = React.useState(0)
   const [error, setError] = React.useState('')
   const [formData, setFormData] = React.useState<Partial<ZLFNObject>>(() => ({ 
@@ -33,11 +47,25 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [markdownFile, setMarkdownFile] = React.useState<File | null>(null)
   const [jsonFile, setJsonFile] = React.useState<File | null>(null)
+  
+  // Add a ref to track the current markdown content to prevent loss
+  const markdownContentRef = React.useRef<string>('')
+  // Track last action for diagnostics
+  const lastActionRef = React.useRef<string>('INIT')
+  // Apply initialData only when it actually changes
+  const lastInitialDataRef = React.useRef<any>(null)
+  
+  // Update ref whenever markdown content changes
+  React.useEffect(() => {
+    markdownContentRef.current = formData.markdownContent || ''
+    log('markdownContentRef updated', { mdLen: markdownContentRef.current.length })
+  }, [formData.markdownContent])
 
   React.useEffect(() => {
     let cancelled = false
     const load = async () => {
       if (!objectId) return
+      lastActionRef.current = 'LOAD_OBJECT'
       const res = await getCurrentAPI().getObject(objectId)
       if (!cancelled && res.success && res.data) {
         setFormData(res.data as ZLFNObject)
@@ -49,23 +77,57 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
 
   // Handle imported data (legacy support)
   React.useEffect(() => {
-    if (initialData && !objectId) {
-      // Convert imported data to ZLFNObject format
-      const importedObject = createEmptyZLFNObject(`imported_${Date.now()}`)
-      
-      if (initialData.arguments && initialData.arguments.length > 0) {
-        // Use the first argument from imported data
-        const firstArg = initialData.arguments[0]
-        importedObject.zflnJson.arguments = [firstArg]
-        importedObject.metadata.title = firstArg.title || 'Imported Argument'
-        importedObject.markdownContent = firstArg.markdown?.content || ''
+    if (initialData && !objectId && initialData !== lastInitialDataRef.current) {
+      lastActionRef.current = 'INIT_FROM_INITIALDATA'
+      lastInitialDataRef.current = initialData
+      log('initialData received', { keys: Object.keys(initialData || {}), isArray: Array.isArray(initialData) })
+
+      let importedArgs: any[] = []
+      let importedTitle: string | undefined
+
+      // NOTE: Per requirement, importing JSON must NOT change markdownContent.
+      // We will only map JSON into arguments and title hints.
+
+      if (Array.isArray(initialData)) {
+        // initialData is likely SharedArgument[] from normalizeImportedJSON
+        importedArgs = mapSharedArgumentsToZlfnArgs(initialData as any[])
+        const first = (initialData as any[])[0]
+        if (first?.title) importedTitle = first.title
+        log('mapped SharedArgument[]', { importedArgsLen: importedArgs.length })
+      } else if ((initialData as any).arguments) {
+        // Raw JSON with expected shape
+        importedArgs = ((initialData as any).arguments || []).map((a: any) => sanitizeArgument(a))
+        const firstArg = importedArgs[0]
+        if (firstArg?.core?.name) importedTitle = firstArg.core.name
+        log('mapped raw JSON arguments', { importedArgsLen: importedArgs.length })
       }
-      
-      setFormData(importedObject)
+
+      if (importedArgs.length > 0) {
+        setFormData(prev => {
+          const nextMeta = {
+            ...prev.metadata,
+            title: prev.metadata?.title || importedTitle || prev.metadata?.title,
+            created: prev.metadata?.created || new Date().toISOString(),
+            modified: new Date().toISOString(),
+            fileReferences: prev.metadata?.fileReferences || []
+          }
+          return {
+            ...prev,
+            zflnJson: {
+              ...prev.zflnJson,
+              arguments: importedArgs
+            },
+            metadata: nextMeta,
+            // Do not modify markdownContent when importing JSON
+            markdownContent: prev.markdownContent || ''
+          }
+        })
+        log('applied initialData mapping', { argsLen: importedArgs.length, title: importedTitle })
+      }
     }
   }, [initialData, objectId])
 
-  // Markdown file import handler
+  // Markdown file import handler (reverted to working behavior)
   const handleMarkdownImport = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
@@ -74,9 +136,10 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
       const reader = new FileReader()
       reader.onload = (e) => {
         const content = e.target?.result as string
-        setFormData(prev => ({ 
-          ...prev, 
-          id, 
+        lastActionRef.current = 'MARKDOWN_IMPORT'
+        setFormData(prev => ({
+          ...prev,
+          id,
           markdownContent: content,
           metadata: {
             ...prev.metadata,
@@ -104,15 +167,26 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
         try {
           const content = e.target?.result as string
           const json = JSON.parse(content)
-          setFormData(prev => ({
-            ...prev,
-            zflnJson: { 
-              ...prev.zflnJson, 
-              arguments: json.arguments || [] 
+          lastActionRef.current = 'JSON_IMPORT'
+          log('JSON_IMPORT read', { file: file.name, size: content.length, keys: Object.keys(json || {}) })
+          setFormData(prev => {
+            // Explicitly preserve markdown content from ref to prevent loss
+            const preservedMarkdownContent = markdownContentRef.current || prev.markdownContent || ''
+            
+            return {
+              ...prev,
+              markdownContent: preservedMarkdownContent, // Explicitly preserve markdown
+              zflnJson: { 
+                ...prev.zflnJson, 
+                arguments: json.arguments || [] 
+              }
             }
-          }))
+          })
+          setTimeout(() => logState('after JSON_IMPORT state set'), 0)
         } catch (error) {
           setError('Invalid JSON file format')
+          lastActionRef.current = 'JSON_IMPORT_ERROR'
+          log('JSON_IMPORT parse error', error)
         }
       }
       reader.onerror = () => {
@@ -120,6 +194,103 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
       }
       reader.readAsText(file)
     }
+  }
+
+  // Watchdog: if a JSON import just occurred and markdown emptied, restore from ref once (silent)
+  const restoreGuardRef = React.useRef<number>(0)
+  React.useEffect(() => {
+    if (lastActionRef.current === 'JSON_IMPORT') {
+      const isEmpty = !formData.markdownContent || formData.markdownContent.length === 0
+      const canRestore = markdownContentRef.current && markdownContentRef.current.length > 0
+      if (isEmpty && canRestore && restoreGuardRef.current < 1) {
+        restoreGuardRef.current += 1
+        setFormData(prev => ({ ...prev, markdownContent: markdownContentRef.current }))
+        log('watchdog restored markdown from ref', { len: markdownContentRef.current.length })
+      }
+    } else {
+      restoreGuardRef.current = 0
+    }
+  }, [formData.markdownContent])
+
+  // Diagnostics: compact, actionable
+  React.useEffect(() => {
+    log('state change', {
+      lastAction: lastActionRef.current,
+      mdLen: formData.markdownContent ? formData.markdownContent.length : 0,
+      argsLen: formData.zflnJson?.arguments?.length || 0,
+      tab: activeTab
+    })
+  }, [formData.markdownContent, formData.zflnJson?.arguments?.length, activeTab])
+
+  // --- Import utilities: sanitize & map ---
+  function sanitizeDependencies(rawDeps: any[] | undefined): any[] {
+    const deps = Array.isArray(rawDeps) ? rawDeps : []
+    const cleaned = deps
+      .map(d => ({
+        id: d.id || '',
+        source: d.source || d.sourceId || '',
+        target: d.target || d.targetId || '',
+        type: d.type || '',
+        rule: d.rule || '',
+        weight: typeof d.weight === 'number' ? d.weight : undefined,
+        priority: typeof d.priority === 'number' ? d.priority : undefined
+      }))
+      .filter(d => d.type && d.target) // matches validator expectations
+    return cleaned
+  }
+
+  function ensureModes(raw: any): any {
+    const m = raw && typeof raw === 'object' ? raw : {}
+    return {
+      propositional: !!m.propositional,
+      predicate: !!m.predicate,
+      epistemic: !!m.epistemic,
+      deontic: !!m.deontic,
+      temporal: !!m.temporal,
+      informal: !!m.informal,
+      paraconsistent: !!m.paraconsistent,
+      fuzzy: !!m.fuzzy
+    }
+  }
+
+  function sanitizeArgument(raw: any): any {
+    const core = raw.core || {}
+    const safeCore = {
+      name: core.name || 'Imported Argument',
+      summary: core.summary || '',
+      layoutMode: core.layoutMode || 'network',
+      variables: core.variables || {},
+      mode: core.mode || {}
+    }
+    return {
+      core: safeCore,
+      zones: Array.isArray(raw.zones) ? raw.zones : [],
+      dependencies: sanitizeDependencies(raw.dependencies),
+      modes: ensureModes(raw.modes),
+      counterarguments: Array.isArray(raw.counterarguments) ? raw.counterarguments : [],
+      subarguments: Array.isArray(raw.subarguments) ? raw.subarguments : [],
+      validation: raw.validation || { isValid: true, errors: [], warnings: [] },
+      pagination: raw.pagination || { currentPage: 1, totalPages: 1 }
+    }
+  }
+
+  function mapSharedArgumentsToZlfnArgs(shared: any[]): any[] {
+    return (shared || []).map((sa: any) => sanitizeArgument({
+      core: {
+        name: sa.title || 'Imported Argument',
+        summary: (sa.expressions && sa.expressions[0]) || '' ,
+        layoutMode: 'network',
+        variables: {},
+        mode: { zlfMode: false, atnMode: false }
+      },
+      zones: [],
+      dependencies: [],
+      modes: {},
+      counterarguments: [],
+      subarguments: [],
+      validation: { isValid: true, errors: [], warnings: [] },
+      pagination: { currentPage: 1, totalPages: 1 }
+    }))
   }
 
   // Comprehensive validation function
@@ -351,6 +522,7 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
           <Box>
             <Typography variant="subtitle2" sx={{ mb: 1 }}>Import Markdown File</Typography>
             <input 
+              key="markdown-import"
               type="file" 
               accept=".md,.markdown" 
               onChange={handleMarkdownImport}
@@ -379,6 +551,8 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
           <Box>
             <Typography variant="subtitle2" sx={{ mb: 1 }}>Import JSON Arguments</Typography>
             <input 
+              key="json-import"
+              id="arguments-json-file-input"
               type="file" 
               accept=".json" 
               onChange={handleJsonImport}

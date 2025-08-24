@@ -55,7 +55,7 @@ describe('ZLFNObjectManager Backup System', () => {
       expect(backupData).toHaveProperty('objectCount', 2)
       expect(backupData.objects).toHaveLength(2)
       expect(backupData.objects[0]).toHaveProperty('id')
-      expect(backupData.objects[0]).toHaveProperty('markdown')
+      expect(backupData.objects[0]).toHaveProperty('markdownContent')
     })
 
     it('should handle empty object store', async () => {

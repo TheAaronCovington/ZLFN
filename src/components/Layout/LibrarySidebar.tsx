@@ -458,10 +458,28 @@ export const LibrarySidebar: React.FC = () => {
 										primary={
 											<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
 												<span>{d.label}</span>
-												<Chip size="small" label="Doc" color="info" />
+												<Chip 
+													size="small" 
+													label={d.source === 'database' ? 'DB' : 'Doc'} 
+													color={d.source === 'database' ? 'success' : 'info'} 
+												/>
+												{d.author && (
+													<Chip 
+														size="small" 
+														label={d.author} 
+														variant="outlined" 
+														sx={{ fontSize: '0.7rem' }}
+													/>
+												)}
 											</Box>
 										} 
-										secondary={<>{d.id}{(d.tags && d.tags.length) ? <> • {d.tags.join(', ')}</> : null}</>} 
+										secondary={
+											<>
+												{d.id}
+												{(d.tags && d.tags.length) ? <> • {d.tags.join(', ')}</> : null}
+												{d.modified && <> • Modified: {new Date(d.modified).toLocaleDateString()}</>}
+											</>
+										} 
 									/>
 									<Stack direction="row" spacing={0.5}>
 										<Tooltip title="Edit Tags">
@@ -542,10 +560,28 @@ export const LibrarySidebar: React.FC = () => {
 										primary={
 											<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
 												<span>{d.label}</span>
-												<Chip size="small" label="Doc" color="info" />
+												<Chip 
+													size="small" 
+													label={d.source === 'database' ? 'DB' : 'Doc'} 
+													color={d.source === 'database' ? 'success' : 'info'} 
+												/>
+												{d.author && (
+													<Chip 
+														size="small" 
+														label={d.author} 
+														variant="outlined" 
+														sx={{ fontSize: '0.7rem' }}
+													/>
+												)}
 											</Box>
 										} 
-										secondary={<>{d.id}{(d.tags && d.tags.length) ? <> • {d.tags.join(', ')}</> : null}</>} 
+										secondary={
+											<>
+												{d.id}
+												{(d.tags && d.tags.length) ? <> • {d.tags.join(', ')}</> : null}
+												{d.modified && <> • Modified: {new Date(d.modified).toLocaleDateString()}</>}
+											</>
+										} 
 									/>
 									<Stack direction="row" spacing={0.5}>
 										<Tooltip title="Edit Tags">
@@ -615,10 +651,28 @@ export const LibrarySidebar: React.FC = () => {
 									primary={
 										<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
 											<span>{d.label}</span>
-											<Chip size="small" label="Doc" color="info" />
+											<Chip 
+												size="small" 
+												label={d.source === 'database' ? 'DB' : 'Doc'} 
+												color={d.source === 'database' ? 'success' : 'info'} 
+											/>
+											{d.author && (
+												<Chip 
+													size="small" 
+													label={d.author} 
+													variant="outlined" 
+													sx={{ fontSize: '0.7rem' }}
+												/>
+											)}
 										</Box>
 									} 
-									secondary={<>{d.id}{(d.tags && d.tags.length) ? <> • {d.tags.join(', ')}</> : null}</>} 
+									secondary={
+										<>
+											{d.id}
+											{(d.tags && d.tags.length) ? <> • {d.tags.join(', ')}</> : null}
+											{d.modified && <> • Modified: {new Date(d.modified).toLocaleDateString()}</>}
+										</>
+									} 
 								/>
 								<Stack direction="row" spacing={0.5}>
 									<Tooltip title="Edit Tags">

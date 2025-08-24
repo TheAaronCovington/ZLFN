@@ -109,13 +109,30 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 				console.debug('[LogicShared] Server objects loaded', { count: fullObjects.length, ids })
 				const serverArgs = fullObjects.map((obj: any) => ({
 					id: obj.id,
-					title: obj.title || obj.metadata?.title || obj.id,
-					markdown: { documentId: obj.id, content: (obj as any).markdownContent || '' },
+					title: obj.metadata?.title || obj.title || obj.id.replace(/_/g, ' '),
+					markdown: { 
+						documentId: obj.id, 
+						content: obj.markdownContent || '',
+						source: 'database',
+						lastModified: obj.metadata?.modified,
+						author: obj.metadata?.author
+					},
 					expressions: [],
-					zlfnGraph: (obj as any).zlfnJson && Array.isArray((obj as any).zlfnJson.nodes) && Array.isArray((obj as any).zlfnJson.edges)
+					metadata: {
+						created: obj.metadata?.created,
+						modified: obj.metadata?.modified,
+						author: obj.metadata?.author,
+						description: obj.metadata?.description,
+						status: obj.metadata?.status,
+						isFromDatabase: true
+					},
+					zlfnGraph: obj.zlfnJson && Array.isArray(obj.zlfnJson.nodes) && Array.isArray(obj.zlfnJson.edges)
 						? { 
-							nodes: ((obj as any).zlfnJson.nodes as any[]).map(n => ({ ...(n || {}), argumentId: (n as any)?.argumentId || obj.id })),
-							edges: (obj as any).zlfnJson.edges 
+							nodes: obj.zlfnJson.nodes.map((n: any) => ({ 
+								...n, 
+								argumentId: n.argumentId || obj.id 
+							})),
+							edges: obj.zlfnJson.edges || []
 						}
 						: undefined
 				}))
@@ -317,11 +334,34 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     // (moved below after addImportedJSONArguments initialization)
 
-	// Markdown document management methods - aligned with parseDocumentToGraph via normalizeDocument
+	// Markdown document management methods - enhanced for database-stored content
 	const loadMarkdownDocument = useCallback(async (documentId: string, content: string, title?: string) => {
+		console.debug('[LogicShared] Loading markdown document:', { documentId, title, contentLength: content.length })
+		
 		try {
+			// Check if this is a database-stored document by trying to fetch it
+			let databaseObject: any = null
+			let isFromDatabase = false
+			
+			try {
+				const apiResponse = await realAPI.getObject(documentId)
+				if (apiResponse.success && apiResponse.data) {
+					databaseObject = apiResponse.data
+					isFromDatabase = true
+					console.debug('[LogicShared] Document found in database:', documentId)
+				}
+			} catch (dbError) {
+				console.debug('[LogicShared] Document not in database, treating as file-based:', documentId)
+			}
+			
+			// Use database content and metadata if available, otherwise use provided content
+			const effectiveContent = isFromDatabase ? (databaseObject.markdownContent || content) : content
+			const effectiveTitle = isFromDatabase ? 
+				(databaseObject.metadata?.title || databaseObject.title || title || documentId) : 
+				(title || documentId)
+			
 			// Use normalizeDocument to align with parseDocumentToGraph workflow
-			const normalizedArguments = await normalizeDocument(documentId, content)
+			const normalizedArguments = await normalizeDocument(documentId, effectiveContent)
 			
 			setUnifiedData(prev => {
 				// Remove existing arguments from this document
@@ -329,14 +369,41 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 					!arg.markdown.documentId || arg.markdown.documentId !== documentId
 				)
 				
-				// Add new arguments from the document
-				const newArguments = [...filteredArguments, ...normalizedArguments]
+				// Enhance normalized arguments with database metadata if available
+				const enhancedArguments = normalizedArguments.map(arg => ({
+					...arg,
+					title: effectiveTitle,
+					markdown: {
+						...arg.markdown,
+						content: effectiveContent
+					},
+					// If from database and has zlfnJson, use it
+					...(isFromDatabase && databaseObject.zlfnJson ? {
+						zlfnGraph: {
+							nodes: (databaseObject.zlfnJson.nodes || []).map((n: any) => ({ 
+								...n, 
+								argumentId: n.argumentId || documentId 
+							})),
+							edges: databaseObject.zlfnJson.edges || []
+						}
+					} : {})
+				}))
+				
+				// Add enhanced arguments
+				const newArguments = [...filteredArguments, ...enhancedArguments]
 				
 				// Select the first document argument if none selected or if current selection was from this document
 				let newSelectedId = prev.selectedArgumentId
 				if (!newSelectedId || prev.arguments.find(arg => arg.id === newSelectedId)?.markdown.documentId === documentId) {
-					newSelectedId = normalizedArguments.length > 0 ? normalizedArguments[0].id : null
+					newSelectedId = enhancedArguments.length > 0 ? enhancedArguments[0].id : null
 				}
+				
+				console.debug('[LogicShared] Document loaded successfully:', { 
+					documentId, 
+					isFromDatabase, 
+					argumentCount: enhancedArguments.length,
+					selectedId: newSelectedId
+				})
 				
 				return {
 					...prev,
@@ -346,7 +413,7 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 				}
 			})
 		} catch (error) {
-			console.error('Failed to load markdown document:', error)
+			console.error('[LogicShared] Failed to load markdown document:', error)
 			// Fallback to the original extraction method
 			const extraction = extractArgumentsFromMarkdown(documentId, content, title)
 			
@@ -360,6 +427,11 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 					newSelectedId = extraction.arguments.length > 0 ? extraction.arguments[0].id : null
 				}
 				
+				console.debug('[LogicShared] Document loaded via fallback method:', { 
+					documentId, 
+					argumentCount: extraction.arguments.length 
+				})
+				
 				return {
 					...prev,
 					activeSource: 'document',
@@ -370,40 +442,136 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		}
 	}, [])
 
-	const updateMarkdownDocument = useCallback((documentId: string, content: string) => {
-		setUnifiedData(prev => {
-			const updatedArguments = prev.arguments.map(arg => {
-				if (arg.markdown.documentId === documentId) {
-					return updateArgumentFromMarkdown(arg, content)
+	const updateMarkdownDocument = useCallback(async (documentId: string, content: string) => {
+		console.debug('[LogicShared] Updating markdown document:', { documentId, contentLength: content.length })
+		
+		try {
+			// Check if this is a database document and update it
+			let isFromDatabase = false
+			try {
+				const apiResponse = await realAPI.getObject(documentId)
+				if (apiResponse.success && apiResponse.data) {
+					// Update the database document
+					const updateResponse = await realAPI.updateMarkdown(documentId, content)
+					if (updateResponse.success) {
+						isFromDatabase = true
+						console.debug('[LogicShared] Database document updated successfully:', documentId)
+					}
 				}
-				return arg
-			})
-			
-			return {
-				...prev,
-				arguments: updatedArguments
+			} catch (dbError) {
+				console.debug('[LogicShared] Document not in database or update failed:', dbError)
 			}
-		})
+			
+			// Update local state
+			setUnifiedData(prev => {
+				const updatedArguments = prev.arguments.map(arg => {
+					if (arg.markdown.documentId === documentId) {
+						return {
+							...updateArgumentFromMarkdown(arg, content),
+							markdown: {
+								...arg.markdown,
+								content: content
+							}
+						}
+					}
+					return arg
+				})
+				
+				console.debug('[LogicShared] Local document state updated:', { 
+					documentId, 
+					isFromDatabase,
+					argumentCount: updatedArguments.filter(arg => arg.markdown.documentId === documentId).length
+				})
+				
+				return {
+					...prev,
+					arguments: updatedArguments
+				}
+			})
+		} catch (error) {
+			console.error('[LogicShared] Failed to update markdown document:', error)
+			// Fallback to local-only update
+			setUnifiedData(prev => {
+				const updatedArguments = prev.arguments.map(arg => {
+					if (arg.markdown.documentId === documentId) {
+						return updateArgumentFromMarkdown(arg, content)
+					}
+					return arg
+				})
+				
+				return {
+					...prev,
+					arguments: updatedArguments
+				}
+			})
+		}
 	}, [])
 
-	const removeDocument = useCallback((documentId: string) => {
-		setUnifiedData(prev => {
-			const filteredArguments = prev.arguments.filter(arg => 
-				!arg.markdown.documentId || arg.markdown.documentId !== documentId
-			)
-			
-			// If selected argument was from removed document, select first remaining
-			let newSelectedId = prev.selectedArgumentId
-			if (prev.selectedArgumentId && !filteredArguments.find(arg => arg.id === prev.selectedArgumentId)) {
-				newSelectedId = filteredArguments.length > 0 ? filteredArguments[0].id : null
+	const removeDocument = useCallback(async (documentId: string) => {
+		console.debug('[LogicShared] Removing document:', documentId)
+		
+		try {
+			// Check if this is a database document and delete it
+			let isFromDatabase = false
+			try {
+				const apiResponse = await realAPI.getObject(documentId)
+				if (apiResponse.success && apiResponse.data) {
+					// Delete the database document
+					const deleteResponse = await realAPI.deleteObject(documentId)
+					if (deleteResponse.success) {
+						isFromDatabase = true
+						console.debug('[LogicShared] Database document deleted successfully:', documentId)
+					}
+				}
+			} catch (dbError) {
+				console.debug('[LogicShared] Document not in database or delete failed:', dbError)
 			}
 			
-			return {
-				...prev,
-				arguments: filteredArguments,
-				selectedArgumentId: newSelectedId
-			}
-		})
+			// Update local state
+			setUnifiedData(prev => {
+				const filteredArguments = prev.arguments.filter(arg => 
+					!arg.markdown.documentId || arg.markdown.documentId !== documentId
+				)
+				
+				// If selected argument was from removed document, select first remaining
+				let newSelectedId = prev.selectedArgumentId
+				if (prev.selectedArgumentId && !filteredArguments.find(arg => arg.id === prev.selectedArgumentId)) {
+					newSelectedId = filteredArguments.length > 0 ? filteredArguments[0].id : null
+				}
+				
+				console.debug('[LogicShared] Document removed from local state:', { 
+					documentId, 
+					isFromDatabase,
+					remainingCount: filteredArguments.length,
+					newSelectedId
+				})
+				
+				return {
+					...prev,
+					arguments: filteredArguments,
+					selectedArgumentId: newSelectedId
+				}
+			})
+		} catch (error) {
+			console.error('[LogicShared] Failed to remove document:', error)
+			// Fallback to local-only removal
+			setUnifiedData(prev => {
+				const filteredArguments = prev.arguments.filter(arg => 
+					!arg.markdown.documentId || arg.markdown.documentId !== documentId
+				)
+				
+				let newSelectedId = prev.selectedArgumentId
+				if (prev.selectedArgumentId && !filteredArguments.find(arg => arg.id === prev.selectedArgumentId)) {
+					newSelectedId = filteredArguments.length > 0 ? filteredArguments[0].id : null
+				}
+				
+				return {
+					...prev,
+					arguments: filteredArguments,
+					selectedArgumentId: newSelectedId
+				}
+			})
+		}
 	}, [])
 
 	const setActiveSource = useCallback((source: 'document' | 'expression' | 'imported') => {

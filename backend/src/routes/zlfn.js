@@ -187,8 +187,8 @@ router.get('/:id', optionalAuth, validateObjectId, async (req, res) => {
   }
 });
 
-// Create new object
-router.post('/', authenticateToken, requirePermission('canCreateObjects'), validateZLFNObject, async (req, res) => {
+// Create new object (optional auth in dev: allows anonymous creation)
+router.post('/', optionalAuth, validateZLFNObject, async (req, res) => {
   try {
     const { id, title, markdownContent, zlfnJson, notes } = req.body;
     
@@ -201,13 +201,15 @@ router.post('/', authenticateToken, requirePermission('canCreateObjects'), valid
       });
     }
     
-    // Check user's object limit
-    const userObjectCount = await ZLFNObject.countDocuments({ 'metadata.author': req.user.username });
-    if (userObjectCount >= req.user.permissions.maxObjectsPerUser) {
-      return res.status(429).json({
-        success: false,
-        error: 'Object limit reached'
-      });
+    // Enforce limits only when authenticated
+    if (req.user) {
+      const userObjectCount = await ZLFNObject.countDocuments({ 'metadata.author': req.user.username });
+      if (userObjectCount >= req.user.permissions.maxObjectsPerUser) {
+        return res.status(429).json({
+          success: false,
+          error: 'Object limit reached'
+        });
+      }
     }
     
     const object = new ZLFNObject({
@@ -217,11 +219,11 @@ router.post('/', authenticateToken, requirePermission('canCreateObjects'), valid
       zlfnJson,
       notes: notes || new Map(),
       metadata: {
-        author: req.user.username,
+        author: req.user ? req.user.username : 'guest',
         created: new Date(),
         modified: new Date(),
         title: title, // Also store in metadata for consistency
-        isPublic: false // Default to private
+        isPublic: !req.user // Anonymous creations default to public for visibility
       }
     });
     
@@ -229,18 +231,20 @@ router.post('/', authenticateToken, requirePermission('canCreateObjects'), valid
     object.addVersion({
       description: 'Initial version',
       changeType: 'create',
-      author: req.user.username,
+      author: req.user ? req.user.username : 'guest',
       zlfnJson,
       notes: notes || new Map()
     });
     
     await object.save();
     
-    // Update user activity
-    req.user.activity.objectsCreated += 1;
-    await req.user.save();
+    // Update user activity (only when authenticated)
+    if (req.user) {
+      req.user.activity.objectsCreated += 1;
+      await req.user.save();
+    }
     
-    logger.info(`Object created: ${id} by ${req.user.username}`);
+    logger.info(`Object created: ${id} by ${req.user ? req.user.username : 'guest'}`);
     
     res.status(201).json({
       success: true,

@@ -159,7 +159,6 @@ export default function ObjectFormModal({
           
           setImportedData(markdownData)
           setFormProgress(75)
-          console.log('Markdown imported successfully:', fileName)
         } catch (error) {
           console.error('Error reading markdown file:', error)
           alert('Error reading markdown file. Please try again.')
