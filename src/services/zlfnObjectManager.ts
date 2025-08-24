@@ -1065,7 +1065,11 @@ export class ZLFNObjectManager {
   // === Server Sync Helpers ===
   private isServerEnabled(): boolean {
     try {
-      return apiConfig.getConfig().useRealBackend === true
+      const cfg = apiConfig.getConfig()
+      if (cfg.useRealBackend !== true) return false
+      // Require a token to attempt server sync to avoid 401 spam when unauthenticated
+      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+      return !!token
     } catch {
       return false
     }

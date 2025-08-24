@@ -13,7 +13,14 @@ class RealZLFNAPI {
   private token: string | null = null
 
   constructor(baseURL: string = API_BASE_URL) {
-    this.baseURL = baseURL
+    // Prefer persisted api_config backendURL if present to avoid hard-coded endpoints
+    try {
+      const saved = localStorage.getItem('api_config')
+      const parsed = saved ? JSON.parse(saved) : null
+      this.baseURL = (parsed && parsed.backendURL) ? parsed.backendURL : baseURL
+    } catch {
+      this.baseURL = baseURL
+    }
     this.token = localStorage.getItem('auth_token')
   }
 
@@ -27,14 +34,18 @@ class RealZLFNAPI {
       ...options.headers as Record<string, string>,
     }
 
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`
+    // Refresh token from storage on each request to avoid stale instance state
+    const token = this.token || localStorage.getItem('auth_token')
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
     }
 
     try {
       const response = await fetch(url, {
         ...options,
         headers,
+        // Include cookies if the backend uses cookie-based auth/sessions
+        credentials: 'include',
       })
 
       if (!response.ok) {

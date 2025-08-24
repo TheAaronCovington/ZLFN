@@ -7,7 +7,9 @@ import type { ZLFNArgument, ZLFNObject, ZLFNStructure } from '../../types/zlfn'
 // import { createEmptyZLFNObject } from '../../types/zlfn'
 import { getCurrentAPI, apiConfig } from '../../services/apiConfig'
 import realAPI from '../../services/realAPI'
+import { api as mockAPI } from '../../services/zlfnAPI'
 import { zlfnObjectManager } from '../../services/zlfnObjectManager'
+import { useLogicShared } from '../../context/LogicSharedContext'
 
 interface ObjectFormProps {
   objectId?: string
@@ -47,6 +49,7 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [markdownFile, setMarkdownFile] = React.useState<File | null>(null)
   const [jsonFile, setJsonFile] = React.useState<File | null>(null)
+  const { loadMarkdownDocument, setActiveSource } = useLogicShared()
   
   // Add a ref to track the current markdown content to prevent loss
   const markdownContentRef = React.useRef<string>('')
@@ -66,9 +69,18 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
     const load = async () => {
       if (!objectId) return
       lastActionRef.current = 'LOAD_OBJECT'
-      const res = await getCurrentAPI().getObject(objectId)
+      const cfg = apiConfig.getConfig()
+      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+      const shouldUseReal = cfg.useRealBackend && !!token
+      const res = shouldUseReal 
+        ? await realAPI.getObject(objectId)
+        : await mockAPI.getObject(objectId)
       if (!cancelled && res.success && res.data) {
         setFormData(res.data as ZLFNObject)
+      } else if (!cancelled && shouldUseReal) {
+        // As a last resort, try mock as fallback
+        const fb = await mockAPI.getObject(objectId)
+        if (fb.success && fb.data) setFormData(fb.data as ZLFNObject)
       }
     }
     load()
@@ -387,25 +399,63 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
         lock = { userId, expires: Date.now() + 30000 }
       }
       
-      const api = getCurrentAPI()
+      // const api = getCurrentAPI() // no longer used; explicit real/mock selection below
       
       if (objectId) {
         // Update existing object
-        const res = await api.updateObject(objectId, { 
-          ...formData, 
-          markdownContent: formData.markdownContent 
-        })
+        const cfg = apiConfig.getConfig()
+        const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+        const shouldUseReal = cfg.useRealBackend && !!token
+        const res = shouldUseReal
+          ? await realAPI.updateObject(objectId, { 
+              ...formData, 
+              markdownContent: formData.markdownContent 
+            })
+          : await mockAPI.updateObject(objectId, { 
+              ...formData, 
+              markdownContent: formData.markdownContent 
+            })
         if (!res.success) throw new Error(res.error || 'Update failed')
       } else {
         // Create new object
-        const res = apiConfig.getConfig().useRealBackend
-          ? await realAPI.createObject({ 
+        const cfg = apiConfig.getConfig()
+        const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+        const shouldUseReal = cfg.useRealBackend && !!token
+        let res
+        if (shouldUseReal) {
+          try {
+            res = await realAPI.createObject({ 
               ...formData, 
               markdownContent: formData.markdownContent, 
               id: formData.id 
             })
-          : await api.createObject(formData.markdownContent || '', formData.zflnJson)
-        if (!res.success) throw new Error(res.error || 'Create failed')
+            // Fallback to mock if unauthorized
+            if (!res.success && (res.error || '').toLowerCase().includes('401')) {
+              res = await mockAPI.createObject(formData.markdownContent || '', formData.zflnJson)
+            }
+          } catch (err: any) {
+            const msg = (err?.message || '').toLowerCase()
+            if (msg.includes('401') || msg.includes('unauthorized')) {
+              res = await mockAPI.createObject(formData.markdownContent || '', formData.zflnJson)
+            } else {
+              throw err
+            }
+          }
+        } else {
+          res = await mockAPI.createObject(formData.markdownContent || '', formData.zflnJson)
+        }
+
+        if (!res?.success) throw new Error(res?.error || 'Create failed')
+        // Immediately surface the new document in the unified argument list
+        try {
+          const newId = formData.id || ''
+          const md = formData.markdownContent || ''
+          const t = formData.metadata?.title
+          if (newId) {
+            await loadMarkdownDocument(newId, md, t)
+            setActiveSource('document')
+          }
+        } catch {}
         
         // Navigate to the new route if ID is set
         if (formData.id) {

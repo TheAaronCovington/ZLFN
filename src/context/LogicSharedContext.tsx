@@ -7,6 +7,7 @@ import type { NodeIdToActive, LogicMode, NodeState, UnifiedData } from './types'
 import { extractArgumentsFromMarkdown, updateArgumentFromMarkdown } from '../services/markdownToArgument'
 import { normalizeExpression, normalizeDocument, type ImportedJSON, normalizeImportedJSON, synthesizeExpressionFromGraph } from '../services/argumentNormalizer'
 import realAPI from '../services/realAPI'
+import { api as mockAPI } from '../services/zlfnAPI'
 
 // (types moved to src/context/types.ts to satisfy Fast Refresh constraints)
 
@@ -95,25 +96,48 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		}
 	})
 
-	// Load arguments from backend (MongoDB) on boot and merge into unified store
+	// Load arguments on boot (real backend first, then mock fallback) and merge into unified store
 	useEffect(() => {
 		let cancelled = false;
 		(async () => {
 			try {
-				const resp = await realAPI.listObjects()
-				if (!resp.success || !resp.data) return
-				// Fetch full objects for graph details (list endpoint is summary-only)
-				const ids = (resp.data as any[]).map(o => (o as any).id).filter(Boolean)
-				const detailResults = await Promise.all(ids.map(id => realAPI.getObject(id)))
-				const fullObjects = detailResults.filter(r => (r as any)?.success && (r as any)?.data).map(r => (r as any).data)
-				console.debug('[LogicShared] Server objects loaded', { count: fullObjects.length, ids })
+				let fullObjects: any[] = []
+				// Try real backend
+				try {
+					const resp = await realAPI.listObjects()
+					if (resp.success && Array.isArray(resp.data) && resp.data.length > 0) {
+						const ids = (resp.data as any[]).map(o => (o as any).id).filter(Boolean)
+						const detailResults = await Promise.all(ids.map(id => realAPI.getObject(id)))
+						fullObjects = detailResults.filter(r => (r as any)?.success && (r as any)?.data).map(r => (r as any).data)
+						console.debug('[LogicShared] Server objects loaded', { count: fullObjects.length, ids })
+					}
+				} catch {}
+
+				// Fallback to mock store if nothing came from real backend
+				if (fullObjects.length === 0) {
+					try {
+						let mockList = await mockAPI.getAllObjects()
+						if (!mockList.success || !Array.isArray(mockList.data) || mockList.data.length === 0) {
+							// Seed a sample so the selector is never empty
+							await mockAPI.getObject('sample-object-1')
+							mockList = await mockAPI.getAllObjects()
+						}
+						if (mockList.success && Array.isArray(mockList.data)) {
+							fullObjects = mockList.data as any[]
+							console.debug('[LogicShared] Mock objects loaded', { count: fullObjects.length })
+						}
+					} catch {}
+				}
+
+				if (fullObjects.length === 0) return
+
 				const serverArgs = fullObjects.map((obj: any) => ({
 					id: obj.id,
-					title: obj.metadata?.title || obj.title || obj.id.replace(/_/g, ' '),
-					markdown: { 
-						documentId: obj.id, 
+					title: obj.metadata?.title || obj.title || (obj.id ? obj.id.replace(/_/g, ' ') : 'Untitled'),
+					markdown: {
+						documentId: obj.id,
 						content: obj.markdownContent || '',
-						source: 'database',
+						source: obj.metadata?.isFromDatabase ? 'database' : 'mock',
 						lastModified: obj.metadata?.modified,
 						author: obj.metadata?.author
 					},
@@ -124,13 +148,13 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 						author: obj.metadata?.author,
 						description: obj.metadata?.description,
 						status: obj.metadata?.status,
-						isFromDatabase: true
+						isFromDatabase: !!obj.metadata?.isFromDatabase
 					},
 					zlfnGraph: obj.zlfnJson && Array.isArray(obj.zlfnJson.nodes) && Array.isArray(obj.zlfnJson.edges)
-						? { 
-							nodes: obj.zlfnJson.nodes.map((n: any) => ({ 
-								...n, 
-								argumentId: n.argumentId || obj.id 
+						? {
+							nodes: obj.zlfnJson.nodes.map((n: any) => ({
+								...n,
+								argumentId: n.argumentId || obj.id
 							})),
 							edges: obj.zlfnJson.edges || []
 						}
@@ -138,11 +162,14 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 				}))
 				if (cancelled) return
 				setUnifiedData(prev => {
-					// de-dup by id; prefer server versions for same id
 					const map = new Map(prev.arguments.map(a => [a.id, a]))
 					for (const a of serverArgs) map.set(a.id, a)
-					const merged = Array.from(map.values())
-					// keep current selection if still present, else default to first available
+					let merged = Array.from(map.values())
+					// Fallback demo argument if nothing available
+					if (merged.length === 0) {
+						const demo = normalizeExpression('(A ∧ B) → C', 'sample-1')
+						merged = [demo]
+					}
 					let nextSelected = prev.selectedArgumentId
 					if (nextSelected && !merged.some(a => a.id === nextSelected)) {
 						nextSelected = merged[0]?.id || prev.selectedArgumentId

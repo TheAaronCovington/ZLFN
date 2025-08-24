@@ -7,6 +7,7 @@ import { logicRemarkPlugin } from './logicRemarkPlugin'
 import './DocumentViewer.css'
 import { getDocumentContent } from '../../services/docs'
 import { realAPI } from '../../services/realAPI'
+import { api as mockAPI } from '../../services/zlfnAPI'
 import { useLogicShared } from '../../context/LogicSharedContext'
 import { Box, Typography, Chip, IconButton, Tooltip } from '@mui/material'
 import { NeonAccordion, type NeonAccordionItem } from '../Accordion/NeonAccordion'
@@ -354,7 +355,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
         let txt: string | null = null
         let documentTitle = effective.replace(/_/g, ' ')
         
-        // First, try to load from database (for dynamic routes)
+        // First, try to load from database (for dynamic routes), with mock fallback when unauthenticated
         try {
           const apiResponse = await realAPI.getObject(effective)
           if (apiResponse.success && apiResponse.data?.markdownContent) {
@@ -363,7 +364,22 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
             console.debug('[DocumentViewer] Loaded from database:', effective)
           }
         } catch (dbError) {
-          console.debug('[DocumentViewer] Database load failed, trying file system:', dbError)
+          console.debug('[DocumentViewer] Database load failed:', dbError)
+        }
+
+        // Fallback to mock store if real backend not available/authorized
+        if (!txt) {
+          try {
+            const fallback = await mockAPI.getObject(effective)
+            if (fallback.success && fallback.data && (fallback.data as any).markdownContent) {
+              const obj: any = fallback.data
+              txt = obj.markdownContent
+              documentTitle = obj.metadata?.title || documentTitle
+              console.debug('[DocumentViewer] Loaded from mock store:', effective)
+            }
+          } catch (mockErr) {
+            console.debug('[DocumentViewer] Mock load failed, trying file system:', mockErr)
+          }
         }
         
         // Fallback to file system if database load failed
