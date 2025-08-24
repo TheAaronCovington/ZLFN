@@ -99,6 +99,7 @@ export default function ObjectFormModal({
           
           // Create a basic ZLFN structure with the markdown content
           const markdownData = {
+            markdownContent: content,
             arguments: [{
               title: fileName,
               markdown: {

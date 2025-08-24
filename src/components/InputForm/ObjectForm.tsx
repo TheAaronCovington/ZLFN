@@ -84,6 +84,7 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
 
       let importedArgs: any[] = []
       let importedTitle: string | undefined
+      const importedMarkdown = (initialData as any).markdownContent
 
       // NOTE: Per requirement, importing JSON must NOT change markdownContent.
       // We will only map JSON into arguments and title hints.
@@ -102,28 +103,28 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
         log('mapped raw JSON arguments', { importedArgsLen: importedArgs.length })
       }
 
-      if (importedArgs.length > 0) {
-        setFormData(prev => {
-          const nextMeta = {
-            ...prev.metadata,
-            title: prev.metadata?.title || importedTitle || prev.metadata?.title,
-            created: prev.metadata?.created || new Date().toISOString(),
-            modified: new Date().toISOString(),
-            fileReferences: prev.metadata?.fileReferences || []
-          }
-          return {
-            ...prev,
-            zflnJson: {
-              ...prev.zflnJson,
-              arguments: importedArgs
-            },
-            metadata: nextMeta,
-            // Do not modify markdownContent when importing JSON
-            markdownContent: prev.markdownContent || ''
-          }
-        })
-        log('applied initialData mapping', { argsLen: importedArgs.length, title: importedTitle })
-      }
+        if (importedArgs.length > 0 || importedMarkdown !== undefined) {
+          setFormData(prev => {
+            const nextMeta = {
+              ...prev.metadata,
+              title: prev.metadata?.title || importedTitle || prev.metadata?.title,
+              created: prev.metadata?.created || new Date().toISOString(),
+              modified: new Date().toISOString(),
+              fileReferences: prev.metadata?.fileReferences || []
+            }
+            return {
+              ...prev,
+              zflnJson: {
+                ...prev.zflnJson,
+                arguments: importedArgs.length > 0 ? importedArgs : prev.zflnJson.arguments
+              },
+              metadata: nextMeta,
+              // Preserve existing markdown unless provided
+              markdownContent: importedMarkdown ?? (prev.markdownContent || '')
+            }
+          })
+          log('applied initialData mapping', { argsLen: importedArgs.length, title: importedTitle })
+        }
     }
   }, [initialData, objectId])
 
