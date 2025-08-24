@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useMemo, useState, useEf
 import type { AstNodeRec } from '../services/logic'
 import { parseExpressionToAst, astToZlfnGraph } from '../services/logic'
 import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph/types'
-import type { ArgumentData } from '../components/Visualizations/ArgumentTableau/types'
+import type { ArgumentData, ArgumentNode } from '../components/Visualizations/ArgumentTableau/types'
 import type { NodeIdToActive, LogicMode, NodeState, UnifiedData } from './types'
 import { extractArgumentsFromMarkdown, updateArgumentFromMarkdown } from '../services/markdownToArgument'
 import { normalizeExpression, normalizeDocument, type ImportedJSON, normalizeImportedJSON, synthesizeExpressionFromGraph } from '../services/argumentNormalizer'
@@ -296,8 +296,26 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		// Return cached ATN data or compute from graph
 		if (argument.atn) return argument.atn
 		
-		const graph = getZlfnGraphFor(argumentId)
-		if (!graph) return null
+                const graph = getZlfnGraphFor(argumentId)
+                if (!graph) {
+                        console.error('[LogicShared] No graph data for argument:', argumentId)
+                        const placeholderCore: ArgumentNode = {
+                                id: `${argumentId}-core`,
+                                argumentId,
+                                argumentType: 'claim',
+                                name: argument.name || 'Placeholder'
+                        }
+                        const placeholder: ArgumentData = {
+                                id: argumentId,
+                                name: argument.name || 'Untitled Argument',
+                                core: placeholderCore,
+                                components: [],
+                                relationships: [],
+                                layoutMode: 'tree'
+                        }
+                        argument.atn = placeholder
+                        return placeholder
+                }
 
 		// Map ZLFN → ATN
 		const toArgType = (t: string): any => {
