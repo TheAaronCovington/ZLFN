@@ -13,6 +13,9 @@ import { api as mockAPI } from './zlfnAPI'
 // File-based document loaders (fallback only)
 const loaders = import.meta.glob('../assets/documents/*.md', { query: '?raw', import: 'default' }) as Record<string, () => Promise<string>>
 
+// Simple in-memory cache for document content
+const cache = new Map<string, string>()
+
 type DocConfig = { tags?: string[] }
 const DOC_CONFIG: Record<string, DocConfig> = {
 	'TAG_Critique': { tags: ['theology', 'analysis'] },
@@ -98,14 +101,21 @@ export async function getDocumentList(): Promise<DocMeta[]> {
 export async function getDocumentContent(id: string): Promise<string | null> {
         console.debug('[docs] Getting document content for:', id)
 
+        if (cache.has(id)) {
+                console.debug('[docs] Returning cached content for:', id)
+                return cache.get(id) as string
+        }
+
         let dbError: unknown = null
 
         // First, try to get content from the database (API)
         try {
                 const apiResponse = await realAPI.getObject(id)
                 if (apiResponse.success && apiResponse.data && typeof apiResponse.data.markdownContent === 'string') {
+                        const content = apiResponse.data.markdownContent
                         console.debug('[docs] Loaded content from database:', id)
-                        return apiResponse.data.markdownContent
+                        cache.set(id, content)
+                        return content
                 }
                 if (!apiResponse.success) dbError = apiResponse.error
         } catch (error) {
@@ -116,8 +126,10 @@ export async function getDocumentContent(id: string): Promise<string | null> {
         try {
                 const mockResp = await mockAPI.getObject(id)
                 if (mockResp.success && mockResp.data && typeof mockResp.data.markdownContent === 'string') {
+                        const content = mockResp.data.markdownContent
                         console.debug('[docs] Loaded content from mock store:', id)
-                        return mockResp.data.markdownContent
+                        cache.set(id, content)
+                        return content
                 }
         } catch {}
 
@@ -131,7 +143,8 @@ export async function getDocumentContent(id: string): Promise<string | null> {
                         try {
                                 const content = await loader()
                                 console.debug('[docs] Loaded content from file system:', id)
-				return content
+                                cache.set(id, content)
+                                return content
 			} catch (error) {
 				console.debug('[docs] Failed to load content from file system:', id, error)
 				return null
