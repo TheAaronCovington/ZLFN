@@ -34,10 +34,30 @@ class ZLFNAPIService {
     }
   }
 
-  async createObject(markdown?: string, zflnJson?: ZLFNStructure): Promise<APIResponse<ZLFNObject>> {
+  async createObject(markdown?: string, zflnJson?: ZLFNStructure): Promise<APIResponse<ZLFNObject>>
+  async createObject(id: string, markdown?: string, zflnJson?: ZLFNStructure): Promise<APIResponse<ZLFNObject>>
+  async createObject(
+    idOrMarkdown?: string,
+    markdownOrJson?: string | ZLFNStructure,
+    maybeJson?: ZLFNStructure
+  ): Promise<APIResponse<ZLFNObject>> {
     try {
-      const object = await zlfnObjectManager.createObject(markdown, zflnJson)
-      
+      let object: ZLFNObject
+      if (typeof markdownOrJson === 'string' || maybeJson !== undefined) {
+        // Signature: (id, markdown?, json?)
+        object = await zlfnObjectManager.createObject(
+          idOrMarkdown as string,
+          markdownOrJson as string | undefined,
+          maybeJson
+        )
+      } else {
+        // Signature: (markdown?, json?)
+        object = await zlfnObjectManager.createObject(
+          idOrMarkdown,
+          markdownOrJson as ZLFNStructure | undefined
+        )
+      }
+
       return this.createSuccessResponse(object)
     } catch (error) {
       return this.createErrorResponse(error instanceof Error ? error.message : 'Unknown error')
@@ -373,7 +393,11 @@ export { ZLFNAPIService }
 export const api = {
   // Object operations
   getObject: (id: string) => zlfnAPI.getObject(id),
-  createObject: (markdown?: string, zflnJson?: ZLFNStructure) => zlfnAPI.createObject(markdown, zflnJson),
+  createObject: (
+    idOrMarkdown?: string,
+    markdownOrJson?: string | ZLFNStructure,
+    json?: ZLFNStructure
+  ) => zlfnAPI.createObject(idOrMarkdown as any, markdownOrJson as any, json),
   updateObject: (id: string, updates: Partial<ZLFNObject>) => zlfnAPI.updateObject(id, updates),
   deleteObject: (id: string) => zlfnAPI.deleteObject(id),
   

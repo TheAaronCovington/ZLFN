@@ -59,14 +59,36 @@ export class ZLFNObjectManager {
   }
 
   // Object CRUD Operations
-  async createObject(markdown?: string, initialJson?: ZLFNStructure): Promise<ZLFNObject> {
-    const id = this.generateId()
-    const object = createEmptyZLFNObject(id)
-    
+  async createObject(markdown?: string, initialJson?: ZLFNStructure): Promise<ZLFNObject>
+  async createObject(id: string, markdown?: string, initialJson?: ZLFNStructure): Promise<ZLFNObject>
+  async createObject(
+    idOrMarkdown?: string,
+    markdownOrJson?: string | ZLFNStructure,
+    maybeJson?: ZLFNStructure
+  ): Promise<ZLFNObject> {
+    // Determine arguments based on overload used
+    let id: string | undefined
+    let markdown: string | undefined
+    let initialJson: ZLFNStructure | undefined
+
+    if (typeof markdownOrJson === 'string' || maybeJson !== undefined) {
+      // Signature: (id, markdown?, json?)
+      id = idOrMarkdown
+      markdown = markdownOrJson as string | undefined
+      initialJson = maybeJson
+    } else {
+      // Signature: (markdown?, json?)
+      markdown = idOrMarkdown
+      initialJson = markdownOrJson as ZLFNStructure | undefined
+    }
+
+    const finalId = id || this.generateId()
+    const object = createEmptyZLFNObject(finalId)
+
     if (markdown) {
       object.markdownContent = this.sanitizeMarkdown(markdown)
     }
-    
+
     if (initialJson) {
       object.zflnJson = initialJson
     }
@@ -80,11 +102,11 @@ export class ZLFNObjectManager {
       changeType: 'created',
       changeDescription: 'Initial version'
     }
-    
+
     object.versionHistory.push(initialVersion)
     object.metadata.modified = new Date().toISOString()
-    
-    this.objects.set(id, object)
+
+    this.objects.set(finalId, object)
 
     // Fire-and-forget server sync
     this.syncCreate(object).catch(() => {})
