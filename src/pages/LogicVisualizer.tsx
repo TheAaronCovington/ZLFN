@@ -684,12 +684,12 @@ const LogicVisualizer: React.FC = () => {
 										// Handle ATN edge selection
 										showInfo(`Selected relationship: ${edge.scheme}`)
 									}}
-									onSchemeClustersChange={(clusters) => {
+									onSchemeClustersChange={React.useCallback((clusters: any[]) => {
 										setSchemeClusters(clusters)
-									}}
-									onSchemeClusterClickChange={(clickHandler) => {
+									}, [])}
+									onSchemeClusterClickChange={React.useCallback((clickHandler: (cluster: any) => void) => {
 										setOnSchemeClusterClick(() => clickHandler)
-									}}
+									}, [])}
 								/>
 							)}
 						</React.Suspense>

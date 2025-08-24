@@ -376,7 +376,7 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
       setHighlightedScheme(prev => (prev === cluster.id ? null : cluster.id))
     }
     onSchemeClusterClickChange?.(handleSchemeClick)
-  }, [highlightedScheme, onSchemeClusterClickChange])
+  }, [onSchemeClusterClickChange])
 
   const processedArgument = useMemo(() => {
     return applySchemeClustering(currentArgument, showSchemeClustering)
