@@ -902,27 +902,35 @@ export class ZLFNObjectManager {
 
   async listBackups(): Promise<{ success: boolean; backups?: Array<{ path: string; timestamp: string; size?: number }>; error?: string }> {
     try {
+      const convertTimestamp = (ts: string): string =>
+        ts.replace(
+          /T(\d{2})-(\d{2})-(\d{2})(?:-(\d{3})Z)?$/,
+          (_m, h, m, s, ms) => `T${h}:${m}:${s}${ms ? '.' + ms + 'Z' : ''}`
+        )
+
       if (typeof window === 'undefined') {
         // Node.js environment
         const fs = await import('fs')
         const path = await import('path')
-        
+
         const backupDir = './backups'
         if (!fs.existsSync(backupDir)) {
           return { success: true, backups: [] }
         }
-        
+
         const files = fs.readdirSync(backupDir)
+
         const backups = files
           .filter(file => file.startsWith('backup_') && file.endsWith('.json.gz'))
           .map(file => {
             const filePath = path.join(backupDir, file)
             const stats = fs.statSync(filePath)
-            const timestamp = file.replace('backup_', '').replace('.json.gz', '')
-            
+            const rawTimestamp = file.replace('backup_', '').replace('.json.gz', '')
+            const isoTimestamp = convertTimestamp(rawTimestamp)
+
             return {
               path: filePath,
-              timestamp: timestamp.replace(/-/g, ':'),
+              timestamp: isoTimestamp,
               size: stats.size
             }
           })
@@ -932,21 +940,22 @@ export class ZLFNObjectManager {
       } else {
         // Browser environment
         const backups: Array<{ path: string; timestamp: string; size?: number }> = []
-        
+
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i)
           if (key && key.startsWith('backup_')) {
-            const timestamp = key.replace('backup_', '').replace(/-/g, ':')
+            const rawTimestamp = key.replace('backup_', '')
+            const isoTimestamp = convertTimestamp(rawTimestamp)
             const data = localStorage.getItem(key)
-            
+
             backups.push({
               path: key,
-              timestamp,
+              timestamp: isoTimestamp,
               size: data ? data.length : 0
             })
           }
         }
-        
+
         backups.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
         return { success: true, backups }
       }
@@ -983,43 +992,60 @@ export class ZLFNObjectManager {
 
   // Simple string compression for browser environment
   private compressString(str: string): string {
-    // Simple LZ-string-like compression for browser
-    const dict: { [key: string]: number } = {}
-    const data = str.split('')
-    const out: (string | number)[] = []
-    let dictSize = 256
-    let w = ''
+    // LZW compression using UTF-16 character codes
+    if (str === '') return ''
 
-    for (let i = 0; i < data.length; i++) {
-      const c = data[i]
+    const dict: Record<string, number> = {}
+    let dictSize = 256
+
+    // Initialize dictionary with single character entries
+    for (let i = 0; i < 256; i++) {
+      dict[String.fromCharCode(i)] = i
+    }
+
+    let w = ''
+    const out: number[] = []
+
+    for (const c of str) {
       const wc = w + c
-      if (dict[wc]) {
+      if (Object.prototype.hasOwnProperty.call(dict, wc)) {
         w = wc
       } else {
-        out.push(dict[w] ? dict[w] : w)
+        out.push(dict[w])
         dict[wc] = dictSize++
         w = c
       }
     }
 
     if (w !== '') {
-      out.push(dict[w] ? dict[w] : w)
+      out.push(dict[w])
     }
 
-    return JSON.stringify(out)
+    // Convert codes to a string of UTF-16 characters
+    return out.map(code => String.fromCharCode(code)).join('')
   }
 
   private decompressString(compressed: string): string {
-    const data = JSON.parse(compressed)
-    const dict: { [key: number]: string } = {}
+    if (!compressed) return ''
+
+    const data = compressed.split('').map(ch => ch.charCodeAt(0))
+    if (data.length === 0) return ''
+
+    const dict: Record<number, string> = {}
     let dictSize = 256
-    let w = String(data[0])
+
+    // Initialize dictionary with single character entries
+    for (let i = 0; i < 256; i++) {
+      dict[i] = String.fromCharCode(i)
+    }
+
+    let w = String.fromCharCode(data[0])
     let result = w
-    
+
     for (let i = 1; i < data.length; i++) {
       const k = data[i]
       let entry: string
-      
+
       if (dict[k]) {
         entry = dict[k]
       } else if (k === dictSize) {
@@ -1027,12 +1053,12 @@ export class ZLFNObjectManager {
       } else {
         throw new Error('Invalid compressed data')
       }
-      
+
       result += entry
       dict[dictSize++] = w + entry.charAt(0)
       w = entry
     }
-    
+
     return result
   }
 
