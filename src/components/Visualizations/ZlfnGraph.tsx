@@ -37,7 +37,7 @@ import { VennDiagramDialog, TruthTableDialog, TimelineDialog, CounterargumentsDi
 import { useFlowRivers } from '../../hooks/useFlowRivers'
 import { useBayesianMode, formatProbability } from '../../hooks/useBayesianMode'
 // Enhanced dialog types imported above
-// import { truncateText } from 'src/vis/utils/format' // TODO: Fix import path
+import { truncateText } from '../../vis/utils/format'
 
 // AST-based evaluator (no eval) - COMMENTED OUT
 /* function evaluateExpressionWithAst(expression: string, variables: string[], values: boolean[]): boolean {
@@ -1658,11 +1658,11 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
                        } else if (d.size && 'radius' in d.size) {
                                maxChars = Math.floor(((d.size.radius as number) * 2) / charWidth)
                        } else if (d.type === 'core' || d.centralHub) {
-                               maxChars = Math.floor((50) / charWidth) // hex radius ~25 -> width ~50
+                               maxChars = Math.floor(50 / charWidth) // hex radius ~25 -> width ~50
                        }
 
-                                               const maxLen = Math.max(maxChars, 1)
-                        const truncated = fullText.length > maxLen ? fullText.substring(0, maxLen - 3) + '...' : fullText
+                       const maxLen = Math.max(maxChars, 1)
+                       const truncated = truncateText(fullText, maxLen)
                        const sel = d3.select(this as SVGTextElement)
                        sel.attr('data-full-label', fullText)
                                .attr('data-truncated-label', truncated)
@@ -1719,31 +1719,39 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 
                // Hover interactions: expand labels and apply glow
                nodeEnter
-                                               .on('mouseenter', function (_event: any, _d: any) {
+                       .on('mouseenter', function (_event: any, _d: any) {
                                const g = d3.select(this as SVGGElement)
                                const textSel = g.select('text').filter(function () {
                                        return !d3.select(this).classed('pin-marker')
                                })
                                textSel.text(textSel.attr('data-full-label') || '')
                                g.style('filter', 'url(#glow)')
+                               const bbox = (textSel.node() as SVGTextElement)?.getBBox()
                                const shape = g.select('circle, rect, path')
-                                                               const tag = (shape.node() as SVGElement)?.tagName
-                               if (tag === 'circle') {
-                                       const origR = parseFloat(shape.attr('data-orig-radius') || shape.attr('r') || '0')
-                                       shape.attr('r', origR * 1.1)
-                               } else if (tag === 'rect') {
-                                       const origW = parseFloat(shape.attr('data-orig-width') || shape.attr('width') || '0')
-                                       const origH = parseFloat(shape.attr('data-orig-height') || shape.attr('height') || '0')
-                                       const newW = origW * 1.1
-                                       const newH = origH * 1.1
-                                       shape.attr('width', newW).attr('height', newH)
-                                               .attr('x', -newW / 2).attr('y', -newH / 2)
-                               } else if (tag === 'path') {
-                                       const origScale = parseFloat(shape.attr('data-orig-scale') || '1')
-                                       shape.attr('transform', `scale(${origScale * 1.1})`)
+                               const tag = (shape.node() as SVGElement)?.tagName
+                               if (bbox) {
+                                       if (tag === 'circle') {
+                                               const origR = parseFloat(shape.attr('data-orig-radius') || shape.attr('r') || '0')
+                                               const newR = Math.max(origR, bbox.width / 2 + 6)
+                                               shape.transition().duration(200).attr('r', newR)
+                                       } else if (tag === 'rect') {
+                                               const origW = parseFloat(shape.attr('data-orig-width') || shape.attr('width') || '0')
+                                               const origH = parseFloat(shape.attr('data-orig-height') || shape.attr('height') || '0')
+                                               const newW = Math.max(origW, bbox.width + 10)
+                                               const newH = Math.max(origH, bbox.height + 6)
+                                               shape.transition().duration(200).attr('width', newW).attr('height', newH)
+                                                       .attr('x', -newW / 2).attr('y', -newH / 2)
+                                       } else if (tag === 'path') {
+                                               const origScale = parseFloat(shape.attr('data-orig-scale') || '1')
+                                               const pathBBox = shape.node()?.getBBox()
+                                               if (pathBBox) {
+                                                       const scaleFactor = Math.max(origScale, (bbox.width + 12) / pathBBox.width)
+                                                       shape.transition().duration(200).attr('transform', `scale(${scaleFactor})`)
+                                               }
+                                       }
                                }
                        })
-                                               .on('mouseleave', function (_event: any, _d: any) {
+                       .on('mouseleave', function (_event: any, _d: any) {
                                const g = d3.select(this as SVGGElement)
                                const textSel = g.select('text').filter(function () {
                                        return !d3.select(this).classed('pin-marker')
@@ -1751,18 +1759,18 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
                                textSel.text(textSel.attr('data-truncated-label') || '')
                                g.style('filter', null)
                                const shape = g.select('circle, rect, path')
-                                                               const tag = (shape.node() as SVGElement)?.tagName
+                               const tag = (shape.node() as SVGElement)?.tagName
                                if (tag === 'circle') {
                                        const origR = parseFloat(shape.attr('data-orig-radius') || '0')
-                                       if (origR) shape.attr('r', origR)
+                                       if (origR) shape.transition().duration(200).attr('r', origR)
                                } else if (tag === 'rect') {
                                        const origW = parseFloat(shape.attr('data-orig-width') || '0')
                                        const origH = parseFloat(shape.attr('data-orig-height') || '0')
-                                       if (origW && origH) shape.attr('width', origW).attr('height', origH)
+                                       if (origW && origH) shape.transition().duration(200).attr('width', origW).attr('height', origH)
                                                .attr('x', -origW / 2).attr('y', -origH / 2)
                                } else if (tag === 'path') {
                                        const origScale = parseFloat(shape.attr('data-orig-scale') || '1')
-                                       shape.attr('transform', `scale(${origScale})`)
+                                       shape.transition().duration(200).attr('transform', `scale(${origScale})`)
                                }
                        })
 
