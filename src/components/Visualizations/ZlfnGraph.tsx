@@ -37,6 +37,7 @@ import { VennDiagramDialog, TruthTableDialog, TimelineDialog, CounterargumentsDi
 import { useFlowRivers } from '../../hooks/useFlowRivers'
 import { useBayesianMode, formatProbability } from '../../hooks/useBayesianMode'
 // Enhanced dialog types imported above
+import { truncateText } from 'src/vis/utils/format'
 
 // AST-based evaluator (no eval) - COMMENTED OUT
 /* function evaluateExpressionWithAst(expression: string, variables: string[], values: boolean[]): boolean {
@@ -1529,12 +1530,13 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				const hexPath = `M ${radius},0 L ${radius/2},${radius*0.866} L ${-radius/2},${radius*0.866} L ${-radius},0 L ${-radius/2},${-radius*0.866} L ${radius/2},${-radius*0.866} Z`
 				
 				// Core background with gradient effect
-				sel.append('path')
-					.attr('d', hexPath)
-					.attr('fill', `url(#coreGradient-${d.id})`)
-					.attr('stroke', isSelected ? '#ff4081' : '#ffd700')
-					.attr('stroke-width', isSelected ? 4 : 3)
-					.attr('opacity', 0.9)
+                               sel.append('path')
+                                       .attr('d', hexPath)
+                                       .attr('fill', `url(#coreGradient-${d.id})`)
+                                       .attr('stroke', isSelected ? '#ff4081' : '#ffd700')
+                                       .attr('stroke-width', isSelected ? 4 : 3)
+                                       .attr('opacity', 0.9)
+                                       .attr('data-orig-scale', 1)
 				
 				// Define gradient for Core nodes
 				const defs = svg.select('defs').empty() ? svg.append('defs') : svg.select('defs')
@@ -1591,26 +1593,29 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				
 			} else if (d.size && 'radius' in d.size) {
 				// Regular circular nodes
-				sel
-					.append('circle')
-					.attr('r', d.size.radius)
-					.attr('fill', fill)
-					.attr('stroke', isSelected ? '#ff4081' : '#fff')
-					.attr('stroke-width', isSelected ? 3 : 2)
+                               sel
+                                       .append('circle')
+                                       .attr('r', d.size.radius)
+                                       .attr('fill', fill)
+                                       .attr('stroke', isSelected ? '#ff4081' : '#fff')
+                                       .attr('stroke-width', isSelected ? 3 : 2)
+                                       .attr('data-orig-radius', d.size.radius)
 			} else {
 				// Regular rectangular nodes
 				const w = (d.size as any)?.width ?? 100
 				const h = (d.size as any)?.height ?? 30
-				sel
-					.append('rect')
-					.attr('width', w)
-					.attr('height', h)
-					.attr('x', -w / 2)
-					.attr('y', -h / 2)
-					.attr('rx', 5)
-					.attr('fill', fill)
-					.attr('stroke', isSelected ? '#ff4081' : '#fff')
-					.attr('stroke-width', isSelected ? 3 : 2)
+                               sel
+                                       .append('rect')
+                                       .attr('width', w)
+                                       .attr('height', h)
+                                       .attr('x', -w / 2)
+                                       .attr('y', -h / 2)
+                                       .attr('rx', 5)
+                                       .attr('fill', fill)
+                                       .attr('stroke', isSelected ? '#ff4081' : '#fff')
+                                       .attr('stroke-width', isSelected ? 3 : 2)
+                                       .attr('data-orig-width', w)
+                                       .attr('data-orig-height', h)
 			}
 		})
 		
@@ -1626,22 +1631,43 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			return icons[layoutMode] || '⚙️'
 		}
 
-		// label
-		nodeEnter
-			.append('text')
-			.attr('text-anchor', 'middle')
-			.attr('dy', '0.35em')
-			.attr('fill', '#fff')
-			.attr('data-base-size', 10)
-			.attr('font-weight', 'bold')
-			.text(d => {
-				const baseText = d.symbol || d.label || d.id
-				if (bayesianEnabled && bayesian.isEnabled) {
-					const probability = bayesian.getNodeProbability(d.id)
-					return `${baseText}\n${formatProbability(probability)}`
-				}
-				return baseText
-			})
+               // label
+               const labelSelection = nodeEnter
+                       .append('text')
+                       .attr('text-anchor', 'middle')
+                       .attr('dy', '0.35em')
+                       .attr('fill', '#fff')
+                       .attr('data-base-size', 10)
+                       .attr('font-weight', 'bold')
+
+               labelSelection.each(function (d: any) {
+                       const baseText = d.symbol || d.label || d.id
+                       const fullText = (() => {
+                               if (bayesianEnabled && bayesian.isEnabled) {
+                                       const probability = bayesian.getNodeProbability(d.id)
+                                       return `${baseText}\n${formatProbability(probability)}`
+                               }
+                               return baseText
+                       })()
+
+                       // Determine available width for text based on node dimensions
+                       const charWidth = 7 // approx width per character at font-size 10
+                       let maxChars = 10
+                       if (d.size && 'width' in d.size) {
+                               maxChars = Math.floor((d.size.width as number) / charWidth)
+                       } else if (d.size && 'radius' in d.size) {
+                               maxChars = Math.floor(((d.size.radius as number) * 2) / charWidth)
+                       } else if (d.type === 'core' || d.centralHub) {
+                               maxChars = Math.floor((50) / charWidth) // hex radius ~25 -> width ~50
+                       }
+
+                       const truncated = truncateText(fullText, Math.max(maxChars, 1))
+                       const sel = d3.select(this as SVGTextElement)
+                       sel.attr('data-full-label', fullText)
+                               .attr('data-truncated-label', truncated)
+                               .text(truncated)
+                       sel.append('title').text(fullText)
+               })
 		nodeEnter.append('text')
 			.attr('class', 'pin-marker')
 			.attr('y', -14)
@@ -1687,8 +1713,57 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 			.attr('stroke', (d: any) => d.markdownRef ? '#00ffff' : 'transparent')
 			.attr('stroke-width', 1.5)
 			.style('pointer-events', 'none')
-		refGroup.append('title')
-			.text((d: any) => d.markdownRef ? `Linked to: ${d.markdownRef}` : '')
+                refGroup.append('title')
+                        .text((d: any) => d.markdownRef ? `Linked to: ${d.markdownRef}` : '')
+
+               // Hover interactions: expand labels and apply glow
+               nodeEnter
+                       .on('mouseenter', function (event: any, d: any) {
+                               const g = d3.select(this as SVGGElement)
+                               const textSel = g.select('text').filter(function () {
+                                       return !d3.select(this).classed('pin-marker')
+                               })
+                               textSel.text(textSel.attr('data-full-label') || '')
+                               g.style('filter', 'url(#glow)')
+                               const shape = g.select('circle, rect, path')
+                               const tag = shape.node()?.tagName
+                               if (tag === 'circle') {
+                                       const origR = parseFloat(shape.attr('data-orig-radius') || shape.attr('r') || '0')
+                                       shape.attr('r', origR * 1.1)
+                               } else if (tag === 'rect') {
+                                       const origW = parseFloat(shape.attr('data-orig-width') || shape.attr('width') || '0')
+                                       const origH = parseFloat(shape.attr('data-orig-height') || shape.attr('height') || '0')
+                                       const newW = origW * 1.1
+                                       const newH = origH * 1.1
+                                       shape.attr('width', newW).attr('height', newH)
+                                               .attr('x', -newW / 2).attr('y', -newH / 2)
+                               } else if (tag === 'path') {
+                                       const origScale = parseFloat(shape.attr('data-orig-scale') || '1')
+                                       shape.attr('transform', `scale(${origScale * 1.1})`)
+                               }
+                       })
+                       .on('mouseleave', function (event: any, d: any) {
+                               const g = d3.select(this as SVGGElement)
+                               const textSel = g.select('text').filter(function () {
+                                       return !d3.select(this).classed('pin-marker')
+                               })
+                               textSel.text(textSel.attr('data-truncated-label') || '')
+                               g.style('filter', null)
+                               const shape = g.select('circle, rect, path')
+                               const tag = shape.node()?.tagName
+                               if (tag === 'circle') {
+                                       const origR = parseFloat(shape.attr('data-orig-radius') || '0')
+                                       if (origR) shape.attr('r', origR)
+                               } else if (tag === 'rect') {
+                                       const origW = parseFloat(shape.attr('data-orig-width') || '0')
+                                       const origH = parseFloat(shape.attr('data-orig-height') || '0')
+                                       if (origW && origH) shape.attr('width', origW).attr('height', origH)
+                                               .attr('x', -origW / 2).attr('y', -origH / 2)
+                               } else if (tag === 'path') {
+                                       const origScale = parseFloat(shape.attr('data-orig-scale') || '1')
+                                       shape.attr('transform', `scale(${origScale})`)
+                               }
+                       })
 
 		// Note: All facet types now use enhanced dialogs instead of overlays
 		/* COMMENTED OUT - All facet types now use enhanced dialogs
