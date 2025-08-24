@@ -126,6 +126,9 @@ export interface ArgumentTableauProps {
   onNodeSelect?: (node: ArgumentNode) => void
   onEdgeSelect?: (edge: ArgumentEdge) => void
   onLayoutModeChange?: (mode: ATNLayoutMode) => void
+  // Schemes data callbacks for inspector sidebar
+  onSchemeClustersChange?: (clusters: SchemeCluster[]) => void
+  onSchemeClusterClickChange?: (clickHandler: (cluster: SchemeCluster) => void) => void
 }
 
 /**

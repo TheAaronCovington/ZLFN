@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react'
-import * as d3 from 'd3'
+// d3 import removed - no longer needed for legend rendering
 import { 
   Box, 
   Typography, 
@@ -67,8 +67,7 @@ import {
   groupEdgesByScheme, 
   applySchemeClustering,
   calculateClusterLayout,
-  renderSchemeClusterBackgrounds,
-  renderSchemeClusterLegend
+  renderSchemeClusterBackgrounds
 } from './schemeCluster'
 import { 
   calculateArgumentStrengths
@@ -259,12 +258,13 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
   onArgumentSelect,
   onNodeSelect,
   onEdgeSelect,
-  onLayoutModeChange
+  onLayoutModeChange,
+  onSchemeClustersChange,
+  onSchemeClusterClickChange
 }) => {
   // Refs for rendering containers
   const containerRef = useRef<HTMLDivElement>(null)
   const renderStateRef = useRef<TreeRenderState | TableRenderState | null>(null)
-  const legendRef = useRef<HTMLDivElement>(null)
 
   // Facet dialog states
   const [facetDialogs, setFacetDialogs] = useState({
@@ -364,6 +364,19 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
     if (!showSchemeClustering) return []
     return groupEdgesByScheme(currentArgument)
   }, [currentArgument, showSchemeClustering])
+
+  // Emit schemes data to parent component for inspector sidebar
+  useEffect(() => {
+    onSchemeClustersChange?.(schemeClusters)
+  }, [schemeClusters, onSchemeClustersChange])
+
+  // Emit scheme cluster click handler to parent
+  useEffect(() => {
+    const handleSchemeClick = (cluster: any) => {
+      setHighlightedScheme(prev => (prev === cluster.id ? null : cluster.id))
+    }
+    onSchemeClusterClickChange?.(handleSchemeClick)
+  }, [highlightedScheme, onSchemeClusterClickChange])
 
   const processedArgument = useMemo(() => {
     return applySchemeClustering(currentArgument, showSchemeClustering)
@@ -641,24 +654,7 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
     }
   }, [layoutMode, currentArgument, handleNodeSelect, handleEdgeSelect, showSchemeClustering, schemeClusters])
 
-  // Render legend and wire click-to-highlight
-  useEffect(() => {
-    if (!legendRef.current) return
-    const container = d3.select(legendRef.current)
-    if (showSchemeClustering) {
-      const onClusterClick = (cluster: any) => {
-        setHighlightedScheme(prev => (prev === cluster.scheme ? null : cluster.scheme))
-      }
-      try {
-        // @ts-ignore passing d3 selection to helper
-        renderSchemeClusterLegend(container as any, schemeClusters, onClusterClick)
-      } catch {
-        container.selectAll('*').remove()
-      }
-    } else {
-      container.selectAll('*').remove()
-    }
-  }, [schemeClusters, showSchemeClustering])
+  // Legend rendering removed - schemes now displayed in inspector sidebar
 
   // Apply edge highlight based on selected scheme
   useEffect(() => {
@@ -844,12 +840,7 @@ const ArgumentTableau: React.FC<ArgumentTableauProps> = ({
         </Box>
       )}
 
-      {/* Scheme Legend */}
-      {!compact && showSchemeClustering && (
-        <Box sx={{ p: 1, backgroundColor: 'var(--ai-bg-secondary)', borderBottom: '1px solid rgba(64,196,255,0.2)' }}>
-          <div ref={legendRef} />
-        </Box>
-      )}
+      {/* Scheme Legend removed - now in inspector sidebar */}
 
       {/* Conflicts Alert */}
       {!compact && strengthAnalysis && strengthAnalysis.conflicts.length > 0 && (

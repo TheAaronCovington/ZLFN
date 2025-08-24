@@ -228,6 +228,8 @@ const LogicVisualizer: React.FC = () => {
 	)
 	const [selectedEdge, setSelectedEdge] = React.useState<any>(null)
 	const [truthAst, setTruthAst] = React.useState<AstNodeRec | null>(null)
+	const [schemeClusters, setSchemeClusters] = React.useState<any[]>([])
+	const [onSchemeClusterClick, setOnSchemeClusterClick] = React.useState<((cluster: any) => void) | null>(null)
 
 	// Search state
 	const [searchId, setSearchId] = React.useState<string>('')
@@ -682,6 +684,12 @@ const LogicVisualizer: React.FC = () => {
 										// Handle ATN edge selection
 										showInfo(`Selected relationship: ${edge.scheme}`)
 									}}
+									onSchemeClustersChange={(clusters) => {
+										setSchemeClusters(clusters)
+									}}
+									onSchemeClusterClickChange={(clickHandler) => {
+										setOnSchemeClusterClick(() => clickHandler)
+									}}
 								/>
 							)}
 						</React.Suspense>
@@ -699,6 +707,8 @@ const LogicVisualizer: React.FC = () => {
 					onCloseTruthTable={() => setTruthAst(null)}
 					vennData={vennData}
 					vennExamples={vennExamples}
+					schemeClusters={schemeClusters}
+					onSchemeClusterClick={onSchemeClusterClick || undefined}
 					nodeCount={nodes.length}
 					edgeCount={edges.length}
 					fps={performanceMonitor.metrics.fps}

@@ -18,7 +18,7 @@ import {
   Person as NodeIcon,
   Timeline as EdgeIcon,
   Analytics as AnalysisIcon,
-
+  AccountTree as SchemeIcon,
   Speed as GraphIcon,
   Link as LinkIcon,
   Note as NoteIcon,
@@ -42,6 +42,15 @@ const TabPanel: React.FC<TabPanelProps> = ({ children, value, index }) => (
   </div>
 )
 
+interface SchemeCluster {
+  id: string
+  name: string
+  color: string
+  edges: any[]
+  priority: number
+  confidence: number
+}
+
 interface InspectorDrawerProps {
   open: boolean
   onClose: () => void
@@ -56,6 +65,10 @@ interface InspectorDrawerProps {
   onCloseTruthTable?: () => void
   vennData?: VennDiagramData
   vennExamples?: NecessarySufficientExample[]
+  
+  // ATN Schemes data
+  schemeClusters?: SchemeCluster[]
+  onSchemeClusterClick?: (cluster: SchemeCluster) => void
   
   // Graph metrics
   nodeCount?: number
@@ -82,6 +95,8 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
   onCloseTruthTable,
   vennData,
   vennExamples = [],
+  schemeClusters = [],
+  onSchemeClusterClick,
   nodeCount = 0,
   edgeCount = 0,
   fps,
@@ -167,6 +182,11 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
             <Tab 
               icon={<AnalysisIcon />} 
               label="Analysis" 
+              sx={{ minHeight: 48 }}
+            />
+            <Tab 
+              icon={<SchemeIcon />} 
+              label="Schemes" 
               sx={{ minHeight: 48 }}
             />
             <Tab 
@@ -385,8 +405,104 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
             </Stack>
           </TabPanel>
 
-          {/* Graph Tab */}
+          {/* Schemes Tab */}
           <TabPanel value={activeTab} index={3}>
+            <Stack spacing={2}>
+              {schemeClusters.length > 0 ? (
+                <>
+                  <Paper sx={{ p: 2, backgroundColor: 'rgba(64, 196, 255, 0.05)' }}>
+                    <Typography variant="h6" sx={{ color: '#40c4ff', mb: 2 }}>
+                      Argumentation Schemes
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 2 }}>
+                      {schemeClusters.length} scheme{schemeClusters.length !== 1 ? 's' : ''} detected
+                    </Typography>
+                  </Paper>
+                  
+                  {schemeClusters.map((cluster) => (
+                    <Paper 
+                      key={cluster.id}
+                      sx={{ 
+                        p: 2, 
+                        backgroundColor: 'rgba(25, 25, 35, 0.8)',
+                        border: '1px solid rgba(64, 196, 255, 0.2)',
+                        cursor: onSchemeClusterClick ? 'pointer' : 'default',
+                        transition: 'all 0.2s ease',
+                        '&:hover': onSchemeClusterClick ? {
+                          backgroundColor: 'rgba(64, 196, 255, 0.1)',
+                          borderColor: 'rgba(64, 196, 255, 0.4)'
+                        } : {}
+                      }}
+                      onClick={() => onSchemeClusterClick?.(cluster)}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                        <Box
+                          sx={{
+                            width: 12,
+                            height: 12,
+                            borderRadius: '50%',
+                            backgroundColor: cluster.color,
+                            mr: 1.5,
+                            flexShrink: 0
+                          }}
+                        />
+                        <Typography variant="subtitle2" sx={{ color: '#ffffff', fontWeight: 600 }}>
+                          {cluster.name}
+                        </Typography>
+                      </Box>
+                      
+                      <Stack spacing={1}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+                            Edges
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: '#ffffff' }}>
+                            {cluster.edges.length}
+                          </Typography>
+                        </Box>
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+                            Priority
+                          </Typography>
+                          <Chip
+                            label={`${cluster.priority}%`}
+                            size="small"
+                            sx={{
+                              height: 20,
+                              fontSize: '0.7rem',
+                              backgroundColor: cluster.priority > 80 ? 'rgba(76, 175, 80, 0.2)' : 
+                                             cluster.priority > 60 ? 'rgba(255, 152, 0, 0.2)' : 
+                                             'rgba(244, 67, 54, 0.2)',
+                              color: cluster.priority > 80 ? '#4caf50' : 
+                                     cluster.priority > 60 ? '#ff9800' : 
+                                     '#f44336'
+                            }}
+                          />
+                        </Box>
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+                            Confidence
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: '#ffffff' }}>
+                            {Math.round(cluster.confidence * 100)}%
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </Paper>
+                  ))}
+                </>
+              ) : (
+                <Alert severity="info" sx={{ backgroundColor: 'rgba(33, 150, 243, 0.1)' }}>
+                  No argumentation schemes detected in current argument
+                </Alert>
+              )}
+            </Stack>
+          </TabPanel>
+
+          {/* Graph Tab */}
+          <TabPanel value={activeTab} index={4}>
             <Stack spacing={2}>
               <Paper sx={{ p: 2, backgroundColor: 'rgba(64, 196, 255, 0.05)' }}>
                 <Typography variant="h6" sx={{ color: '#40c4ff', mb: 2 }}>
