@@ -75,7 +75,12 @@ export default function ObjectFormModal({
       if (file) {
         try {
           const data = await readJsonFile(file)
-          const normalized = normalizeImportedJSON(data)
+          // Normalize and strip any markdownContent fields to avoid overwriting
+          // existing markdown in ObjectForm
+          const normalized = normalizeImportedJSON(data).map(arg => {
+            const { markdownContent, ...rest } = arg as any
+            return rest
+          })
           setImportedData(normalized)
           setFormProgress(75)
         } catch (error) {
