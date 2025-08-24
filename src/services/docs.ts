@@ -8,6 +8,7 @@
 // - This ensures backward compatibility while transitioning to database-driven content
 
 import { realAPI } from './realAPI'
+import { api as mockAPI } from './zlfnAPI'
 
 // File-based document loaders (fallback only)
 const loaders = import.meta.glob('../assets/documents/*.md', { query: '?raw', import: 'default' }) as Record<string, () => Promise<string>>
@@ -95,25 +96,41 @@ export async function getDocumentList(): Promise<DocMeta[]> {
 }
 
 export async function getDocumentContent(id: string): Promise<string | null> {
-	console.debug('[docs] Getting document content for:', id)
-	
-	// First, try to get content from the database (API)
-	try {
-		const apiResponse = await realAPI.getObject(id)
-		if (apiResponse.success && apiResponse.data && typeof apiResponse.data.markdownContent === 'string') {
-			console.debug('[docs] Loaded content from database:', id)
-			return apiResponse.data.markdownContent
-		}
-	} catch (error) {
-		console.debug('[docs] Failed to load content from database:', id, error)
-	}
-	
-	// Fallback to file system
-	for (const [path, loader] of Object.entries(loaders)) {
-		if (path.endsWith(`/${id}.md`)) {
-			try {
-				const content = await loader()
-				console.debug('[docs] Loaded content from file system:', id)
+        console.debug('[docs] Getting document content for:', id)
+
+        let dbError: unknown = null
+
+        // First, try to get content from the database (API)
+        try {
+                const apiResponse = await realAPI.getObject(id)
+                if (apiResponse.success && apiResponse.data && typeof apiResponse.data.markdownContent === 'string') {
+                        console.debug('[docs] Loaded content from database:', id)
+                        return apiResponse.data.markdownContent
+                }
+                if (!apiResponse.success) dbError = apiResponse.error
+        } catch (error) {
+                dbError = error
+        }
+
+        // Next, try the mock store before falling back to files
+        try {
+                const mockResp = await mockAPI.getObject(id)
+                if (mockResp.success && mockResp.data && typeof mockResp.data.markdownContent === 'string') {
+                        console.debug('[docs] Loaded content from mock store:', id)
+                        return mockResp.data.markdownContent
+                }
+        } catch {}
+
+        if (dbError) {
+                console.debug('[docs] Failed to load content from database:', id, dbError)
+        }
+
+        // Fallback to file system
+        for (const [path, loader] of Object.entries(loaders)) {
+                if (path.endsWith(`/${id}.md`)) {
+                        try {
+                                const content = await loader()
+                                console.debug('[docs] Loaded content from file system:', id)
 				return content
 			} catch (error) {
 				console.debug('[docs] Failed to load content from file system:', id, error)
