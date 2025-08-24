@@ -12,6 +12,10 @@ vi.mock('../../services/apiConfig', () => ({
   apiConfig: { getConfig: () => ({ useRealBackend: false }) }
 }))
 
+vi.mock('../../context/LogicSharedContext', () => ({
+  useLogicShared: () => ({ loadMarkdownDocument: vi.fn(), setActiveSource: vi.fn() })
+}))
+
 describe('ObjectForm', () => {
   it('renders and submits new object', async () => {
     render(
@@ -131,6 +135,43 @@ describe('ObjectForm', () => {
     fireEvent.click(screen.getByRole('tab', { name: /markdown/i }))
     const mdFieldAfter = await screen.findByLabelText('Markdown Content')
     expect((mdFieldAfter as HTMLInputElement).value).toBe('Original markdown')
+  })
+
+  it('retains typed markdown when JSON arguments are provided later', async () => {
+    const jsonData = {
+      arguments: [
+        {
+          core: { name: 'Arg1', summary: '' },
+          zones: [],
+          dependencies: [],
+          modes: {},
+          counterarguments: [],
+          subarguments: [],
+          validation: { isValid: true, errors: [], warnings: [] },
+          pagination: { currentPage: 1, totalPages: 1 }
+        }
+      ]
+    }
+
+    const Wrapper = ({ data }: { data?: any }) => (
+      <MemoryRouter initialEntries={[{ pathname: '/create' }] as any}>
+        <ObjectForm onClose={() => {}} initialData={data} />
+      </MemoryRouter>
+    )
+
+    const { rerender } = render(<Wrapper />)
+
+    fireEvent.click(screen.getByRole('tab', { name: /markdown/i }))
+    const mdField = await screen.findByLabelText('Markdown Content')
+    fireEvent.change(mdField, { target: { value: 'Typed markdown' } })
+
+    await act(async () => {
+      rerender(<Wrapper data={jsonData} />)
+    })
+
+    fireEvent.click(screen.getByRole('tab', { name: /markdown/i }))
+    const mdFieldAfter = await screen.findByLabelText('Markdown Content')
+    expect((mdFieldAfter as HTMLInputElement).value).toBe('Typed markdown')
   })
 })
 
