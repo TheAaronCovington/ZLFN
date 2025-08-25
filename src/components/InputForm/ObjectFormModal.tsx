@@ -22,7 +22,7 @@ import {
 } from '@mui/icons-material'
 import ObjectForm from './ObjectForm'
 import { readJsonFile } from '../../services/io'
-import { normalizeImportedJSON } from '../../services/argumentNormalizer'
+
 
 interface ObjectFormModalProps {
   open: boolean
@@ -75,12 +75,13 @@ export default function ObjectFormModal({
       if (file) {
         try {
           const data = await readJsonFile(file)
-          // Normalize to SharedArgument[] format
-          const normalized = normalizeImportedJSON(data)
-          // Pass as array directly - ObjectForm will detect it's SharedArgument[]
-          // and use mapSharedArgumentsToZlfnArgs
-          setImportedData(normalized)
+          // Use the LogicSharedContext to properly handle multi-core imports
+          // This will create separate SharedArguments with core metadata
+          window.dispatchEvent(new CustomEvent('xv:add-imported-json', { detail: data }))
+          setImportedData({ imported: true, coreCount: data.arguments?.length || 1 })
           setFormProgress(75)
+          // Close the modal since the import is handled by the context
+          onClose()
         } catch (error) {
           console.error('Failed to import JSON:', error)
         }

@@ -11,6 +11,7 @@ import { Box, Typography, Chip, IconButton, Tooltip } from '@mui/material'
 import { NeonAccordion, type NeonAccordionItem } from '../Accordion/NeonAccordion'
 import { parseMarkdownStructure, type MarkdownSection } from '../../services/markdownParser'
 import { ArgumentSelector } from '../Visualizer/ArgumentSelector'
+import { CoreSelector } from '../Visualizer/CoreSelector'
 import ScienceIcon from '@mui/icons-material/Science'
 import SettingsIcon from '@mui/icons-material/Settings'
 import SyntaxHighlightingSettings, { type SyntaxHighlightingOptions } from './SyntaxHighlightingSettings'
@@ -531,12 +532,18 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride, markd
         
         {/* Argument Selector */}
         {unifiedData.arguments.length > 1 && (
-          <Box sx={{ mt: 2 }}>
+          <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
             <ArgumentSelector
               arguments={unifiedData.arguments}
               selectedArgumentId={unifiedData.selectedArgumentId}
               onArgumentSelect={setSelectedArgumentId}
               label="View Argument"
+              size="small"
+              minWidth={250}
+            />
+            {/* Core Selector for Multi-Core Imports */}
+            <CoreSelector
+              label="Select Core"
               size="small"
               minWidth={250}
             />

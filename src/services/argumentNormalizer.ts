@@ -100,8 +100,12 @@ export interface ImportedJSON {
  * Normalize imported JSON to SharedArgument format
  */
 export function normalizeImportedJSON(json: ImportedJSON, documentContent?: string): SharedArgument[] {
+  // Generate unique import ID for this JSON import session
+  const importId = `import-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  const coreCount = json.arguments.length
+
   return json.arguments.map((arg, index) => {
-    const argumentId = `imported-${index + 1}`
+    const argumentId = `${importId}-core-${index + 1}`
     
     // Normalize core
     const core = {
@@ -254,7 +258,14 @@ export function normalizeImportedJSON(json: ImportedJSON, documentContent?: stri
       // Pre-populate derived data
       zlfnGraph: { nodes, edges },
       // Notes will be empty initially
-      notes: {}
+      notes: {},
+      // Core metadata for multi-core support
+      coreMetadata: {
+        importId,
+        coreIndex: index,
+        coreName: core.name,
+        coreCount
+      }
     }
 
     return sharedArgument

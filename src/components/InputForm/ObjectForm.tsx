@@ -457,18 +457,39 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
             })
             // Fallback to mock if unauthorized
             if (!res.success && (res.error || '').toLowerCase().includes('401')) {
-              res = await mockAPI.createObject(formData.markdownContent || '', formData.zflnJson)
+              // For mock API, we need to create the object and then update it with metadata
+              const mockRes = await mockAPI.createObject(formData.markdownContent || '', formData.zflnJson)
+              if (mockRes.success && mockRes.data && formData.metadata?.title) {
+                console.debug('[ObjectForm] Updating mock object with metadata (401 fallback):', { id: mockRes.data.id, metadata: formData.metadata })
+                const updateRes = await mockAPI.updateObject(mockRes.data.id, { metadata: formData.metadata })
+                console.debug('[ObjectForm] Mock metadata update result (401 fallback):', updateRes)
+              }
+              res = mockRes
             }
           } catch (err: any) {
             const msg = (err?.message || '').toLowerCase()
             if (msg.includes('401') || msg.includes('unauthorized')) {
-              res = await mockAPI.createObject(formData.markdownContent || '', formData.zflnJson)
+              // For mock API, we need to create the object and then update it with metadata
+              const mockRes = await mockAPI.createObject(formData.markdownContent || '', formData.zflnJson)
+              if (mockRes.success && mockRes.data && formData.metadata?.title) {
+                console.debug('[ObjectForm] Updating mock object with metadata (catch 401):', { id: mockRes.data.id, metadata: formData.metadata })
+                const updateRes = await mockAPI.updateObject(mockRes.data.id, { metadata: formData.metadata })
+                console.debug('[ObjectForm] Mock metadata update result (catch 401):', updateRes)
+              }
+              res = mockRes
             } else {
               throw err
             }
           }
         } else {
+          // For mock API, we need to create the object and then update it with metadata
+          console.debug('[ObjectForm] Creating mock object directly:', { hasTitle: !!formData.metadata?.title, title: formData.metadata?.title })
           res = await mockAPI.createObject(formData.markdownContent || '', formData.zflnJson)
+          if (res.success && res.data && formData.metadata?.title) {
+            console.debug('[ObjectForm] Updating mock object with metadata (direct):', { id: res.data.id, metadata: formData.metadata })
+            const updateRes = await mockAPI.updateObject(res.data.id, { metadata: formData.metadata })
+            console.debug('[ObjectForm] Mock metadata update result (direct):', updateRes)
+          }
         }
 
         if (!res?.success) throw new Error(res?.error || 'Create failed')
@@ -482,6 +503,14 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
           const md = formData.markdownContent || ''
           const t = formData.metadata?.title
           if (newId) {
+            // Update argument titles to match the form title before loading
+            if (t && formData.zflnJson?.arguments) {
+              formData.zflnJson.arguments.forEach(arg => {
+                if (arg.core) {
+                  arg.core.name = t
+                }
+              })
+            }
             await loadMarkdownDocument(newId, md, t)
             setActiveSource('document')
           }

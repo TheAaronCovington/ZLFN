@@ -434,7 +434,8 @@ export async function parseDocumentToGraph(documentId: string): Promise<Document
 	try {
 		const content = await getDocumentContent(documentId)
 		if (!content) return null
-		return parseContentToGraph(documentId, content)
+		const text = typeof content === 'string' ? content : content.text
+		return parseContentToGraph(documentId, text)
 	} catch (error) {
 		console.error(`Failed to parse document ${documentId}:`, error)
 		return null

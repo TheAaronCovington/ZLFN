@@ -3,7 +3,7 @@ import type { AstNodeRec } from '../services/logic'
 import { parseExpressionToAst, astToZlfnGraph } from '../services/logic'
 import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph/types'
 import type { ArgumentData, ArgumentNode } from '../components/Visualizations/ArgumentTableau/types'
-import type { NodeIdToActive, LogicMode, NodeState, UnifiedData } from './types'
+import type { NodeIdToActive, LogicMode, NodeState, UnifiedData, SharedArgument } from './types'
 import { extractArgumentsFromMarkdown, updateArgumentFromMarkdown } from '../services/markdownToArgument'
 import { normalizeExpression, normalizeDocument, type ImportedJSON, normalizeImportedJSON, synthesizeExpressionFromGraph, extractNodesAndEdgesFromArguments } from '../services/argumentNormalizer'
 import realAPI from '../services/realAPI'
@@ -34,6 +34,12 @@ type LogicSharedContextValue = {
 	setUnifiedData: React.Dispatch<React.SetStateAction<UnifiedData>>
 	setSelectedArgumentId: (id: string | null) => void
 	
+	// Core Selection for Multi-Core Imports
+	selectedCoreId: string | null
+	setSelectedCoreId: (coreId: string | null) => void
+	getCoresForCurrentImport: () => SharedArgument[]
+	getCurrentImportId: () => string | null
+	
 	// Lazy accessors for view data
 	getAstFor: (argumentId: string | null) => AstNodeRec | null
 	getZlfnGraphFor: (argumentId: string | null) => { nodes: ZlfnNode[]; edges: ZlfnEdge[] } | null
@@ -60,6 +66,7 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 	const [expressionHighlightNonce, setExpressionHighlightNonce] = useState<number>(0)
 	const [modes, setModes] = useState<Partial<Record<LogicMode, boolean>>>({ classical: true })
 	const [nodeStates, setNodeStates] = useState<Record<string, NodeState>>({})
+	const [selectedCoreId, setSelectedCoreId] = useState<string | null>(null)
 
 	// Initialize unified data with default expression-based argument, URL params, and persisted arguments
 	const [unifiedData, setUnifiedData] = useState<UnifiedData>(() => {
@@ -260,6 +267,40 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		}
 	}, [unifiedData.arguments])
 
+	// Core selection helpers for multi-core imports
+	const getCurrentImportId = useCallback((): string | null => {
+		const selectedArg = unifiedData.arguments.find(arg => arg.id === unifiedData.selectedArgumentId)
+		return selectedArg?.coreMetadata?.importId || null
+	}, [unifiedData.arguments, unifiedData.selectedArgumentId])
+
+	const getCoresForCurrentImport = useCallback((): SharedArgument[] => {
+		const currentImportId = getCurrentImportId()
+		if (!currentImportId) return []
+		
+		return unifiedData.arguments
+			.filter(arg => arg.coreMetadata?.importId === currentImportId)
+			.sort((a, b) => (a.coreMetadata?.coreIndex || 0) - (b.coreMetadata?.coreIndex || 0))
+	}, [unifiedData.arguments, getCurrentImportId])
+
+	// Auto-select first core when switching to a multi-core import
+	useEffect(() => {
+		const selectedArg = unifiedData.arguments.find(arg => arg.id === unifiedData.selectedArgumentId)
+		if (selectedArg?.coreMetadata) {
+			// This is a multi-core import, ensure we have a valid core selection
+			const cores = getCoresForCurrentImport()
+			if (cores.length > 1 && !selectedCoreId) {
+				// Auto-select the currently selected argument as the core
+				setSelectedCoreId(selectedArg.id)
+			} else if (cores.length <= 1) {
+				// Single core or no cores, clear core selection
+				setSelectedCoreId(null)
+			}
+		} else {
+			// Not a multi-core import, clear core selection
+			setSelectedCoreId(null)
+		}
+	}, [unifiedData.selectedArgumentId, unifiedData.arguments, selectedCoreId, getCoresForCurrentImport])
+
 	// Lazy accessors with memoization
 	const getAstFor = useCallback((argumentId: string | null): AstNodeRec | null => {
 		if (!argumentId) return null
@@ -301,7 +342,33 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		if (!argumentId) return null
 		const argument = unifiedData.arguments.find(arg => arg.id === argumentId)
 		if (!argument) return null
-		// debug removed
+		
+		// For multi-core imports, filter by selected core
+		if (argument.coreMetadata && selectedCoreId) {
+			const cores = getCoresForCurrentImport()
+			if (cores.length > 1) {
+				// This is a multi-core import, return data for selected core only
+				const selectedCore = cores.find(core => core.id === selectedCoreId)
+				if (selectedCore && selectedCore.zlfnGraph) {
+					return selectedCore.zlfnGraph
+				}
+				// If selected core doesn't have graph data, fall back to computing from AST
+				if (selectedCore) {
+					const ast = selectedCore.ast || getAstFor(selectedCore.id)
+					if (ast) {
+						const graph = astToZlfnGraph(ast)
+						if (graph) {
+							selectedCore.zlfnGraph = graph as { nodes: ZlfnNode[]; edges: ZlfnEdge[] }
+							return graph as { nodes: ZlfnNode[]; edges: ZlfnEdge[] }
+						}
+					}
+				}
+				// No valid core selected or no data, return empty graph
+				return { nodes: [], edges: [] }
+			}
+		}
+		
+		// Single core or non-import: use standard logic
 		// Return cached graph if present
 		if (argument.zlfnGraph) return argument.zlfnGraph
 		
@@ -312,7 +379,7 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		const graph = astToZlfnGraph(ast)
 		if (graph) argument.zlfnGraph = graph as { nodes: ZlfnNode[]; edges: ZlfnEdge[] }
 		return graph as { nodes: ZlfnNode[]; edges: ZlfnEdge[] } | null
-	}, [unifiedData.arguments, getAstFor])
+	}, [unifiedData.arguments, getAstFor, selectedCoreId, getCoresForCurrentImport])
 
 	const getAtnDataFor = useCallback((argumentId: string | null): ArgumentData | null => {
 		if (!argumentId) return null
@@ -508,9 +575,22 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
                                                 }
                                         }
                                         
+                                        // Use provided title parameter (from form), then effective title, then arg title
+                                        let argumentTitle = title || effectiveTitle || arg.title
+                                        
+                                        // If we have database object with updated core names, use those
+                                        if (databaseObject?.zlfnJson?.arguments) {
+                                          const matchingArg = databaseObject.zlfnJson.arguments.find((dbArg: any) => 
+                                            dbArg.core?.name && dbArg.core.name !== 'Argument'
+                                          )
+                                          if (matchingArg?.core?.name && !title) {
+                                            argumentTitle = matchingArg.core.name
+                                          }
+                                        }
+                                        
                                         return {
                                                 ...arg,
-                                                title: arg.title || effectiveTitle,
+                                                title: argumentTitle,
                                                 markdown: {
                                                         ...arg.markdown,
                                                         content: effectiveContent
@@ -776,13 +856,15 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 			selectedNodeId, setSelectedNodeId, currentExpression, setCurrentExpression, 
 			expressionHighlightNonce, bumpExpressionHighlight, modes, setModes, nodeStates, setNodeStates,
 			unifiedData, setUnifiedData, setSelectedArgumentId,
+			selectedCoreId, setSelectedCoreId, getCoresForCurrentImport, getCurrentImportId,
 			getAstFor, getZlfnGraphFor, getAtnDataFor,
 			loadMarkdownDocument, updateMarkdownDocument, removeDocument, setActiveSource,
 			addExpressionArgument, addImportedJSONArguments
 		}),
 		[simulationMode, nodeIdToActive, resetStates, selectedNodeId, currentExpression, 
 		 expressionHighlightNonce, bumpExpressionHighlight, modes, nodeStates, unifiedData,
-		 setSelectedArgumentId, getAstFor, getZlfnGraphFor, getAtnDataFor,
+		 setSelectedArgumentId, selectedCoreId, getCoresForCurrentImport, getCurrentImportId,
+		 getAstFor, getZlfnGraphFor, getAtnDataFor,
 		 loadMarkdownDocument, updateMarkdownDocument, removeDocument, setActiveSource,
 		 addExpressionArgument, addImportedJSONArguments]
 	)

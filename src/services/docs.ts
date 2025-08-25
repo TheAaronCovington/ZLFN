@@ -98,7 +98,7 @@ export async function getDocumentList(): Promise<DocMeta[]> {
 	return sortedDocs
 }
 
-export async function getDocumentContent(id: string): Promise<string | null> {
+export async function getDocumentContent(id: string): Promise<string | { text: string; title: string } | null> {
         console.debug('[docs] Getting document content for:', id)
 
         const { useRealBackend } = apiConfig.getConfig()
@@ -126,7 +126,10 @@ export async function getDocumentContent(id: string): Promise<string | null> {
                 const mockResp = await mockAPI.getObject(id)
                 if (mockResp.success && mockResp.data && typeof mockResp.data.markdownContent === 'string') {
                         console.debug('[docs] Loaded content from mock store:', id)
-                        return mockResp.data.markdownContent
+                        // Return object with title metadata if available
+                        const title = mockResp.data.metadata?.title
+                        console.debug('[docs] Mock store title check:', { id, hasTitle: !!title, title, metadata: mockResp.data.metadata })
+                        return title ? { text: mockResp.data.markdownContent, title } : mockResp.data.markdownContent
                 }
         } catch {}
 

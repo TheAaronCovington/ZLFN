@@ -28,6 +28,16 @@ export const ArgumentSelector: React.FC<ArgumentSelectorProps> = ({
   showTitle = false,
   title
 }) => {
+  // Debug: Log what arguments we're receiving
+  React.useEffect(() => {
+    console.log('[ArgumentSelector] DEBUG - Arguments received:', argumentList.map(arg => ({ 
+      id: arg.id, 
+      title: arg.title,
+      hasTitle: !!arg.title,
+      titleType: typeof arg.title
+    })))
+  }, [argumentList])
+
   // Ensure selectedArgumentId exists in the argumentList, otherwise use empty string
   const validSelectedId = React.useMemo(() => {
     if (!selectedArgumentId) return ''

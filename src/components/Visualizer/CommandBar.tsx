@@ -17,6 +17,7 @@ import {
   FormControl
 } from '@mui/material'
 import ArgumentSelector from './ArgumentSelector'
+import CoreSelector from './CoreSelector'
 import { useLogicShared } from '../../context/LogicSharedContext'
 import {
   Search as SearchIcon,
@@ -314,6 +315,13 @@ export const CommandBar: React.FC<CommandBarProps> = ({
               minWidth={180}
             />
           )}
+
+          {/* Core Selector for Multi-Core Imports */}
+          <CoreSelector
+            label="Core"
+            size="small"
+            minWidth={150}
+          />
         </Stack>
 
         {/* Status Indicators */}

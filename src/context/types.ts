@@ -33,6 +33,13 @@ export type SharedArgument = {
   atn?: ArgumentData
   refs?: Record<string, string>
   notes?: Record<string, Note[]>
+  // Core metadata for multi-core JSON imports
+  coreMetadata?: {
+    importId: string      // Groups cores from same JSON import
+    coreIndex: number     // Position within the import (0, 1, 2...)
+    coreName: string      // Display name for this core
+    coreCount: number     // Total number of cores in this import
+  }
 }
 
 export type UnifiedData = {

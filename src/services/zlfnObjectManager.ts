@@ -167,13 +167,13 @@ export class ZLFNObjectManager {
       changeDescription: this.generateChangeDescription(previousState, updates)
     }
 
-    // Update object
-    Object.assign(object, updates, {
-      metadata: {
-        ...object.metadata,
-        modified: new Date().toISOString()
-      }
-    })
+    // Update object with proper metadata merging
+    Object.assign(object, updates)
+    object.metadata = {
+      ...object.metadata,
+      ...updates.metadata,
+      modified: new Date().toISOString()
+    }
 
     // Limit version history to 20 versions
     if (object.versionHistory.length >= 20) {
