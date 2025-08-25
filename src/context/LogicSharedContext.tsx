@@ -5,9 +5,10 @@ import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph/
 import type { ArgumentData, ArgumentNode } from '../components/Visualizations/ArgumentTableau/types'
 import type { NodeIdToActive, LogicMode, NodeState, UnifiedData } from './types'
 import { extractArgumentsFromMarkdown, updateArgumentFromMarkdown } from '../services/markdownToArgument'
-import { normalizeExpression, normalizeDocument, type ImportedJSON, normalizeImportedJSON, synthesizeExpressionFromGraph } from '../services/argumentNormalizer'
+import { normalizeExpression, normalizeDocument, type ImportedJSON, normalizeImportedJSON, synthesizeExpressionFromGraph, extractNodesAndEdgesFromArguments } from '../services/argumentNormalizer'
 import realAPI from '../services/realAPI'
 import { api as mockAPI } from '../services/zlfnAPI'
+import { apiConfig } from '../services/apiConfig'
 
 // (types moved to src/context/types.ts to satisfy Fast Refresh constraints)
 
@@ -102,14 +103,18 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 		(async () => {
 			try {
 				let fullObjects: any[] = []
-				// Try real backend
+				// Try real backend only if configured and authenticated
 				try {
-					const resp = await realAPI.listObjects()
-					if (resp.success && Array.isArray(resp.data) && resp.data.length > 0) {
-						const ids = (resp.data as any[]).map(o => (o as any).id).filter(Boolean)
-						const detailResults = await Promise.all(ids.map(id => realAPI.getObject(id)))
-						fullObjects = detailResults.filter(r => (r as any)?.success && (r as any)?.data).map(r => (r as any).data)
-						console.debug('[LogicShared] Server objects loaded', { count: fullObjects.length, ids })
+					const cfg = apiConfig.getConfig()
+					const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+					const shouldUseReal = cfg.useRealBackend && !!token
+					if (shouldUseReal) {
+						const resp = await realAPI.listObjects()
+						if (resp.success && Array.isArray(resp.data) && resp.data.length > 0) {
+							const ids = (resp.data as any[]).map(o => (o as any).id).filter(Boolean)
+							const detailResults = await Promise.all(ids.map(id => realAPI.getObject(id)))
+							fullObjects = detailResults.filter(r => (r as any)?.success && (r as any)?.data).map(r => (r as any).data)
+						}
 					}
 				} catch {}
 
@@ -152,15 +157,36 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
                                                         status: obj.metadata?.status,
                                                         isFromDatabase: !!obj.metadata?.isFromDatabase
                                                 },
-                                                zlfnGraph: obj.zlfnJson && Array.isArray(obj.zlfnJson.nodes) && Array.isArray(obj.zlfnJson.edges)
-                                                        ? {
-                                                                nodes: obj.zlfnJson.nodes.map((n: any) => ({
-                                                                        ...n,
-                                                                        argumentId: n.argumentId || obj.id
-                                                                })),
-                                                                edges: obj.zlfnJson.edges || []
+                                                zlfnGraph: (() => {
+                                                        if (!obj.zlfnJson) return undefined
+                                                        // Check if it has nodes/edges at top level (old structure)
+                                                        if (Array.isArray(obj.zlfnJson.nodes) && Array.isArray(obj.zlfnJson.edges)) {
+                                                                return {
+                                                                        nodes: obj.zlfnJson.nodes.map((n: any) => ({
+                                                                                ...n,
+                                                                                argumentId: n.argumentId || obj.id
+                                                                        })),
+                                                                        edges: obj.zlfnJson.edges || []
+                                                                }
                                                         }
-                                                        : undefined
+                                                        // Extract from arguments structure (new structure)
+                                                        if (obj.zlfnJson.arguments) {
+                                                                const extracted = extractNodesAndEdgesFromArguments(obj.zlfnJson)
+                                                                // Assuming 'extracted' is a map from argumentId to {nodes, edges}
+                                                                // We need to find the specific argument's graph
+                                                                const argGraph = extracted[obj.id] || extracted[obj.zlfnJson.arguments[0]?.id]
+                                                                if (argGraph) {
+                                                                    return {
+                                                                        nodes: argGraph.nodes.map((n: any) => ({
+                                                                                ...n,
+                                                                                argumentId: n.argumentId || obj.id
+                                                                        })),
+                                                                        edges: argGraph.edges
+                                                                    }
+                                                                }
+                                                        }
+                                                        return undefined
+                                                })()
                                         }))
                                 }
                                 if (cancelled) return
@@ -384,58 +410,56 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
 	// Markdown document management methods - enhanced for database-stored content
 	const loadMarkdownDocument = useCallback(async (documentId: string, content: string, title?: string) => {
-		console.debug('[LogicShared] Loading markdown document:', { documentId, title, contentLength: content.length })
+		console.debug('[LogicShared] Loading markdown document:', { documentId, title, len: content.length })
 		
 		try {
                         // Check if this is a database-stored document by trying to fetch it
                         let databaseObject: any = null
-                        let isFromDatabase = false
 
                         try {
-                                const apiResponse = await realAPI.getObject(documentId)
-                                if (apiResponse.success && apiResponse.data) {
-                                        databaseObject = apiResponse.data
-                                        isFromDatabase = true
-                                        console.debug('[LogicShared] Document found in database:', documentId)
-                                } else {
+                                const cfg = apiConfig.getConfig()
+                                const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+                                const shouldUseReal = cfg.useRealBackend && !!token
+                                if (shouldUseReal) {
+                                        const apiResponse = await realAPI.getObject(documentId)
+                                        if (apiResponse.success && apiResponse.data) {
+                                                databaseObject = apiResponse.data
+                                                console.debug('[LogicShared] Document found in database:', documentId)
+                                        }
+                                }
+                                if (!databaseObject) {
                                         const mockResp = await mockAPI.getObject(documentId)
                                         if (mockResp.success && mockResp.data) {
                                                 databaseObject = mockResp.data
                                                 console.debug('[LogicShared] Document found in mock store:', documentId)
                                         }
                                 }
-                        } catch (dbError) {
-                                console.debug('[LogicShared] Document not in database, trying mock store:', documentId)
-                                try {
-                                        const mockResp = await mockAPI.getObject(documentId)
-                                        if (mockResp.success && mockResp.data) {
-                                                databaseObject = mockResp.data
-                                                console.debug('[LogicShared] Document found in mock store:', documentId)
-                                        }
-                                } catch {}
-                        }
+                        } catch {}
 
                         // Use backend content and metadata if available, otherwise use provided content
                         const effectiveContent = databaseObject?.markdownContent || content
                         const effectiveTitle = databaseObject?.metadata?.title || databaseObject?.title || title || documentId
 
-                        // Use normalizeDocument to align with parseDocumentToGraph workflow
-                        let normalizedArguments = await normalizeDocument(documentId, effectiveContent)
-
-                        // Merge mock arguments if available
-                        if (!isFromDatabase && databaseObject?.zlfnJson?.arguments) {
-                                try {
-                                        const mockArgs = normalizeImportedJSON({ arguments: databaseObject.zlfnJson.arguments }, effectiveContent)
-                                                .map((arg, idx) => ({
-                                                        ...arg,
-                                                        id: `${documentId}-${arg.id || idx}`,
-                                                        markdown: { documentId, content: effectiveContent }
-                                                }))
-                                        normalizedArguments = [...normalizedArguments, ...mockArgs]
-                                } catch (mergeErr) {
-                                        console.warn('[LogicShared] Failed to merge mock arguments:', mergeErr)
-                                }
+                        // Prefer JSON graph from object when present; otherwise parse markdown
+                        let normalizedArguments: any[]
+                        if (databaseObject?.zlfnJson && Array.isArray(databaseObject.zlfnJson.arguments) && databaseObject.zlfnJson.arguments.length > 0) {
+                            const extracted = extractNodesAndEdgesFromArguments(databaseObject.zlfnJson)
+                            const graphs = Object.values(extracted)
+                            const combinedNodes = graphs.flatMap(g => g.nodes).map((n: any) => ({ ...n, argumentId: n.argumentId || documentId }))
+                            const combinedEdges = graphs.flatMap(g => g.edges)
+                            normalizedArguments = [{
+                                id: documentId,
+                                title: effectiveTitle,
+                                markdown: { documentId, content: effectiveContent },
+                                expressions: [],
+                                zlfnGraph: { nodes: combinedNodes, edges: combinedEdges },
+                                notes: {}
+                            }]
+                        } else {
+                            normalizedArguments = await normalizeDocument(documentId, effectiveContent)
                         }
+
+                        // Do not merge via normalizeImportedJSON here; we extract graph directly below when present
 
                         if (normalizedArguments.length === 0) {
                                 const extraction = extractArgumentsFromMarkdown(documentId, effectiveContent, effectiveTitle)
@@ -454,40 +478,62 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 				)
 				
                                 // Enhance normalized arguments with database metadata if available
-                                const enhancedArguments = normalizedArguments.map(arg => ({
-                                        ...arg,
-                                        title: arg.title || effectiveTitle,
-                                        markdown: {
-                                                ...arg.markdown,
-                                                content: effectiveContent
-                                        },
-                                        // If from database and has zlfnJson, use it
-                                        ...(isFromDatabase && databaseObject.zlfnJson ? {
-                                                zlfnGraph: {
-                                                        nodes: (databaseObject.zlfnJson.nodes || []).map((n: any) => ({
-                                                                ...n,
-                                                                argumentId: n.argumentId || documentId
-                                                        })),
-                                                        edges: databaseObject.zlfnJson.edges || []
+                                const dbArgCount = Array.isArray(databaseObject?.zlfnJson?.arguments) ? databaseObject.zlfnJson.arguments.length : 0
+                                const enhancedArguments = normalizedArguments.map((arg: any) => {
+                                        // If from database and has zlfnJson with arguments, extract nodes and edges
+                                        let zlfnGraph = (arg as any).zlfnGraph
+                                        if (databaseObject.zlfnJson) {
+                                                // Check if it has the old structure with nodes/edges at top level
+                                                if (Array.isArray(databaseObject.zlfnJson.nodes) && Array.isArray(databaseObject.zlfnJson.edges)) {
+                                                        zlfnGraph = {
+                                                                nodes: (databaseObject.zlfnJson.nodes || []).map((n: any) => ({
+                                                                        ...n,
+                                                                        argumentId: n.argumentId || documentId
+                                                                })),
+                                                                edges: databaseObject.zlfnJson.edges || []
+                                                        }
+                                                } else if (databaseObject.zlfnJson.arguments) {
+                                                        // Extract from arguments structure
+                                                        const extracted = extractNodesAndEdgesFromArguments(databaseObject.zlfnJson)
+                                                        const argGraph = extracted[documentId] || extracted[databaseObject.zlfnJson.arguments[0]?.id]
+                                                        if (argGraph) {
+                                                          zlfnGraph = {
+                                                            nodes: argGraph.nodes.map((n: any) => ({
+                                                              ...n,
+                                                              argumentId: n.argumentId || documentId
+                                                            })),
+                                                            edges: argGraph.edges
+                                                          }
+                                                        }
                                                 }
-                                        } : {})
-                                }))
+                                        }
+                                        
+                                        return {
+                                                ...arg,
+                                                title: arg.title || effectiveTitle,
+                                                markdown: {
+                                                        ...arg.markdown,
+                                                        content: effectiveContent
+                                                },
+                                                ...(zlfnGraph ? { zlfnGraph } : {})
+                                        }
+                                })
+
+                                try {
+                                        console.debug('[LogicShared] Args snapshot:', enhancedArguments.map(a => ({ id: a.id, title: a.title, hasGraph: !!a.zlfnGraph, nodes: a.zlfnGraph?.nodes?.length || 0, edges: a.zlfnGraph?.edges?.length || 0 })), 'dbArgCount:', dbArgCount)
+                                } catch {}
 				
 				// Add enhanced arguments
 				const newArguments = [...filteredArguments, ...enhancedArguments]
 				
-				// Select the first document argument if none selected or if current selection was from this document
-				let newSelectedId = prev.selectedArgumentId
-				if (!newSelectedId || prev.arguments.find(arg => arg.id === newSelectedId)?.markdown.documentId === documentId) {
-					newSelectedId = enhancedArguments.length > 0 ? enhancedArguments[0].id : null
-				}
+				// Select the first argument with a graph, else first
+				const withGraph = enhancedArguments.filter(a => a.zlfnGraph && Array.isArray(a.zlfnGraph.nodes) && (a.zlfnGraph.nodes as any[]).length > 0)
+				let newSelectedId = withGraph[0]?.id || (enhancedArguments.length > 0 ? enhancedArguments[0].id : null)
 				
-				console.debug('[LogicShared] Document loaded successfully:', { 
-					documentId, 
-					isFromDatabase, 
-					argumentCount: enhancedArguments.length,
-					selectedId: newSelectedId
-				})
+				console.debug('[LogicShared] Loading markdown document:', { documentId, title: effectiveTitle, len: effectiveContent.length })
+				console.debug('[LogicShared] Extraction candidate (db zlfnJson present):', !!databaseObject?.zlfnJson)
+				console.debug('[LogicShared] Enhanced args count:', enhancedArguments.length)
+				console.debug('[LogicShared] Selecting argument id:', newSelectedId)
 				
 				return {
 					...prev,
@@ -533,18 +579,21 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 			// Check if this is a database document and update it
 			let isFromDatabase = false
 			try {
-				const apiResponse = await realAPI.getObject(documentId)
-				if (apiResponse.success && apiResponse.data) {
-					// Update the database document
-					const updateResponse = await realAPI.updateMarkdown(documentId, content)
-					if (updateResponse.success) {
-						isFromDatabase = true
-						console.debug('[LogicShared] Database document updated successfully:', documentId)
+				const cfg = apiConfig.getConfig()
+				const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+				const shouldUseReal = cfg.useRealBackend && !!token
+				if (shouldUseReal) {
+					const apiResponse = await realAPI.getObject(documentId)
+					if (apiResponse.success && apiResponse.data) {
+						// Update the database document
+						const updateResponse = await realAPI.updateMarkdown(documentId, content)
+						if (updateResponse.success) {
+							isFromDatabase = true
+							console.debug('[LogicShared] Database document updated successfully:', documentId)
+						}
 					}
 				}
-			} catch (dbError) {
-				console.debug('[LogicShared] Document not in database or update failed:', dbError)
-			}
+			} catch {}
 			
 			// Update local state
 			setUnifiedData(prev => {
@@ -598,18 +647,21 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
 			// Check if this is a database document and delete it
 			let isFromDatabase = false
 			try {
-				const apiResponse = await realAPI.getObject(documentId)
-				if (apiResponse.success && apiResponse.data) {
-					// Delete the database document
-					const deleteResponse = await realAPI.deleteObject(documentId)
-					if (deleteResponse.success) {
-						isFromDatabase = true
-						console.debug('[LogicShared] Database document deleted successfully:', documentId)
+				const cfg = apiConfig.getConfig()
+				const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+				const shouldUseReal = cfg.useRealBackend && !!token
+				if (shouldUseReal) {
+					const apiResponse = await realAPI.getObject(documentId)
+					if (apiResponse.success && apiResponse.data) {
+						// Delete the database document
+						const deleteResponse = await realAPI.deleteObject(documentId)
+						if (deleteResponse.success) {
+							isFromDatabase = true
+							console.debug('[LogicShared] Database document deleted successfully:', documentId)
+						}
 					}
 				}
-			} catch (dbError) {
-				console.debug('[LogicShared] Document not in database or delete failed:', dbError)
-			}
+			} catch {}
 			
 			// Update local state
 			setUnifiedData(prev => {

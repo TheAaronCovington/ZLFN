@@ -954,7 +954,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		const zoneAllowed = new Set(zonesToUse.map((z:any)=>z.id))
 		// Use optimized nodes if available, otherwise use original nodes
 		const sourceNodes = optimizedData?.visibleNodes || nodes
-		if (import.meta.env.DEV) console.debug('[ZLFN] Zones allowed', Array.from(zoneAllowed))
+		// if (import.meta.env.DEV) console.debug('[ZLFN] Zones allowed', Array.from(zoneAllowed))
 		const filteredNodes = (sourceNodes as any[]).filter(n => {
 			if (!n.zone && !n.zoneId) return true
 			const nodeZone = (n.zoneId || n.zone) as string
@@ -967,7 +967,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 				allowedZone.toLowerCase() === nodeZone.toLowerCase()
 			)
 		})
-		if (import.meta.env.DEV) console.debug('[ZLFN] Filtered nodes', { total: (sourceNodes as any[]).length, kept: (filteredNodes as any[]).length })
+		// if (import.meta.env.DEV) console.debug('[ZLFN] Filtered nodes', { total: (sourceNodes as any[]).length, kept: (filteredNodes as any[]).length })
 		const nodesWithArgs: any[] = [...filteredNodes, ...argBadges]
 
 		// seed or repair Terms positions if they are coincident (stacking) or uninitialized

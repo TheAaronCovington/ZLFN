@@ -39,9 +39,6 @@ export const ArgumentSelector: React.FC<ArgumentSelectorProps> = ({
   React.useEffect(() => {
     if (!validSelectedId && argumentList.length > 0) {
       // Auto-select first argument if no valid selection exists
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('ArgumentSelector: Auto-selecting first argument:', argumentList[0].id, 'Previous selection was:', selectedArgumentId)
-      }
       onArgumentSelect(argumentList[0].id)
     }
   }, [validSelectedId, argumentList, onArgumentSelect, selectedArgumentId])

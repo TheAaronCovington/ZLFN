@@ -324,6 +324,71 @@ export async function normalizeDocument(documentId: string, content: string): Pr
   }
 }
 
+/**
+ * Extract nodes and edges from ZLFNStructure arguments
+ */
+export function extractNodesAndEdgesFromArguments(zlfnJson: any): Record<string, { nodes: any[], edges: any[] }> {
+  const result: Record<string, { nodes: any[], edges: any[] }> = {}
+  
+  if (!zlfnJson || !zlfnJson.arguments) {
+    return result
+  }
+  
+  // Extract from each argument
+  zlfnJson.arguments.forEach((arg: any) => {
+    const argumentId = arg.id || `argument-${Object.keys(result).length + 1}`
+    result[argumentId] = { nodes: [], edges: [] }
+
+    // Extract nodes from zones
+    if (arg.zones) {
+      arg.zones.forEach((zone: any) => {
+        if (zone.nodes) {
+          zone.nodes.forEach((node: any) => {
+            result[argumentId].nodes.push({
+              id: node.id,
+              label: node.name || node.id,
+              name: node.name,
+              type: normalizeNodeType(node.type || 'term'),
+              zone: zone.name,
+              state: node.state || 'T',
+              weight: typeof node.weight === 'number' ? node.weight : 50,
+              symbol: node.symbolic,
+              translation: node.translation,
+              facets: {
+                vennRelevant: node.vennRelevant || false,
+                truthTableRelevant: node.truthTableRelevant || false,
+                timelineRelevant: node.timelineRelevant || false,
+                counterRelevant: false,
+                noteRelevant: true
+              },
+              color: getNodeColor(normalizeNodeType(node.type || 'term')),
+              size: getNodeSize(normalizeNodeType(node.type || 'term'))
+            })
+          })
+        }
+      })
+    }
+    
+    // Extract edges from dependencies
+    if (arg.dependencies) {
+      arg.dependencies.forEach((dep: any, index: number) => {
+        result[argumentId].edges.push({
+          id: dep.id || `edge-${index}`,
+          from: dep.source || dep.sourceId,
+          to: dep.target || dep.targetId,
+          rule: dep.rule || '',
+          weight: typeof dep.weight === 'number' ? dep.weight : 50,
+          type: dep.type || 'inference',
+          style: mapDependencyTypeToStyle(dep.type || 'inference'),
+          priority: dep.priority || 1
+        })
+      })
+    }
+  })
+  
+  return result
+}
+
 // Helper functions
 
 function normalizeNodeType(type: string): ZlfnNode['type'] {

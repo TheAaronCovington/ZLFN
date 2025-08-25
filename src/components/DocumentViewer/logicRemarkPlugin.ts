@@ -144,9 +144,7 @@ export function logicRemarkPlugin(options: { enableTooltips?: boolean; enableVar
 	return (tree: any) => {
 		// Defensive guards for empty/invalid trees
 		if (!tree || typeof tree !== 'object') return
-		if (import.meta.env.DEV) {
-			try { console.debug('[logicRemarkPlugin] start', { type: tree?.type, childCount: Array.isArray(tree?.children) ? tree.children.length : undefined }) } catch {}
-		}
+		// console.debug('[logicRemarkPlugin] start', { type: tree?.type, childCount: Array.isArray(tree?.children) ? tree.children.length : undefined })
 		// Collect variables and predicates across the document for mapping
 		const documentVariables = new Set<string>()
 		const documentPredicates = new Set<string>()
@@ -229,9 +227,7 @@ export function logicRemarkPlugin(options: { enableTooltips?: boolean; enableVar
 			out += value.slice(lastIndex)
 			if (out === value) return
 			if (typeof index === 'number' && parent && Array.isArray(parent.children)) {
-				if (import.meta.env.DEV) {
-					try { console.debug('[logicRemarkPlugin] replace text->html', { original: value, replaced: out }) } catch {}
-				}
+				// console.debug('[logicRemarkPlugin] replace text->html', { original: value, replaced: out })
 				parent.children.splice(index, 1, { type: 'html', value: out })
 			}
 		})

@@ -22,17 +22,6 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
   // Debug toggles
   const DBG = false
   const log = (...args: any[]) => { if (DBG) console.log('[ObjectForm]', ...args) }
-  const logState = (tag: string, md?: string) => {
-    if (!DBG) return
-    console.log('[ObjectForm]', tag, {
-      id: formData.id,
-      title: formData.metadata?.title,
-      mdLen: (formData.markdownContent || '').length,
-      mdPreview: (md !== undefined ? md : (formData.markdownContent || '')).slice(0, 80),
-      argsLen: formData.zflnJson?.arguments?.length || 0,
-      lastAction: lastActionRef.current
-    })
-  }
   const [activeTab, setActiveTab] = React.useState(0)
   const [error, setError] = React.useState('')
   const [formData, setFormData] = React.useState<Partial<ZLFNObject>>(() => ({ 
@@ -49,7 +38,6 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
   const [isValidating, setIsValidating] = React.useState(false)
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [markdownFile, setMarkdownFile] = React.useState<File | null>(null)
-  const [jsonFile, setJsonFile] = React.useState<File | null>(null)
   const { loadMarkdownDocument, setActiveSource } = useLogicShared()
   const navigate = useNavigate()
   
@@ -175,44 +163,7 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
     }
   }
 
-  // JSON file import handler
-  const handleJsonImport = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      setJsonFile(file)
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        try {
-          const content = e.target?.result as string
-          const json = JSON.parse(content)
-          lastActionRef.current = 'JSON_IMPORT'
-          log('JSON_IMPORT read', { file: file.name, size: content.length, keys: Object.keys(json || {}) })
-          setFormData(prev => {
-            // Explicitly preserve markdown content from ref to prevent loss
-            const preservedMarkdownContent = markdownContentRef.current || prev.markdownContent || ''
-            
-            return {
-              ...prev,
-              markdownContent: preservedMarkdownContent, // Explicitly preserve markdown
-              zflnJson: { 
-                ...prev.zflnJson, 
-                arguments: json.arguments || [] 
-              }
-            }
-          })
-          setTimeout(() => logState('after JSON_IMPORT state set'), 0)
-        } catch (error) {
-          setError('Invalid JSON file format')
-          lastActionRef.current = 'JSON_IMPORT_ERROR'
-          log('JSON_IMPORT parse error', error)
-        }
-      }
-      reader.onerror = () => {
-        setError('Failed to read JSON file')
-      }
-      reader.readAsText(file)
-    }
-  }
+  // JSON file import handler - removed, using modal's Import JSON button instead
 
   // Watchdog: if a JSON import just occurred and markdown emptied, restore from ref once (silent)
   const restoreGuardRef = React.useRef<number>(0)
@@ -293,22 +244,95 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
   }
 
   function mapSharedArgumentsToZlfnArgs(shared: any[]): any[] {
-    return (shared || []).map((sa: any) => sanitizeArgument({
-      core: {
-        name: sa.title || 'Imported Argument',
-        summary: (sa.expressions && sa.expressions[0]) || '' ,
-        layoutMode: 'network',
-        variables: {},
-        mode: { zlfMode: false, atnMode: false }
-      },
-      zones: [],
-      dependencies: [],
-      modes: {},
-      counterarguments: [],
-      subarguments: [],
-      validation: { isValid: true, errors: [], warnings: [] },
-      pagination: { currentPage: 1, totalPages: 1 }
-    }))
+    return (shared || []).map((sa: any, index) => {
+      // Extract zones and nodes from the ZLFN graph if available
+      const zones: any[] = []
+      const dependencies: any[] = []
+      
+      // Extract the actual title from the SharedArgument
+      // SharedArgument has: id, title, expressions[], zlfnGraph, etc.
+      const argumentTitle = sa.title || sa.id || `Argument ${index + 1}`
+      const argumentSummary = (sa.expressions && sa.expressions.length > 0) 
+        ? sa.expressions.join(' ∧ ') 
+        : 'No expression provided'
+      
+      if (sa.zlfnGraph) {
+        // Group nodes by zone
+        const nodesByZone: Record<string, any[]> = {}
+        const processedZones = new Set<string>()
+        
+        ;(sa.zlfnGraph.nodes || []).forEach((node: any) => {
+          const zoneName = node.zone || node.type || 'default'
+          if (!nodesByZone[zoneName]) {
+            nodesByZone[zoneName] = []
+          }
+          nodesByZone[zoneName].push({
+            id: node.id,
+            name: node.label || node.name || node.id,
+            state: node.state || 'T',
+            weight: typeof node.weight === 'number' ? node.weight : 50,
+            type: node.type,
+            symbolic: node.symbol,
+            translation: node.translation
+          })
+          processedZones.add(zoneName)
+        })
+        
+        // Create zones with their nodes
+        Array.from(processedZones).forEach(zoneName => {
+          zones.push({
+            name: zoneName.charAt(0).toUpperCase() + zoneName.slice(1),
+            nodes: nodesByZone[zoneName] || []
+          })
+        })
+        
+        // Map edges to dependencies
+        ;(sa.zlfnGraph.edges || []).forEach((edge: any) => {
+          dependencies.push({
+            id: `${edge.from}-${edge.to}`,
+            source: edge.from,
+            target: edge.to,
+            rule: edge.rule || '',
+            context: edge.context || '',
+            weight: edge.weight,
+            type: edge.type || 'inference',
+            priority: edge.priority || 1
+          })
+        })
+      }
+      
+      return sanitizeArgument({
+        core: {
+          name: argumentTitle,  // Use the actual title from SharedArgument
+          summary: argumentSummary,  // Use the actual expressions
+          layoutMode: 'network',
+          variables: {},
+          mode: { zlfMode: true, atnMode: false },
+          metadata: {
+            confidence: 80,
+            uncertain: []
+          }
+        },
+        zones: zones.length > 0 ? zones : [
+          { name: 'Default', nodes: [] }
+        ],
+        dependencies,
+        modes: {
+          propositional: true,
+          predicate: false,
+          epistemic: false,
+          deontic: false,
+          temporal: false,
+          informal: false,
+          paraconsistent: false,
+          fuzzy: false
+        },
+        counterarguments: [],
+        subarguments: [],
+        validation: { errors: [], warnings: [] },
+        pagination: { page: 1, total: 1 }
+      })
+    })
   }
 
   // Comprehensive validation function
@@ -609,22 +633,6 @@ export default function ObjectForm({ objectId, onClose, initialData }: ObjectFor
 
       {activeTab === 2 && (
         <Box display="grid" gap={2}>
-          <Box>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>Import JSON Arguments</Typography>
-            <input 
-              key="json-import"
-              id="arguments-json-file-input"
-              type="file" 
-              accept=".json" 
-              onChange={handleJsonImport}
-              style={{ marginBottom: '16px' }}
-            />
-            {jsonFile && (
-              <Typography variant="caption" color="textSecondary">
-                Imported: {jsonFile.name} ({formData.zflnJson?.arguments?.length || 0} arguments)
-              </Typography>
-            )}
-          </Box>
           {formData.zflnJson?.arguments?.length === 0 && (
             <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic' }}>
               No arguments loaded. Import a JSON file above to populate argument data for visualizations.

@@ -112,34 +112,67 @@ export function parseLogicalArguments(content: string, documentId: string): Logi
 	
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i].trim()
-		
-		// Detect argument headers
-		if (line.match(/^#+\s*(argument|proof|reasoning|syllogism)/i)) {
-			if (currentArgument && currentArgument.premises?.length) {
-				// Complete previous argument
-				logicalArguments.push({
-					id: `${documentId}_arg_${argumentCounter++}`,
-					title: currentArgument.title || 'Untitled Argument',
-					premises: currentArgument.premises || [],
-					conclusions: currentArgument.conclusions || [],
-					expressions: currentArgument.expressions || [],
-					type: currentArgument.type || 'deductive',
-					source: {
-						document: documentId,
-						section: currentSection
-					}
-				} as LogicalArgument)
+
+		// Flexible detection of Premise/Conclusion lines
+		const premiseMatch = line.match(/^\s*(?:[-*]|\d+\.)?\s*(?:\*\*)?\s*Premise(?:\s*\d+)?(?:\s*\([^)]*\))?\s*(?:\*\*)?\s*[:\-]?\s*(.+)$/i)
+		if (premiseMatch) {
+			if (!currentArgument) {
+				currentArgument = {
+					title: 'Argument',
+					premises: [],
+					conclusions: [],
+					expressions: [],
+					type: 'deductive'
+				}
+				currentSection = 'Detected Argument'
 			}
-			
-			currentArgument = {
-				title: line.replace(/^#+\s*/, ''),
-				premises: [],
-				conclusions: [],
-				expressions: [],
-				type: 'deductive'
-			}
-			currentSection = line.replace(/^#+\s*/, '')
+			currentArgument.premises!.push(premiseMatch[1].trim())
+			continue
 		}
+
+		const conclusionMatch = line.match(/^\s*(?:[-*]|\d+\.)?\s*(?:\*\*)?\s*Conclusion(?:\s*\d+)?(?:\s*\([^)]*\))?\s*(?:\*\*)?\s*[:\-]?\s*(.+)$/i)
+		if (conclusionMatch) {
+			if (!currentArgument) {
+				currentArgument = {
+					title: 'Argument',
+					premises: [],
+					conclusions: [],
+					expressions: [],
+					type: 'deductive'
+				}
+				currentSection = 'Detected Argument'
+			}
+			currentArgument.conclusions!.push(conclusionMatch[1].trim())
+			continue
+		}
+ 
+ 		// Detect argument headers
+ 		if (line.match(/^#+\s*(argument|proof|reasoning|syllogism)/i)) {
+ 			if (currentArgument && currentArgument.premises?.length) {
+ 				// Complete previous argument
+ 				logicalArguments.push({
+ 					id: `${documentId}_arg_${argumentCounter++}`,
+ 					title: currentArgument.title || 'Untitled Argument',
+ 					premises: currentArgument.premises || [],
+ 					conclusions: currentArgument.conclusions || [],
+ 					expressions: currentArgument.expressions || [],
+ 					type: currentArgument.type || 'deductive',
+ 					source: {
+ 						document: documentId,
+ 						section: currentSection
+ 					}
+ 				} as LogicalArgument)
+ 			}
+ 
+ 			currentArgument = {
+ 				title: line.replace(/^#+\s*/, ''),
+ 				premises: [],
+ 				conclusions: [],
+ 				expressions: [],
+ 				type: 'deductive'
+ 			}
+ 			currentSection = line.replace(/^#+\s*/, '')
+ 		}
 		
 		// Detect premises and conclusions
 		if (currentArgument && line.match(/^\d+\.\s*\*\*premise/i)) {

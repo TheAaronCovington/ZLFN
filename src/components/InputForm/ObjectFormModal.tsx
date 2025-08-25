@@ -75,15 +75,11 @@ export default function ObjectFormModal({
       if (file) {
         try {
           const data = await readJsonFile(file)
-          // Normalize and strip any markdownContent fields to avoid overwriting
-          // existing markdown in ObjectForm
-          const normalized = normalizeImportedJSON(data).map(arg => {
-            const { markdownContent, ...rest } = arg as any
-            return rest
-          })
-          // Only populate arguments – markdown content should remain
-          // untouched so existing edits in ObjectForm are preserved
-          setImportedData({ arguments: normalized })
+          // Normalize to SharedArgument[] format
+          const normalized = normalizeImportedJSON(data)
+          // Pass as array directly - ObjectForm will detect it's SharedArgument[]
+          // and use mapSharedArgumentsToZlfnArgs
+          setImportedData(normalized)
           setFormProgress(75)
         } catch (error) {
           console.error('Failed to import JSON:', error)
