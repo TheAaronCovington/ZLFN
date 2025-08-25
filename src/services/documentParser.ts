@@ -335,13 +335,10 @@ function getInferenceRule(type: LogicalArgument['type']): string {
 }
 
 /**
- * Main function to parse a document and generate ZLFN graph data
+ * Parse content directly to generate ZLFN graph data
  */
-export async function parseDocumentToGraph(documentId: string): Promise<DocumentGraphData | null> {
+export function parseContentToGraph(documentId: string, content: string): DocumentGraphData | null {
 	try {
-		const content = await getDocumentContent(documentId)
-		if (!content) return null
-		
 		const expressions = extractExpressions(content, documentId)
 		const logicalArguments = parseLogicalArguments(content, documentId)
 		
@@ -391,6 +388,20 @@ export async function parseDocumentToGraph(documentId: string): Promise<Document
 			arguments: logicalArguments,
 			documentId
 		}
+	} catch (error) {
+		console.error(`Failed to parse document ${documentId}:`, error)
+		return null
+	}
+}
+
+/**
+ * Main function to parse a document and generate ZLFN graph data (fetches content)
+ */
+export async function parseDocumentToGraph(documentId: string): Promise<DocumentGraphData | null> {
+	try {
+		const content = await getDocumentContent(documentId)
+		if (!content) return null
+		return parseContentToGraph(documentId, content)
 	} catch (error) {
 		console.error(`Failed to parse document ${documentId}:`, error)
 		return null

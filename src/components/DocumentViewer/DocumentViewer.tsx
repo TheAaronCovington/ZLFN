@@ -185,6 +185,7 @@ const AccordionMarkdownRenderer: React.FC<{
 
 type DocumentViewerProps = {
   filenameOverride?: string
+  markdownContent?: string  // Allow passing markdown content directly
 }
 
 function slugify(text: string): string {
@@ -203,7 +204,7 @@ function extractText(children: React.ReactNode): string {
   return ''
 }
 
-const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => {
+const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride, markdownContent }) => {
   const routeParams = useParams<{ filename?: string; id?: string }>()
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -341,6 +342,34 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
 
   useEffect(() => {
     const load = async () => {
+      // If markdown content is provided directly, use it
+      if (markdownContent) {
+        const effective = filenameOverride || 'document'
+        setContent(markdownContent)
+        setDocumentTitle(effective.replace(/_/g, ' '))
+        setError('')
+        setLoading(false)
+        
+        // Extract expressions from the provided content
+        const regex = /```\s*(expr|expression|logic)\s+([\s\S]*?)```/gi
+        const exprs: string[] = []
+        let m: RegExpExecArray | null
+        while ((m = regex.exec(markdownContent)) !== null) {
+          const e = (m[2] || '').trim()
+          if (e) exprs.push(e)
+        }
+        const unique = Array.from(new Set(exprs))
+        setDetectedExpressions(unique)
+        
+        // Auto-sync first expression if different
+        if (unique.length && unique[0] !== currentExpression && syncedDocId.current !== effective) {
+          setCurrentExpression(unique[0])
+          syncedDocId.current = effective
+        }
+        return
+      }
+      
+      // Otherwise, load from file/database
       const effective = filenameOverride || routeParams.filename || routeParams.id
       setLoading(true)
       if (!effective) {
@@ -397,7 +426,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ filenameOverride }) => 
       }
     }
     load()
-  }, [filenameOverride, routeParams.filename, routeParams.id, setCurrentExpression, currentExpression, loadMarkdownDocument, setActiveSource])
+  }, [filenameOverride, markdownContent, routeParams.filename, routeParams.id, setCurrentExpression, currentExpression, loadMarkdownDocument, setActiveSource])
 
   useEffect(() => {
     // auto-scroll to active expression block when content or currentExpression changes or highlight nonce updates

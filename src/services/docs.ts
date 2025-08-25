@@ -41,6 +41,8 @@ export async function getDocumentList(): Promise<DocMeta[]> {
 	
 	// First, try to get documents from the database (API)
 	try {
+		const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+		if (!token) throw new Error('skip real list: no token')
 		const apiResponse = await realAPI.listObjects()
 		if (apiResponse.success && apiResponse.data) {
 			const databaseDocs = (apiResponse.data as any[]).map((obj: any) => {
@@ -103,9 +105,11 @@ export async function getDocumentContent(id: string): Promise<string | null> {
 
         let dbError: unknown = null
 
-        // First, try to get content from the database (API)
+        // First, try to get content from the database (API) only when authenticated
         if (useRealBackend) {
                 try {
+                        const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+                        if (!token) throw new Error('skip real get: no token')
                         const apiResponse = await realAPI.getObject(id)
                         if (apiResponse.success && apiResponse.data && typeof apiResponse.data.markdownContent === 'string') {
                                 console.debug('[docs] Loaded content from database:', id)

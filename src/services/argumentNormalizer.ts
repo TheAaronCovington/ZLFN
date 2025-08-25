@@ -7,7 +7,7 @@
 import type { SharedArgument } from '../context/types'
 import type { ZlfnNode, ZlfnEdge } from '../components/Visualizations/ZlfnGraph/types'
 // Removed unused imports - these will be needed when we implement full normalization
-import { parseDocumentToGraph } from './documentParser'
+import { parseContentToGraph } from './documentParser'
 
 // Input JSON structure (generalized format from user instructions)
 export interface ImportedArgument {
@@ -283,7 +283,7 @@ export function normalizeExpression(expression: string, title?: string): SharedA
  */
 export async function normalizeDocument(documentId: string, content: string): Promise<SharedArgument[]> {
   try {
-    const documentGraphData = await parseDocumentToGraph(documentId)
+    const documentGraphData = parseContentToGraph(documentId, content)
     if (!documentGraphData) {
       throw new Error('Failed to parse document')
     }

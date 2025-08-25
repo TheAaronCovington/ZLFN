@@ -303,11 +303,11 @@ export const LogicSharedProvider: React.FC<{ children: React.ReactNode }> = ({ c
                                 id: `${argumentId}-core`,
                                 argumentId,
                                 argumentType: 'claim',
-                                name: argument.name || 'Placeholder'
+                                name: argument.title || 'Placeholder'
                         }
                         const placeholder: ArgumentData = {
                                 id: argumentId,
-                                name: argument.name || 'Untitled Argument',
+                                name: argument.title || 'Untitled Argument',
                                 core: placeholderCore,
                                 components: [],
                                 relationships: [],

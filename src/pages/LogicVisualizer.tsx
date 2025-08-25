@@ -804,23 +804,39 @@ const LogicVisualizer: React.FC = () => {
 									<CircularProgress size={40} />
 								</Box>
 							}>
-								{unifiedData.selectedArgumentId && unifiedData.selectedArgumentId !== 'default-expression' ? (
-									<DocumentViewer 
-										filenameOverride={unifiedData.selectedArgumentId}
-									/>
-								) : (
-									<Box sx={{ 
-										textAlign: 'center', 
-										color: 'var(--ai-text-secondary)',
-										mt: 4
-									}}>
-										<ArticleIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
-										<Box sx={{ fontSize: '16px', mb: 1 }}>No Document Selected</Box>
-										<Box sx={{ fontSize: '14px' }}>
-											Select an argument to view its associated documentation
-										</Box>
-									</Box>
-								)}
+								{(() => {
+									const selectedArg = unifiedData.arguments.find(arg => arg.id === unifiedData.selectedArgumentId)
+									if (selectedArg && selectedArg.markdown?.content) {
+										// Show the markdown content from the selected argument
+										return (
+											<DocumentViewer 
+												filenameOverride={selectedArg.markdown.documentId || selectedArg.id}
+												markdownContent={selectedArg.markdown.content}
+											/>
+										)
+									} else if (unifiedData.selectedArgumentId && unifiedData.selectedArgumentId !== 'default-expression') {
+										// Try to load as a document ID
+										return (
+											<DocumentViewer 
+												filenameOverride={unifiedData.selectedArgumentId}
+											/>
+										)
+									} else {
+										return (
+											<Box sx={{ 
+												textAlign: 'center', 
+												color: 'var(--ai-text-secondary)',
+												mt: 4
+											}}>
+												<ArticleIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
+												<Box sx={{ fontSize: '16px', mb: 1 }}>No Document Selected</Box>
+												<Box sx={{ fontSize: '14px' }}>
+													Select an argument to view its associated documentation
+												</Box>
+											</Box>
+										)
+									}
+								})()}
 							</React.Suspense>
 						</Box>
 					</Box>
