@@ -50,6 +50,14 @@ export const EnhancedVennDiagram: React.FC<EnhancedVennDiagramProps> = ({
     if (!svgRef.current) {
       return
     }
+    
+    // Debug logging
+    console.debug('[EnhancedVennDiagram] Rendering with data:', {
+      shouldRenderAsSubset: data.shouldRenderAsSubset,
+      subsetDirection: data.subsetDirection,
+      description: data.description,
+      setsCount: data.sets?.length
+    })
 
     const svg = d3.select(svgRef.current)
     svg.selectAll('*').remove()
@@ -90,53 +98,92 @@ export const EnhancedVennDiagram: React.FC<EnhancedVennDiagramProps> = ({
     // Calculate positions for enhanced layout
     const centerX = WIDTH / 2
     const centerY = HEIGHT / 2
-    const radius = Math.min(WIDTH, HEIGHT) * 0.25
-    const separation = radius * 0.8
+    const defaultRadius = Math.min(WIDTH, HEIGHT) * 0.25
+    const separation = defaultRadius * 0.8
 
-    // Enhanced set rendering
-    const setA = {
-      x: centerX - separation / 2,
-      y: centerY,
-      radius: radius,
-      label: data.sets[0]?.label || 'A',
-      items: data.sets[0]?.items || [],
-      color: data.sets[0]?.color || '#40c4ff'
+    // Enhanced set rendering with subset relationship support
+    let setA, setB
+    
+    // Force subset rendering for necessary/sufficient conditions based on description
+    const isNecessaryCondition = data.description?.includes('necessary condition')
+    const isSufficientCondition = data.description?.includes('sufficient')
+    
+    console.debug('[EnhancedVennDiagram] Subset check:', {
+      shouldRenderAsSubset: data.shouldRenderAsSubset,
+      subsetDirection: data.subsetDirection,
+      isNecessaryCondition,
+      isSufficientCondition,
+      description: data.description
+    })
+    
+    if ((data.shouldRenderAsSubset && data.subsetDirection) || isNecessaryCondition || isSufficientCondition) {
+      // Render as subset relationship
+      if (data.subsetDirection === 'A_in_B' || isNecessaryCondition) {
+        // For "X is necessary condition for Y" -> Y ⊆ X (Y inside X)
+        // So setA (X) should be outer, setB (Y) should be inner
+        setA = {
+          x: centerX,
+          y: centerY,
+          radius: 180, // Outer circle (X)
+          label: data.sets[0]?.label || 'X',
+          items: data.sets[0]?.items || [],
+          color: data.sets[0]?.color || '#40c4ff'
+        }
+        setB = {
+          x: centerX,
+          y: centerY,
+          radius: 120, // Inner circle (Y)
+          label: data.sets[1]?.label || 'Y',
+          items: data.sets[1]?.items || [],
+          color: data.sets[1]?.color || '#00e676'
+        }
+      } else {
+        // B is inside A (B ⊆ A)
+        setB = {
+          x: centerX,
+          y: centerY,
+          radius: 180, // Outer circle
+          label: data.sets[1]?.label || 'B',
+          items: data.sets[1]?.items || [],
+          color: data.sets[1]?.color || '#00e676'
+        }
+        setA = {
+          x: centerX,
+          y: centerY,
+          radius: 120, // Inner circle
+          label: data.sets[0]?.label || 'A',
+          items: data.sets[0]?.items || [],
+          color: data.sets[0]?.color || '#40c4ff'
+        }
+      }
+    } else {
+      // Standard overlapping circles or use position overrides
+      setA = {
+        x: data.sets[0]?.position?.x || (centerX - separation / 2),
+        y: data.sets[0]?.position?.y || centerY,
+        radius: data.sets[0]?.position?.radius || defaultRadius,
+        label: data.sets[0]?.label || 'A',
+        items: data.sets[0]?.items || [],
+        color: data.sets[0]?.color || '#40c4ff'
+      }
+
+      setB = {
+        x: data.sets[1]?.position?.x || (centerX + separation / 2),
+        y: data.sets[1]?.position?.y || centerY,
+        radius: data.sets[1]?.position?.radius || defaultRadius,
+        label: data.sets[1]?.label || 'B',
+        items: data.sets[1]?.items || [],
+        color: data.sets[1]?.color || '#00e676'
+      }
     }
 
-    const setB = {
-      x: centerX + separation / 2,
-      y: centerY,
-      radius: radius,
-      label: data.sets[1]?.label || 'B',
-      items: data.sets[1]?.items || [],
-      color: data.sets[1]?.color || '#00e676'
-    }
-
-    // Render Set A with enhanced styling
-    const groupA = svg.append('g').attr('class', 'set-a')
-    groupA
-      .append('circle')
-      .attr('cx', setA.x)
-      .attr('cy', setA.y)
-      .attr('r', radius)
-      .attr('fill', 'url(#gradientA)')
-      .attr('stroke', setA.color)
-      .attr('stroke-width', 3)
-      .attr('filter', 'url(#glow)')
-      .style('cursor', 'pointer')
-      .on('mouseenter', () => setHoveredSet('A'))
-      .on('mouseleave', () => setHoveredSet(null))
-      .transition()
-      .duration(1000)
-      .attr('r', radius)
-
-    // Render Set B with enhanced styling
+    // Render Set B first (outer circle for subset relationships)
     const groupB = svg.append('g').attr('class', 'set-b')
     groupB
       .append('circle')
       .attr('cx', setB.x)
       .attr('cy', setB.y)
-      .attr('r', radius)
+      .attr('r', setB.radius)
       .attr('fill', 'url(#gradientB)')
       .attr('stroke', setB.color)
       .attr('stroke-width', 3)
@@ -146,7 +193,25 @@ export const EnhancedVennDiagram: React.FC<EnhancedVennDiagramProps> = ({
       .on('mouseleave', () => setHoveredSet(null))
       .transition()
       .duration(1000)
-      .attr('r', radius)
+      .attr('r', setB.radius)
+
+    // Render Set A second (inner circle for subset relationships)
+    const groupA = svg.append('g').attr('class', 'set-a')
+    groupA
+      .append('circle')
+      .attr('cx', setA.x)
+      .attr('cy', setA.y)
+      .attr('r', setA.radius)
+      .attr('fill', 'url(#gradientA)')
+      .attr('stroke', setA.color)
+      .attr('stroke-width', 3)
+      .attr('filter', 'url(#glow)')
+      .style('cursor', 'pointer')
+      .on('mouseenter', () => setHoveredSet('A'))
+      .on('mouseleave', () => setHoveredSet(null))
+      .transition()
+      .duration(1000)
+      .attr('r', setA.radius)
 
     // Enhanced intersection rendering
     if (data.intersection && data.intersection.length > 0) {
@@ -190,26 +255,67 @@ export const EnhancedVennDiagram: React.FC<EnhancedVennDiagramProps> = ({
       }
     }
 
-    // Enhanced labels with better positioning
-    svg.append('text')
-      .attr('x', setA.x)
-      .attr('y', setA.y - radius - 20)
-      .attr('text-anchor', 'middle')
-      .attr('fill', '#40c4ff')
-      .attr('font-size', '24px')
-      .attr('font-weight', '600')
-      .attr('text-shadow', '0 0 10px rgba(64, 196, 255, 0.5)')
-      .text(setA.label)
+    // Enhanced labels with better positioning to avoid overlap
+    const labelOffsetY = 30
+    
+    // Remove unnecessary description text as requested
+    
+    // Position labels based on circle arrangement and subset relationships
+    const isSubsetRendering = (data.shouldRenderAsSubset && data.subsetDirection) || isNecessaryCondition || isSufficientCondition
+    
+    if (isSubsetRendering) {
+      // For subset relationships, position labels to avoid overlap
+      const outerRadius = Math.max(setA.radius, setB.radius)
+      const innerRadius = Math.min(setA.radius, setB.radius)
+      
+      // Determine which is outer and which is inner
+      const isAOuter = setA.radius > setB.radius
+      const outerSet = isAOuter ? setA : setB
+      const innerSet = isAOuter ? setB : setA
+      
+      // Outer circle label above
+      svg.append('text')
+        .attr('x', outerSet.x)
+        .attr('y', outerSet.y - outerRadius - labelOffsetY)
+        .attr('text-anchor', 'middle')
+        .attr('fill', outerSet.color)
+        .attr('font-size', '20px')
+        .attr('font-weight', '600')
+        .attr('text-shadow', `0 0 10px ${outerSet.color}50`)
+        .text(outerSet.label)
+        
+      // Inner circle label below
+      svg.append('text')
+        .attr('x', innerSet.x)
+        .attr('y', innerSet.y + innerRadius + 25)
+        .attr('text-anchor', 'middle')
+        .attr('fill', innerSet.color)
+        .attr('font-size', '18px')
+        .attr('font-weight', '600')
+        .attr('text-shadow', `0 0 10px ${innerSet.color}50`)
+        .text(innerSet.label)
+    } else {
+      // Standard overlapping circles - position labels normally
+      svg.append('text')
+        .attr('x', setA.x)
+        .attr('y', setA.y - setA.radius - labelOffsetY)
+        .attr('text-anchor', 'middle')
+        .attr('fill', setA.color)
+        .attr('font-size', '20px')
+        .attr('font-weight', '600')
+        .attr('text-shadow', `0 0 10px ${setA.color}50`)
+        .text(setA.label)
 
-    svg.append('text')
-      .attr('x', setB.x)
-      .attr('y', setB.y - radius - 20)
-      .attr('text-anchor', 'middle')
-      .attr('fill', '#00e676')
-      .attr('font-size', '24px')
-      .attr('font-weight', '600')
-      .attr('text-shadow', '0 0 10px rgba(0, 230, 118, 0.5)')
-      .text(setB.label)
+      svg.append('text')
+        .attr('x', setB.x)
+        .attr('y', setB.y - setB.radius - labelOffsetY)
+        .attr('text-anchor', 'middle')
+        .attr('fill', setB.color)
+        .attr('font-size', '20px')
+        .attr('font-weight', '600')
+        .attr('text-shadow', `0 0 10px ${setB.color}50`)
+        .text(setB.label)
+    }
 
     // Add enhanced particle effects and animations
     if (isAnimating) {

@@ -34,6 +34,7 @@ import { performanceOptimizer, type OptimizedGraphData } from '../../services/pe
 import { usePerformanceMonitor } from '../../hooks/usePerformanceMonitor'
 import { PerformanceOverlay } from '../Performance'
 import { VennDiagramDialog, TruthTableDialog, TimelineDialog, CounterargumentsDialog } from '../Enhanced'
+import { generateVennDiagramData, shouldShowVennDiagram } from '../../services/logicAnalyzer'
 import { useFlowRivers } from '../../hooks/useFlowRivers'
 import { useBayesianMode, formatProbability } from '../../hooks/useBayesianMode'
 // Enhanced dialog types imported above
@@ -1683,8 +1684,15 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		const iconGroup = nodeEnter.append('g').attr('class', 'facet-icons').attr('transform', 'translate(-20,-18)')
 		// Facet icons created
 		// keep handlers below; the group structure remains the same for minimal risk
-		iconGroup.append('circle').attr('r', 4).attr('cx', 0).attr('cy', 0).attr('fill', '#7ac7ff').attr('stroke', '#2aa4f4').attr('tabindex', 0).style('cursor', 'pointer')
-			.append('title').text('Open Venn facet')
+		
+		// Only show Venn icon for nodes that have logical relationships
+		iconGroup.each(function(d: any) {
+			const group = d3.select(this)
+			if (shouldShowVennDiagram(d, nodes as ZlfnNode[], edges as ZlfnEdge[])) {
+				group.append('circle').attr('r', 4).attr('cx', 0).attr('cy', 0).attr('fill', '#7ac7ff').attr('stroke', '#2aa4f4').attr('tabindex', 0).style('cursor', 'pointer')
+					.append('title').text('Open Venn facet')
+			}
+		})
 		iconGroup.append('rect').attr('x', 8).attr('y', -4).attr('width', 8).attr('height', 8).attr('fill', '#c0c0c0').attr('stroke', '#888').attr('tabindex', 0).style('cursor', 'pointer')
 			.append('title').text('Open Truth Table facet')
 		iconGroup.append('line').attr('x1', 18).attr('y1', 0).attr('x2', 26).attr('y2', 0).attr('stroke', '#aaa').attr('stroke-width', 2).attr('tabindex', 0).style('cursor', 'pointer')
@@ -2376,6 +2384,7 @@ export const ZlfnGraph: React.FC<ZlfnGraphProps> = ({ nodes, edges, zones, stora
 		// Enhanced dialog handlers for facet icons
 		iconGroup.select('circle').on('click', function(event: any, d: any){ 
 			event.stopPropagation()
+			// Icon only exists for nodes with logical relationships, so directly open dialog
 			setSelectedNodeForDialog(d)
 			setVennDialogOpen(true)
 		})
@@ -4489,24 +4498,39 @@ Controls:
 							setVennDialogOpen(false)
 							setSelectedNodeForDialog(null)
 						}}
-						data={{
-							sets: [
-								{ 
-									label: selectedNodeForDialog.label || selectedNodeForDialog.id, 
-									items: [selectedNodeForDialog.label || selectedNodeForDialog.id], 
-									color: selectedNodeForDialog.color || '#40c4ff' 
-								},
-								{ 
-									label: 'Related', 
-									items: [], 
-									color: '#00e676' 
-								}
-							],
-							intersection: []
-						}}
-						examples={[
-							{ id: '1', title: 'Logical Relationship', necessary: selectedNodeForDialog.label || selectedNodeForDialog.id, sufficient: 'Conclusion' }
-						]}
+						data={(() => {
+							if (!selectedNodeForDialog) return { sets: [], intersection: [] }
+							
+							const vennAnalysis = generateVennDiagramData(
+								selectedNodeForDialog,
+								nodes as ZlfnNode[],
+								edges as ZlfnEdge[]
+							)
+							
+							return {
+								sets: [vennAnalysis.setA, vennAnalysis.setB],
+								intersection: vennAnalysis.intersection,
+								description: vennAnalysis.relationship.description,
+								shouldRenderAsSubset: vennAnalysis.shouldRenderAsSubset,
+								subsetDirection: vennAnalysis.subsetDirection
+							}
+						})()}
+						examples={(() => {
+							if (!selectedNodeForDialog) return []
+							
+							const vennAnalysis = generateVennDiagramData(
+								selectedNodeForDialog,
+								nodes as ZlfnNode[],
+								edges as ZlfnEdge[]
+							)
+							
+							return [{
+								id: '1',
+								title: vennAnalysis.relationship.description,
+								necessary: vennAnalysis.relationship.type === 'necessary' ? vennAnalysis.setA.label : vennAnalysis.setB.label,
+								sufficient: vennAnalysis.relationship.type === 'sufficient' ? vennAnalysis.setA.label : vennAnalysis.setB.label
+							}]
+						})()}
 						expression={selectedNodeForDialog.symbol || selectedNodeForDialog.label}
 						nodeId={selectedNodeForDialog.id}
 					/>

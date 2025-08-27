@@ -23,6 +23,8 @@ export type VennDiagramData = {
 	sets: VennSet[]
 	intersection?: string[]
 	currentExample?: NecessarySufficientExample
+	shouldRenderAsSubset?: boolean
+	subsetDirection?: 'A_in_B' | 'B_in_A'
 }
 
 export interface VennDiagramProps {
